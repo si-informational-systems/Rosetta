@@ -6,8 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MassTransit" Version="8.4.0" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+    <PackageReference Include="MassTransit" Version="8.4.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.5" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="RavenDB.Client" Version="7.0.2" />
     <PackageReference Include="SI.Stack.RavenDB" Version="1.7.0" />
@@ -43,6 +43,10 @@
     <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />
     <ProjectReference Include="..\Test.DTOs\Test.DTOs.csproj" />
     <ProjectReference Include="..\Test.PL\Test.PL.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="9.0.300" />
   </ItemGroup>
 
 </Project>

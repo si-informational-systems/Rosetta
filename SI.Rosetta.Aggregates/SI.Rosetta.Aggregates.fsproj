@@ -29,4 +29,8 @@
     <ProjectReference Include="..\SI.Rosetta.Common\SI.Rosetta.Common.fsproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="9.0.300" />
+  </ItemGroup>
+
 </Project>
