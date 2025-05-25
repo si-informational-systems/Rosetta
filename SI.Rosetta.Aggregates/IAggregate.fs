@@ -7,11 +7,11 @@ open SI.Rosetta.Common
 type IAggregate =
     abstract member Id: string
     abstract member Version: int
-    abstract member Changes: List<IEvents>
-    abstract member PublishedEvents: List<IEvents>
+    abstract member Changes: List<IAggregateEvents>
+    abstract member PublishedEvents: List<IAggregateEvents>
     abstract member SetState: state: obj -> unit 
 
 [<AllowNullLiteral>]
-type IAggregateInstance<'TCommands when 'TCommands :> ICommands> =
+type IAggregateInstance<'TCommands when 'TCommands :> IAggregateCommands> =
     inherit IAggregate
     abstract member Execute: command: 'TCommands -> unit 

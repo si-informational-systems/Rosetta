@@ -10,5 +10,5 @@ type IAggregateRepository =
                                         when 'TAggregate : (new : unit -> 'TAggregate) 
                                         and 'TAggregate :> IAggregate
                                         and 'TAggregate : null
-                                        and 'TEvents :> IEvents> : 
+                                        and 'TEvents :> IAggregateEvents> : 
         id: string * [<Optional; DefaultParameterValue(2147483647)>] version: int -> Task<'TAggregate>

@@ -6,7 +6,6 @@ module EventStoreSerialization =
     open Newtonsoft.Json
     open Newtonsoft.Json.Linq
     open Newtonsoft.Json.Converters
-    open System
     open System.Collections.Generic
     open System.Text
     open Microsoft.FSharp.Reflection

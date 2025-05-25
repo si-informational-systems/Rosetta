@@ -1,6 +1,5 @@
 namespace TestFSharp
 
-open System
 open SI.Rosetta.Common
 
 type RegisterOrganization = {

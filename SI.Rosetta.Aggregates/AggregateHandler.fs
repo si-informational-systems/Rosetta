@@ -9,9 +9,9 @@ open SI.Rosetta.Common
 type AggregateHandler<'TAggregate, 'TCommands, 'TEvents when 'TAggregate :> IAggregateInstance<'TCommands> 
                                         and 'TAggregate : (new : unit -> 'TAggregate)
                                         and 'TAggregate : null
-                                        and 'TCommands :> ICommands
-                                        and 'TEvents :> IEvents>() =
-    let mutable publishedEvents = List<IEvents>()
+                                        and 'TCommands :> IAggregateCommands
+                                        and 'TEvents :> IAggregateEvents>() =
+    let mutable publishedEvents = List<IAggregateEvents>()
     let mutable aggregateRepository = Unchecked.defaultof<IAggregateRepository>
     let NotFoundResponse = 
         let aggregateName = 

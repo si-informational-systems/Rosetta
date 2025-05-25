@@ -5,7 +5,7 @@ open SI.Rosetta.Aggregates
 open SI.Rosetta.Common
 
 [<AbstractClass>]
-type AggregateConsumerBase<'TCommands when 'TCommands :> ICommands and 'TCommands : not struct>() =
+type AggregateConsumerBase<'TCommands when 'TCommands :> IAggregateCommands and 'TCommands : not struct>() =
     member this.TryHandle(message: 'TCommands, svc: IAggregateHandler, logger: ILogger) = 
         task {
             try

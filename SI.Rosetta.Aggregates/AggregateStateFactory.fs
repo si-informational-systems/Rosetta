@@ -7,7 +7,7 @@ open SI.Rosetta.Common
 type AggregateStateFactory private () =
     static let CachedTypes = ConcurrentDictionary<Type, Type>()
     
-    static member CreateStateFor<'TEvent when 'TEvent :> IEvents>(aggregateType: Type) =
+    static member CreateStateFor<'TEvent when 'TEvent :> IAggregateEvents>(aggregateType: Type) =
         let mutable aggStateType = Unchecked.defaultof<Type>
         if not (CachedTypes.TryGetValue(aggregateType, &aggStateType)) then
             let assemblyContainingTheAggregate = aggregateType.Assembly

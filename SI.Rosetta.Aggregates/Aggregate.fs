@@ -7,12 +7,12 @@ open System.Collections.Generic
 [<AbstractClass>]
 type Aggregate<'TAggregateState, 'TCommands, 'TEvents 
     when 'TAggregateState :> AggregateState<'TEvents>
-    and 'TCommands :> ICommands
-    and 'TEvents :> IEvents 
+    and 'TCommands :> IAggregateCommands
+    and 'TEvents :> IAggregateEvents 
     and 'TAggregateState : (new : unit -> 'TAggregateState)>() =
     let mutable state = new 'TAggregateState()
-    let changes = List<IEvents>()
-    let publishedEvents = List<IEvents>()
+    let changes = List<IAggregateEvents>()
+    let publishedEvents = List<IAggregateEvents>()
         
     interface IAggregateInstance<'TCommands> with
         member this.Id = state.Id

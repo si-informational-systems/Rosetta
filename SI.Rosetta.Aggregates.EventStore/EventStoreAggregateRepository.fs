@@ -6,12 +6,10 @@ open EventStore.Client
 open SI.Rosetta.Aggregates
 open FSharp.Control
 open SI.Rosetta.Common
-
 open SI.Rosetta.Serialization
-open System.Threading
 
 type EventStoreAggregateRepository(client: EventStoreClient) =
-    member private this.ToEventData (event: IEvents) (headers: IDictionary<string, obj>) =
+    member private this.ToEventData (event: IAggregateEvents) (headers: IDictionary<string, obj>) =
         let serializedEvent = EventStoreSerialization.Serialize(event, headers)
         EventData(Uuid.NewUuid(), serializedEvent.EventClrName, serializedEvent.Data, ReadOnlyMemory<byte> serializedEvent.Metadata)
 
@@ -58,7 +56,7 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
                                     when 'TAggregate :> IAggregate 
                                     and 'TAggregate : (new : unit -> 'TAggregate)
                                     and 'TAggregate : null
-                                    and 'TEvents :> IEvents>
+                                    and 'TEvents :> IAggregateEvents>
             (id: string, version: int) =
             task {
                 let streamName = id

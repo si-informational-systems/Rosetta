@@ -5,5 +5,5 @@ open System.Collections.Generic
 open System.Threading.Tasks
 
 type IAggregateHandler =
-    abstract member GetPublishedEvents: unit -> List<IEvents> 
-    abstract member ExecuteAsync: ICommands -> Task<unit>
+    abstract member GetPublishedEvents: unit -> List<IAggregateEvents> 
+    abstract member ExecuteAsync: IAggregateCommands -> Task<unit>
