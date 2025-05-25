@@ -1,0 +1,36 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EventStore.Client.Grpc.ProjectionManagement" Version="23.3.7" />
+    <PackageReference Include="EventStore.Client.Grpc.Streams" Version="23.3.7" />
+    <PackageReference Include="FSharp.Control.TaskSeq" Version="0.4.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Pluralize.NET" Version="1.0.2" />
+    <PackageReference Include="System.Linq.Async" Version="6.0.1" />
+    <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Serialization\SI.Rosetta.Serialization.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="EventStoreProjection.fs" />
+    <Compile Include="EventStoreProjectionParameters.fs" />
+    <Compile Include="EventStoreProjectionBuilder.fs" />
+    <Compile Include="ProjectionDiscovery.fs" />
+    <Compile Include="JSProjectionsFactory.fs" />
+    <Compile Include="ESSubscription.fs" />
+    <Compile Include="ESSubscriptionFactory.fs" />
+  </ItemGroup>
+
+</Project>

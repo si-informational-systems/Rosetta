@@ -1,0 +1,72 @@
+﻿namespace TestFSharp
+
+open Microsoft.Extensions.Hosting
+open System.Threading.Tasks
+open System.Threading
+open System
+open System.Diagnostics
+open Microsoft.Extensions.Logging
+
+type ServiceInstance(
+    serviceProvider: IServiceProvider
+    ) =
+    interface IHostedService with
+        member this.StartAsync(cancellationToken: CancellationToken) =
+            task {
+                try
+                    printfn "Starting AGGREGATES SERVICE"
+                    let interactor = serviceProvider.GetService(typeof<IPersonAggregateHandler>) :?> IPersonAggregateHandler
+                    let logger = serviceProvider.GetService(typeof<ILogger<PersonConsumer>>) :?> ILogger<PersonConsumer>
+
+                    let consumer = PersonConsumer(interactor, logger)
+                    let userReference = {
+                        Id = "Mladen"
+                        Name = "Mladen"
+                    }
+                    let metadata = {
+                        IssuedBy = userReference
+                        TimeIssued = DateTime.Now
+                    }
+                    let registerCmd : RegisterPerson = { 
+                        Id = "Persons-4"
+                        Name = "TEST"
+                        Metadata = metadata
+                    }
+
+                    //Benchmark register command
+                    let sw = Stopwatch.StartNew()
+                    let memBefore = GC.GetTotalMemory(true)
+                    do! consumer.Consume(registerCmd)
+                    let memAfter = GC.GetTotalMemory(true)
+                    sw.Stop()
+                    printfn "Register Command - Time: %dms, Memory: %dKB" sw.ElapsedMilliseconds ((memAfter - memBefore) / 2024L)
+
+                    //Benchmark 100 name changes
+                    //for i in 0..500 do
+                    //let userReference = {
+                    //    Id = "Mladen"
+                    //    Name = "Mladen2"
+                    //}
+                    //let metadata = {
+                    //    IssuedBy = userReference
+                    //    TimeIssued = DateTime.Now
+                    //}
+                    //let changeName : ChangePersonName = { 
+                    //    Id = "Persons-3"
+                    //    Name = "Mladen"
+                    //    Metadata = metadata
+                    //}
+                    //let sw = Stopwatch.StartNew()
+                    //let memBefore = GC.GetTotalMemory(true)
+                    //do! consumer.Consume(changeName)
+                    //let memAfter = GC.GetTotalMemory(true)
+                    //sw.Stop()
+                    //printfn "Change Name Command - Time: %dms, Memory: %dKB" sw.ElapsedMilliseconds ((memAfter - memBefore) / 1024L)
+                        
+                with 
+                | ex -> 
+                    printfn "Error: %s" ex.Message
+            }
+
+        member this.StopAsync(cancellationToken: CancellationToken) =
+            Task.CompletedTask

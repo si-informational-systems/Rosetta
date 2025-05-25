@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Remove="Checkpoints\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="ProjectionCheckpoints\Checkpoint.fs" />
+    <Compile Include="ProjectionCheckpoints\ICheckpointReader.fs" />
+    <Compile Include="ProjectionCheckpoints\ICheckpointWriter.fs" />
+    <Compile Include="ProjectionCheckpoints\ICheckpointWriterFactory.fs" />
+    <Compile Include="ProjectionException.fs" />
+    <Compile Include="IProjectionHandler.fs" />
+    <Compile Include="IProjectionHandlerFactory.fs" />
+    <Compile Include="IAmHandledBy.fs" />
+    <Compile Include="ISubscription.fs" />
+    <Compile Include="ISubscriptionFactory.fs" />
+    <Compile Include="IProjectionsStore.fs" />
+    <Compile Include="SubscribesToStream.fs" />
+    <Compile Include="CustomProjectionStream.fs" />
+    <Compile Include="IProjection.fs" />
+    <Compile Include="IProjectionsFactory.fs" />
+    <Compile Include="ProjectionHandlerFactory.fs" />
+    <Compile Include="Projection.fs" />
+    <Compile Include="ProjectionsFactory.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SI.Rosetta.Common\SI.Rosetta.Common.fsproj" />
+  </ItemGroup>
+
+</Project>

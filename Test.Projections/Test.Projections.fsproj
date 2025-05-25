@@ -1,0 +1,45 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MassTransit" Version="8.4.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="RavenDB.Client" Version="7.0.2" />
+    <PackageReference Include="SI.Stack.RavenDB" Version="1.7.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Projections\ProjectionStreamNameConstants.fs" />
+    <Compile Include="Projections\PersonProjection.fs" />
+    <Compile Include="Projections\TotalPeopleCustomProjection.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="config\appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="config\cluster.server.certificate.rentario-local.pfx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SI.Rosetta.Aggregates.HostBuilder\SI.Rosetta.Aggregates.HostBuilder.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Projections.EventStore\SI.Rosetta.Projections.EventStore.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Projections.HostBuilder\SI.Rosetta.Projections.HostBuilder.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Projections.RavenDB\SI.Rosetta.Projections.RavenDB.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />
+    <ProjectReference Include="..\Test.DTOs\Test.DTOs.csproj" />
+    <ProjectReference Include="..\Test.PL\Test.PL.fsproj" />
+  </ItemGroup>
+
+</Project>
