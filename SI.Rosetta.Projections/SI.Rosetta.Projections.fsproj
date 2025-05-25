@@ -22,10 +22,11 @@
     <Compile Include="IProjectionHandler.fs" />
     <Compile Include="IProjectionHandlerFactory.fs" />
     <Compile Include="IAmHandledBy.fs" />
+    <Compile Include="HandlesStreamAttribute.fs" />
+    <Compile Include="DisabledProjectionAttribute.fs" />
     <Compile Include="ISubscription.fs" />
     <Compile Include="ISubscriptionFactory.fs" />
     <Compile Include="IProjectionsStore.fs" />
-    <Compile Include="SubscribesToStream.fs" />
     <Compile Include="CustomProjectionStream.fs" />
     <Compile Include="IProjection.fs" />
     <Compile Include="IProjectionsFactory.fs" />

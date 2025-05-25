@@ -16,7 +16,7 @@ type TotalPeopleCustomProjectionEvents =
     | OrganizationRegistered of OrganizationRegistered
     interface ICustomProjectionEvents
 
-[<SubscribedToStream(ProjectionStreamNames.TotalPeopleStream)>]
+[<HandlesStream(ProjectionStreamNames.TotalPeopleStream)>]
 type TotalPeopleCustomProjection() =
     inherit Projection<TotalPeopleCustomProjectionEvents>()
     interface IAmHandledBy<TotalPeopleCustomProjectionHandler, TotalPeopleCustomProjectionEvents>

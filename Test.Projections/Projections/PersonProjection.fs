@@ -10,7 +10,7 @@ type Person = {
     Metadata: MessageMetadata
 }
 
-[<SubscribedToStream(ProjectionStreamNames.PersonStream)>]
+[<HandlesStream(ProjectionStreamNames.PersonStream)>]
 type PersonProjection() =
     inherit Projection<PersonEvents>()
     interface IAmHandledBy<PersonProjectionHandler, PersonEvents>

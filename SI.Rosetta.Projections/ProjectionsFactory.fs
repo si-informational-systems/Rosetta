@@ -20,7 +20,7 @@ type ProjectionsFactory(provider: IServiceProvider) =
         t.Name.Replace(ProjectionPrefix, String.Empty)
         
     member private this.GetSubscriptionStreamName(t: Type) =
-        let attrInfo = t.GetCustomAttribute(typeof<SubscribedToStream>) :?> SubscribedToStream
+        let attrInfo = t.GetCustomAttribute(typeof<HandlesStream>) :?> HandlesStream
         attrInfo.Name
         
     member private this.GetProjectionInfo(t: Type) : ProjectionInfo =
@@ -65,7 +65,7 @@ type ProjectionsFactory(provider: IServiceProvider) =
         handlers
         
     member this.IsActive(t: Type) =
-        let attrInfo = t.GetCustomAttribute(typeof<InactiveProjection>)
+        let attrInfo = t.GetCustomAttribute(typeof<DisabledProjection>)
         attrInfo = null
         
     interface IProjectionsFactory with
