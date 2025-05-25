@@ -1,17 +1,14 @@
 namespace SI.Rosetta.Aggregates.EventStore
 
 open System
-open System.Text
-open System.Text.Json.Nodes
 open System.Collections.Generic
 open EventStore.Client
 open SI.Rosetta.Aggregates
 open FSharp.Control
-open Newtonsoft.Json
-open Newtonsoft.Json.Converters
 open SI.Rosetta.Common
 
 open SI.Rosetta.Serialization
+open System.Threading
 
 type EventStoreAggregateRepository(client: EventStoreClient) =
     member private this.ToEventData (event: IEvents) (headers: IDictionary<string, obj>) =
@@ -32,10 +29,10 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
                 if originalVersion = 0 then StreamRevision.None 
                 else StreamRevision.FromInt64(int64 (originalVersion - 1))
             
-            let eventsToSave = newEvents |> List.map (fun e -> this.ToEventData e commitHeaders)
+            let eventData = newEvents |> List.map (fun e -> this.ToEventData e commitHeaders)
             
             let! result = 
-                client.AppendToStreamAsync(streamName, expectedRevision, eventsToSave)
+                client.AppendToStreamAsync(streamName, expectedRevision, eventData)
                 |> Async.AwaitTask
             aggregate.Changes.Clear()
         }
