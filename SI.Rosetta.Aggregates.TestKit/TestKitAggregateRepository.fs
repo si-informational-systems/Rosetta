@@ -1,4 +1,4 @@
-﻿module TestKitAggregateRepository
+﻿namespace SI.Rosetta.Aggregates.TestKit
 
 open System.Collections.Concurrent
 open System.Collections.Generic
@@ -6,19 +6,21 @@ open SI.Rosetta.Aggregates
 open SI.Rosetta.Common
 
 type TestKitAggregateRepository() =
-    let DataStore = ConcurrentDictionary<string, List<IAggregateEvents>>()
+    let InMemoryStore = ConcurrentDictionary<string, List<IAggregateEvents>>()
     let ProducedEvents = List<IAggregateEvents>()
 
     let LoadEvents key =
-        if not (DataStore.ContainsKey key) then
+        if not (InMemoryStore.ContainsKey key) then
             List<IAggregateEvents>()
         else
-            DataStore.[key]
+            InMemoryStore.[key]
 
-    member this.Preload(id: string, events: IAggregateEvents array) =
+    member this.GetProducedEvents = ProducedEvents
+
+    member this.SeedEvents(id: string, events: IAggregateEvents array) =
         if events.Length > 0 then 
-            let list = List<IAggregateEvents>(events)
-            DataStore.[id] <- list
+            let list = List<IAggregateEvents> events
+            InMemoryStore.[id] <- list
     
     interface IAggregateRepository with
         member this.GetAsync<'TAggregate, 'TEvents 
@@ -28,13 +30,13 @@ type TestKitAggregateRepository() =
                             and 'TEvents :> IAggregateEvents>
             (id: string, version: int) =
             task {
-                if not (DataStore.ContainsKey id) then
+                if not (InMemoryStore.ContainsKey id) then
                     return null
                 else
                     let aggregateType = typeof<'TAggregate>
                     let state = AggregateStateFactory.CreateStateFor<'TEvents> aggregateType
                     
-                    let events = DataStore.[id]
+                    let events = InMemoryStore.[id]
                     events 
                     |> Seq.takeWhile (fun _ -> state.Version <> version)
                     |> Seq.iter (fun ev -> 
@@ -52,7 +54,7 @@ type TestKitAggregateRepository() =
                 agg.Changes 
                 |> Seq.iter events.Add
                 
-                DataStore.[agg.Id] <- events
+                InMemoryStore.[agg.Id] <- events
 
                 agg.Changes 
                 |> Seq.iter ProducedEvents.Add 

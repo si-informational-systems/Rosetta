@@ -9,4 +9,8 @@
     <Compile Include="ObjectComparer.fs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" Version="9.0.300" />
+  </ItemGroup>
+
 </Project>
