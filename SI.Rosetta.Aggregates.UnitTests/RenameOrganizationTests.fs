@@ -55,6 +55,6 @@ type RenameOrganizationTests() =
 
             this.When(OrganizationCommands.ChangeName { Id = id; Name = "New Name" })
 
-            do! this.ExpectError "OrganizationDoesNotExist"
+            do! this.ThenError "OrganizationDoesNotExist"
         }
 

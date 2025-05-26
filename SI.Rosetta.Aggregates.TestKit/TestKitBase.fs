@@ -100,13 +100,13 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
             Console.Write(publishedResults :> obj)
         
             if producedEventsResults |> Array.exists (fun r -> r.Failure.IsSome) then
-                raise (XunitException(sprintf "[TEST FAILED] Produced events:%s%s" Environment.NewLine producedResults))
+                raise (XunitException(sprintf "[TEST FAILED] Produced Events:%s%s" Environment.NewLine producedResults))
             
             if publishedEventsResults |> Array.exists (fun r -> r.Failure.IsSome) then
-                raise (XunitException(sprintf "[TEST FAILED] Published events:%s%s" Environment.NewLine publishedResults))
+                raise (XunitException(sprintf "[TEST FAILED] Published Events:%s%s" Environment.NewLine publishedResults))
         }
     
-    member this.ExpectError(name: string) = 
+    member this.ThenError(name: string) = 
         task {
             TestValid <- true
             try
@@ -121,7 +121,7 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
     interface IDisposable with
         member this.Dispose() =
             if not TestValid then
-                raise (XunitException("[TEST INVALID]: Expect was not called!"))
+                raise (XunitException("[TEST INVALID]: Then or ThenError were not called!"))
                 
     static member NoProducedEvents = ResizeArray<IAggregateCommands>()
     static member NoPublishedEvents = ResizeArray<IAggregateCommands>()
