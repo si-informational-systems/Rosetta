@@ -5,12 +5,16 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TargetFramework>net9.0</TargetFramework>
     <Authors>SI.Informational.Systems</Authors>
-    <Version>9.0.0</Version>
+    <AssemblyFileVersion>1.0.0</AssemblyFileVersion>
+    <AssemblyVersion>1.0.0</AssemblyVersion>
+    <FileVersion>1.0.0</FileVersion>
+    <Version>1.0</Version>
+    <PackageVersion>1.0</PackageVersion>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <IncludeReferencedProjects>true</IncludeReferencedProjects>
   </PropertyGroup>
-
-  <ItemGroup>
-    <EmbeddedResource Remove="rewrite_attempt\**" />
-  </ItemGroup>
 
   <ItemGroup>
     <Compile Include="Exceptions\Exceptions.fs" />
