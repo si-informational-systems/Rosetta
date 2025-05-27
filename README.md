@@ -15,7 +15,7 @@
 
 **Rosetta** is a powerful, opinionated framework for building robust, event-sourced, domain-driven microservices in .NET and F#. 
 
-Levarage the power of **F# Discriminated Unions** inside Rosetta to create error-prone Domain Solutions!
+Levarage the power of **F# Discriminated Unions** inside Rosetta to create error-proof Domain Solutions!
 
 It provides:
 
