@@ -1,7 +1,6 @@
 ﻿namespace TestFSharp
 
 open SI.Rosetta.Aggregates
-open System
 
 [<AllowNullLiteral>]
 type PersonAggregateState() =

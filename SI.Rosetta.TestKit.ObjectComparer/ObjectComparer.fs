@@ -53,13 +53,14 @@ module ObjectComparer =
                             let enumA = (a :?> IEnumerable) |> Seq.cast<obj> |> List.ofSeq
                             let enumB = (b :?> IEnumerable) |> Seq.cast<obj> |> List.ofSeq
                                 
-                            // First check if collections have the same size
+                            // Compare elements up to the shorter list length
+                            let minLength = min enumA.Length enumB.Length
+                            for i in 0 .. minLength - 1 do
+                                yield! compareObjects (sprintf "%s[%d]" path i) enumA[i] enumB[i]
+                                
+                            // Report size difference if lists are not equal length
                             if enumA.Length <> enumB.Length then
                                 yield sprintf "%s: Size not equal (Left: %d, Right: %d)" path enumA.Length enumB.Length
-                            else
-                                // Compare each element pair in the collections
-                                for i, (elemA, elemB) in Seq.zip enumA enumB |> Seq.indexed do
-                                    yield! compareObjects (sprintf "%s[%d]" path i) elemA elemB
                         else
                             // Handle complex objects by comparing their public properties and fields
                             let flags = BindingFlags.Public ||| BindingFlags.Instance

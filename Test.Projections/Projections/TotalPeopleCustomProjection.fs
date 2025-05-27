@@ -70,12 +70,12 @@ and TotalMladensCustomProjectionHandler(store: INoSqlStore) =
                                 TotalPersons = totalPeople.TotalPersons + 1 })
 
                 | TotalPeopleCustomProjectionEvents.NameChanged ev ->
-                    do! this.Project(fun totalPeople -> 
-                        if (ev.Name = "Mladen") then
-                            { totalPeople with TotalPersons = totalPeople.TotalPersons + 1 }
-                        else
-                            { totalPeople with TotalPersons = totalPeople.TotalPersons - 1 }
-                        )
+                   do! this.Project(fun totalPeople -> 
+                       if (ev.Name = "Mladen") then
+                           { totalPeople with TotalPersons = totalPeople.TotalPersons + 1 }
+                       else
+                           { totalPeople with TotalPersons = totalPeople.TotalPersons - 1 }
+                       )
 
                 | TotalPeopleCustomProjectionEvents.OrganizationRegistered _ ->
                     do! this.Project(fun totalPeople ->

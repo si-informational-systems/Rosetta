@@ -1,17 +1,23 @@
 namespace SI.Rosetta.Aggregates.UnitTests
 
 open SI.Rosetta.Common
+open System.Collections.Generic
 
 type RegisterOrganization = {
     Id: string
     Name: string
 }
 
+type Nested = {
+    Value: string
+    Options: Dictionary<string, string>
+}
+
 type ChangeOrganizationName = {
     Id: string
     Name: string
+    Nested: Nested
 }
-
 
 type OrganizationRegistered = {
     Id: string
@@ -21,6 +27,7 @@ type OrganizationRegistered = {
 type OrganizationNameChanged = {
     Id: string
     Name: string
+    Nested: Nested
 }
 
 [<RequireQualifiedAccess>]
