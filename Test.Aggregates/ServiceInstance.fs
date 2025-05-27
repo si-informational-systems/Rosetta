@@ -83,8 +83,8 @@ type ServiceInstance(
                         TimeIssued = DateTime.Now
                     }
                     let registerCmd : RegisterPerson = { 
-                        Id = "Persons-2"
-                        Name = "Stefan"
+                        Id = "Persons-5"
+                        Name = "Steff"
                         Metadata = metadata
                     }
 
@@ -98,25 +98,25 @@ type ServiceInstance(
 
                     //Benchmark 100 name changes
                     //for i in 0..500 do
-                    let userReference = {
-                        Id = "Mladen"
-                        Name = "Mladen2"
-                    }
-                    let metadata = {
-                        IssuedBy = userReference
-                        TimeIssued = DateTime.Now
-                    }
-                    let changeName : ChangePersonName = { 
-                        Id = "Persons-2"
-                        Name = "Mladen"
-                        Metadata = metadata
-                    }
-                    let sw = Stopwatch.StartNew()
-                    let memBefore = GC.GetTotalMemory(true)
-                    do! consumer.Consume(changeName)
-                    let memAfter = GC.GetTotalMemory(true)
-                    sw.Stop()
-                    printfn "Change Name Command - Time: %dms, Memory: %dKB" sw.ElapsedMilliseconds ((memAfter - memBefore) / 1024L)
+                    //let userReference = {
+                    //    Id = "Mladen"
+                    //    Name = "Mladen2"
+                    //}
+                    //let metadata = {
+                    //    IssuedBy = userReference
+                    //    TimeIssued = DateTime.Now
+                    //}
+                    //let changeName : ChangePersonName = { 
+                    //    Id = "Persons-4"
+                    //    Name = "Mladen"
+                    //    Metadata = metadata
+                    //}
+                    //let sw = Stopwatch.StartNew()
+                    //let memBefore = GC.GetTotalMemory(true)
+                    //do! consumer.Consume(changeName)
+                    //let memAfter = GC.GetTotalMemory(true)
+                    //sw.Stop()
+                    //printfn "Change Name Command - Time: %dms, Memory: %dKB" sw.ElapsedMilliseconds ((memAfter - memBefore) / 1024L)
                         
                 with 
                 | ex -> 

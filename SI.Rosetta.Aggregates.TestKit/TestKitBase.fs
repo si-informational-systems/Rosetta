@@ -1,11 +1,9 @@
 ﻿namespace SI.Rosetta.Aggregates.TestKit
 
 open System
-open System.Text
 open System.Threading.Tasks
 open Xunit.Sdk
 open SI.Rosetta.Common
-open SI.Rosetta.TestKit
 open SI.Rosetta.Aggregates
 open System.Collections.Generic
 

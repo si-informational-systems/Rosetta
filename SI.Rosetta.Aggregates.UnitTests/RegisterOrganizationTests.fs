@@ -2,9 +2,7 @@
 
 open System
 open Xunit
-open SI.Rosetta.Aggregates
 open SI.Rosetta.Aggregates.TestKit
-open System.Collections.Generic
 open SI.Rosetta.Common
 
 type RegisterOrganizationTests() =

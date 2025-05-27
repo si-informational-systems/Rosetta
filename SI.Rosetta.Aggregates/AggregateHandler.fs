@@ -20,9 +20,9 @@ type AggregateHandler<'TAggregate, 'TCommands, 'TEvents when 'TAggregate :> IAgg
 
     abstract ExecuteAsync: command: 'TCommands -> Task<unit>
 
-    member private this.IExecute(arg: ICommands) : Task<unit> = 
+    member private this.Execute(arg: ICommands) : Task<unit> = 
         task {
-            do! this.ExecuteAsync(arg :?> 'TCommands)
+            do! this.ExecuteAsync(arg :?> 'TCommands).ConfigureAwait(false)
         }
     
     member this.AggregateRepository
@@ -30,12 +30,12 @@ type AggregateHandler<'TAggregate, 'TCommands, 'TEvents when 'TAggregate :> IAgg
         and set value = aggregateRepository <- value
 
     interface IAggregateHandler with
-        member this.ExecuteAsync(arg) = this.IExecute(arg)
+        member this.ExecuteAsync(arg) = this.Execute(arg)
         member this.GetPublishedEvents() = publishedEvents
 
-    member this.IdempotentlyCreateAggregate (id: string) (command: 'TCommands) =
+    member this.IdempotentlyCreateAggregate (id: obj) (command: 'TCommands) =
         task {
-            let! agg = aggregateRepository.GetAsync<'TAggregate, 'TEvents> id
+            let! agg = aggregateRepository.GetAsync<'TAggregate, 'TEvents>(id).ConfigureAwait(false)
             let mutable aggregate = if (agg :> obj) = null then new 'TAggregate() else agg
             let originalVersion = aggregate.Version
             
@@ -43,12 +43,12 @@ type AggregateHandler<'TAggregate, 'TCommands, 'TEvents when 'TAggregate :> IAgg
             publishedEvents <- aggregate.PublishedEvents
             
             if originalVersion <> aggregate.Version then
-                do! aggregateRepository.StoreAsync aggregate
+                do! aggregateRepository.StoreAsync(aggregate).ConfigureAwait(false)
         }
         
-    member this.IdempotentlyUpdateAggregate (id: string) (command: 'TCommands) =
+    member this.IdempotentlyUpdateAggregate (id: obj) (command: 'TCommands) =
         task {
-            let! agg = aggregateRepository.GetAsync<'TAggregate, 'TEvents> id
+            let! agg = aggregateRepository.GetAsync<'TAggregate, 'TEvents>(id).ConfigureAwait(false)
             if isNull agg then
                 raise (DomainException.Named(NotFoundResponse, String.Empty))
                 
@@ -58,5 +58,5 @@ type AggregateHandler<'TAggregate, 'TCommands, 'TEvents when 'TAggregate :> IAgg
             publishedEvents <- agg.PublishedEvents
             
             if originalVersion <> agg.Version then
-                do! aggregateRepository.StoreAsync agg
+                do! aggregateRepository.StoreAsync(agg).ConfigureAwait(false)
         }

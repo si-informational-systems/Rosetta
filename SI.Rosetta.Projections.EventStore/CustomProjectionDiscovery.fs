@@ -6,7 +6,7 @@ open Microsoft.FSharp.Reflection
 open SI.Rosetta.Common
 open SI.Rosetta.Projections
 
-module ProjectionDiscovery =
+module CustomProjectionDiscovery =
     let private GetProjectionCaseTypes (projectionType: Type) =
         FSharpType.GetUnionCases projectionType
         |> Array.map (fun case -> GetUnionCaseType case)
@@ -82,7 +82,7 @@ module ProjectionDiscovery =
         
         sourceAggregateStreams
             
-    let DiscoverProjections (assembly: Assembly) : EventStoreProjectionParameters array =
+    let DiscoverCustomProjections (assembly: Assembly) : EventStoreProjectionParameters array =
         let customProjectionDUTypes = GetCustomProjectionEventsDUTypes assembly
         let result = 
             customProjectionDUTypes

@@ -6,7 +6,7 @@ open SI.Rosetta.Aggregates
 open SI.Rosetta.Common
 
 type TestKitAggregateRepository() =
-    let InMemoryStore = ConcurrentDictionary<string, List<IAggregateEvents>>()
+    let InMemoryStore = ConcurrentDictionary<obj, List<IAggregateEvents>>()
     let ProducedEvents = List<IAggregateEvents>()
 
     let LoadEvents key =
@@ -28,7 +28,7 @@ type TestKitAggregateRepository() =
                             and 'TAggregate : (new : unit -> 'TAggregate)
                             and 'TAggregate : null
                             and 'TEvents :> IAggregateEvents>
-            (id: string, version: int) =
+            (id: obj, version: int) =
             task {
                 if not (InMemoryStore.ContainsKey id) then
                     return null

@@ -46,7 +46,7 @@ module HostBuilderExtensions =
                 .AddTransient<IProjectionHandlerFactory, ProjectionHandlerFactory>()
                 .AddTransient<ISubscriptionFactory, ESSubscriptionFactory>()
                 .AddTransient<IProjectionsFactory, ProjectionsFactory>()
-                .AddTransient<IJSProjectionsFactory, JSProjectionsFactory>() |> ignore
+                .AddTransient<IESCustomJSProjectionsFactory, ESCustomJSProjectionsFactory>() |> ignore
 
             RegisterProjectionHandlers(services, projectionsAssembly)
 
@@ -54,7 +54,7 @@ module HostBuilderExtensions =
                 new EventStoreProjectionsHostedServiceInstance(
                     sp.GetRequiredService<ILogger<EventStoreProjectionsHostedServiceInstance>>(),
                     sp.GetRequiredService<IProjectionsFactory>(),
-                    sp.GetRequiredService<IJSProjectionsFactory>(),
+                    sp.GetRequiredService<IESCustomJSProjectionsFactory>(),
                     projectionsAssembly
                 )) |> ignore
         )
@@ -85,7 +85,7 @@ module CSharp_HostBuilderExtensions =
                 .AddTransient<IProjectionHandlerFactory, ProjectionHandlerFactory>()
                 .AddTransient<ISubscriptionFactory, ESSubscriptionFactory>()
                 .AddTransient<IProjectionsFactory, ProjectionsFactory>()
-                .AddTransient<IJSProjectionsFactory, JSProjectionsFactory>() |> ignore
+                .AddTransient<IESCustomJSProjectionsFactory, ESCustomJSProjectionsFactory>() |> ignore
 
             RegisterProjectionHandlers(services, projectionsAssembly)
 
@@ -93,7 +93,7 @@ module CSharp_HostBuilderExtensions =
                 new EventStoreProjectionsHostedServiceInstance(
                     sp.GetRequiredService<ILogger<EventStoreProjectionsHostedServiceInstance>>(),
                     sp.GetRequiredService<IProjectionsFactory>(),
-                    sp.GetRequiredService<IJSProjectionsFactory>(),
+                    sp.GetRequiredService<IESCustomJSProjectionsFactory>(),
                     projectionsAssembly
                 )) |> ignore
         )

@@ -38,3 +38,4 @@ type Aggregate<'TAggregateState, 'TCommands, 'TEvents
         changes.Add event
 
     abstract Execute: command: 'TCommands -> unit
+    

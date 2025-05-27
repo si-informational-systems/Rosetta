@@ -2,5 +2,5 @@ namespace SI.Rosetta.Aggregates
 
 [<AllowNullLiteral>]
 type IAggregateState =
-    abstract member Id: string
+    abstract member Id: obj
     abstract member Version: int

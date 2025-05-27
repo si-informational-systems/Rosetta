@@ -8,15 +8,9 @@ type RegisterOrganization = {
     Name: string
 }
 
-type Nested = {
-    Value: string
-    Options: Dictionary<string, string>
-}
-
 type ChangeOrganizationName = {
     Id: string
     Name: string
-    Nested: Nested
 }
 
 type OrganizationRegistered = {
@@ -27,7 +21,6 @@ type OrganizationRegistered = {
 type OrganizationNameChanged = {
     Id: string
     Name: string
-    Nested: Nested
 }
 
 [<RequireQualifiedAccess>]

@@ -41,7 +41,7 @@ module OutputFormatting =
                 
             let result = { Expectation = expectedString; Failure = None }
             
-            let difference = ObjectComparer.DeepCompare(ex |> Option.toObj) (ac |> Option.toObj)
+            let difference = ObjectComparer.DeepCompare(ex |> Option.toObj, ac |> Option.toObj)
             if difference <> String.Empty then
                 let failure =
                     if expectedString <> resultString then

@@ -10,7 +10,7 @@ module ObjectComparer =
     /// Returns an empty string if objects are equal, otherwise returns a string containing all differences.
     /// Handles primitive types, strings, collections, pointers, and complex objects with their properties and fields.
     /// Also detects and handles circular references to prevent infinite recursion.
-    let DeepCompare (a: 'A) (b: 'A) =
+    let DeepCompare (a: 'A, b: 'A) =
         // Set to track visited object pairs to prevent circular reference infinite loops
         let visited = Generic.HashSet<obj * obj>()
         

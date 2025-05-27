@@ -25,7 +25,7 @@ type OrganizationAggregate() =
         this.Apply event
 
     member private this.ChangeName(cmd: ChangeOrganizationName) =
-        let event = OrganizationEvents.NameChanged { Id = cmd.Id; Name = cmd.Name; Nested = cmd.Nested }
+        let event = OrganizationEvents.NameChanged { Id = cmd.Id; Name = cmd.Name }
         this.Apply event
 
     member private this.IsIdempotent(cmd: RegisterOrganization) =

@@ -5,7 +5,7 @@ open SI.Rosetta.Common
 [<AbstractClass>]
 [<AllowNullLiteral>]
 type AggregateState<'TEvents when 'TEvents :> IAggregateEvents>() =
-    let mutable id = ""
+    let mutable id : obj = null
     let mutable version = 0
     
     interface IAggregateState with

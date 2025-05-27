@@ -6,12 +6,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="TestKitSubscription.fs" />
-    <Compile Include="TestKitSubscriptionFactory.fs" />
     <Compile Include="IdValidator.fs" />
     <Compile Include="TestKitProjectionStore.fs" />
     <Compile Include="StubCheckpointReader.fs" />
     <Compile Include="StubCheckpointWriter.fs" />
+    <Compile Include="TestKitSubscription.fs" />
+    <Compile Include="TestKitSubscriptionFactory.fs" />
+    <Compile Include="TestKitBase.fs" />
   </ItemGroup>
 
   <ItemGroup>

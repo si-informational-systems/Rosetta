@@ -56,14 +56,23 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                     do! session.SaveChangesAsync()
                 })
 
-        member this.LoadAsync(ids: string[]) =
+        member this.LoadAsync(ids: obj[]) =
             DefensivelyLoad 0 (fun () ->
                 task {
+                    let stringIds = 
+                            try
+                                ids |> Array.map (fun id -> id.ToString())
+                            with
+                            | ex -> raise (InvalidOperationException("Failed to convert ids to string array", ex))
                     use session = store.OpenAsyncSession()
-                    return! session.LoadAsync<'T>(ids)
+                    let! ravenResult = session.LoadAsync<'T>(stringIds)
+                    let result = System.Collections.Generic.Dictionary<obj, 'T>()
+                    for kvp in ravenResult do
+                        result.[kvp.Key :> obj] <- kvp.Value
+                    return result
                 })
 
-        member this.DeleteAsync(id: string) =
+        member this.DeleteAsync(id: obj) =
             DefensivelyStore 0 (fun () ->
                 task {
                     use session = store.OpenAsyncSession()
@@ -71,7 +80,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                     do! session.SaveChangesAsync()
                 })
 
-        member this.DeleteInUnitOfWorkAsync(ids: string[]) =
+        member this.DeleteInUnitOfWorkAsync(ids: obj[]) =
             DefensivelyStore 0 (fun () ->
                 task {
                     use session = store.OpenAsyncSession()

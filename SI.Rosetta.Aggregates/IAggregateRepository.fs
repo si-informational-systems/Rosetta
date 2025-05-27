@@ -11,4 +11,4 @@ type IAggregateRepository =
                                         and 'TAggregate :> IAggregate
                                         and 'TAggregate : null
                                         and 'TEvents :> IAggregateEvents> : 
-        id: string * [<Optional; DefaultParameterValue(2147483647)>] version: int -> Task<'TAggregate>
+        id: obj * [<Optional; DefaultParameterValue(2147483647)>] version: int -> Task<'TAggregate>

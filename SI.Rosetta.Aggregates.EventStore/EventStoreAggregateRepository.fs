@@ -20,7 +20,10 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
                 dict.Add(EventStoreSerialization.AggregateClrTypeNameHeader, aggregate.GetType().AssemblyQualifiedName :> obj)
                 dict
 
-            let streamName = aggregate.Id
+            let streamName = 
+                    match aggregate.Id with
+                    | :? string as s -> s
+                    | _ -> raise (System.ArgumentException("EventStore expects a string for the id argument so it can assign a proper StreamName"))
             let newEvents = aggregate.Changes |> Seq.toList
             let originalVersion = aggregate.Version - newEvents.Length
             let expectedRevision = 
@@ -57,9 +60,12 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
                                     and 'TAggregate : (new : unit -> 'TAggregate)
                                     and 'TAggregate : null
                                     and 'TEvents :> IAggregateEvents>
-            (id: string, version: int) =
+            (id: obj, version: int) =
             task {
-                let streamName = id
+                let streamName = 
+                    match id with
+                    | :? string as s -> s
+                    | _ -> raise (System.ArgumentException("EventStore expects a string for the id argument so it can assign a proper StreamName"))
                 let aggregateType = typeof<'TAggregate>
                 let instanceOfState = AggregateStateFactory.CreateStateFor<'TEvents> aggregateType
                 let aggregate = new 'TAggregate()

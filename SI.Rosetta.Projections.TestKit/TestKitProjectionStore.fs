@@ -5,7 +5,7 @@ open System.Collections.Generic
 open SI.Rosetta.Projections
 
 type TestKitProjectionStore() =
-    let InMemoryStore = ConcurrentDictionary<string, obj>()
+    let InMemoryStore = ConcurrentDictionary<obj, obj>()
             
     interface IProjectionsStore with
         member _.StoreAsync<'T>(doc: 'T) = task {
@@ -20,8 +20,8 @@ type TestKitProjectionStore() =
                 do! (this :> IProjectionsStore).StoreAsync<'T>(doc)
         }
             
-        member _.LoadAsync<'T when 'T : not struct>(ids: string[]) = task {
-            let dict = Dictionary<string, 'T>()
+        member _.LoadAsync<'T when 'T : not struct>(ids: obj[]) = task {
+            let dict = Dictionary<obj, 'T>()
             for id in ids do
                 match InMemoryStore.TryGetValue id with
                 | true, value -> dict.Add(id, value :?> 'T)
@@ -29,12 +29,12 @@ type TestKitProjectionStore() =
             return dict
         }
             
-        member _.DeleteAsync(id: string) = task {
+        member _.DeleteAsync(id: obj) = task {
             let mutable removed = null
             InMemoryStore.TryRemove(id, &removed) |> ignore
         }
             
-        member _.DeleteInUnitOfWorkAsync(ids: string[]) = task {
+        member _.DeleteInUnitOfWorkAsync(ids: obj[]) = task {
             for id in ids do
                 let mutable removed = null
                 InMemoryStore.TryRemove(id, &removed) |> ignore

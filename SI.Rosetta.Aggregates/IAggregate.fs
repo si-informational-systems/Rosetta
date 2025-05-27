@@ -5,7 +5,7 @@ open SI.Rosetta.Common
 
 [<AllowNullLiteral>]
 type IAggregate =
-    abstract member Id: string
+    abstract member Id: obj
     abstract member Version: int
     abstract member Changes: List<IAggregateEvents>
     abstract member PublishedEvents: List<IAggregateEvents>

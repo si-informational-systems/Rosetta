@@ -8,10 +8,10 @@ open Microsoft.Extensions.Configuration
 open FSharp.Control
 open System.Reflection
 
-type IJSProjectionsFactory =
+type IESCustomJSProjectionsFactory =
     abstract member CreateCustomProjections: Assembly -> Task
 
-type JSProjectionsFactory(conf: IConfiguration) =
+type ESCustomJSProjectionsFactory(conf: IConfiguration) =
     let ProjectionManagementClient = 
         let settings = EventStoreClientSettings.Create(conf.GetSection("EventStoreDB:ConnectionString").Value)
         new EventStoreProjectionManagementClient(settings)
@@ -23,7 +23,7 @@ type JSProjectionsFactory(conf: IConfiguration) =
         |> dict
 
     member private this.BuildProjectionDefinitions (assembly: Assembly) =
-        let projections = ProjectionDiscovery.DiscoverProjections assembly
+        let projections = CustomProjectionDiscovery.DiscoverCustomProjections assembly
         let projectDefinitions = Dictionary<string, string>()
 
         for parameters in projections do
@@ -32,7 +32,7 @@ type JSProjectionsFactory(conf: IConfiguration) =
 
         projectDefinitions
 
-    interface IJSProjectionsFactory with
+    interface IESCustomJSProjectionsFactory with
         member this.CreateCustomProjections(assembly: Assembly) = 
             task {
                 let projectDefinitions = this.BuildProjectionDefinitions assembly
@@ -52,5 +52,5 @@ type JSProjectionsFactory(conf: IConfiguration) =
                     do! ProjectionManagementClient.CreateContinuousAsync(name, code)
 
                 for KeyValue(name, code) in projectDefinitions do
-                    do! ProjectionManagementClient.UpdateAsync(name, code, emitEnabled = true)
+                    do! ProjectionManagementClient.UpdateAsync(name, code, emitEnabled = true).ConfigureAwait(false)
             }

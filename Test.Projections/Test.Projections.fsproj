@@ -38,7 +38,6 @@
     <ProjectReference Include="..\SI.Rosetta.Projections.HostBuilder\SI.Rosetta.Projections.HostBuilder.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections.RavenDB\SI.Rosetta.Projections.RavenDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />
-    <ProjectReference Include="..\Test.DTOs\Test.DTOs.csproj" />
     <ProjectReference Include="..\Test.PL\Test.PL.fsproj" />
   </ItemGroup>
 

@@ -11,7 +11,7 @@ open SI.Rosetta.Projections.EventStore
 type EventStoreProjectionsHostedServiceInstance(
     logger: ILogger<EventStoreProjectionsHostedServiceInstance>,
     projectionsFactory: IProjectionsFactory,
-    jsProjectionsFactory: IJSProjectionsFactory,
+    jsProjectionsFactory: IESCustomJSProjectionsFactory,
     assemblyContainingProjections: Assembly) =
             
     member private this.RunProjections() =

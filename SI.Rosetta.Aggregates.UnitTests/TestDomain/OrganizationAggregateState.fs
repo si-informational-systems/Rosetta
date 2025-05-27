@@ -1,7 +1,6 @@
 ﻿namespace SI.Rosetta.Aggregates.UnitTests
 
 open SI.Rosetta.Aggregates
-open System
 
 [<AllowNullLiteral>]
 type OrganizationAggregateState() =

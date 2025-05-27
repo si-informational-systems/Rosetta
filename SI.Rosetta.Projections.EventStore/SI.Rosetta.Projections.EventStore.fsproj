@@ -27,8 +27,8 @@
     <Compile Include="EventStoreProjection.fs" />
     <Compile Include="EventStoreProjectionParameters.fs" />
     <Compile Include="EventStoreProjectionBuilder.fs" />
-    <Compile Include="ProjectionDiscovery.fs" />
-    <Compile Include="JSProjectionsFactory.fs" />
+    <Compile Include="CustomProjectionDiscovery.fs" />
+    <Compile Include="ESCustomJSProjectionsFactory.fs" />
     <Compile Include="ESSubscription.fs" />
     <Compile Include="ESSubscriptionFactory.fs" />
   </ItemGroup>
