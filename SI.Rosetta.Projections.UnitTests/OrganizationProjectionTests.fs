@@ -13,12 +13,12 @@ type OrganizationProjectionTests() =
             let id = sprintf "Organizations-%s" (Guid.NewGuid().ToString())
             let ev = OrganizationEvents.Registered { Id = id; Name = "Test Org" }
 
-            do! this.Given(ev)
+            do! this.Given(ev).ConfigureAwait(false)
 
             let doc : Organization = {
                 Id = id
                 Name = "Test Org"
             }
 
-            do! this.Then(doc)
+            do! this.Then(doc).ConfigureAwait(false)
         }

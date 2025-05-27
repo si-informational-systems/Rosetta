@@ -22,7 +22,7 @@ type TestKitSubscription<'TEvent when 'TEvent :> IEvents>() =
                     |> Seq.filter (fun kvp -> kvp.Key >= fromCheckpoint)
                     |> Seq.map (fun kvp -> eventReceived(kvp.Value, kvp.Key))
                     |> Seq.toArray
-                let! _ = Task.WhenAll(tasks)
+                let! _ = Task.WhenAll(tasks).ConfigureAwait(false)
                 return ()
             } :> Task
 

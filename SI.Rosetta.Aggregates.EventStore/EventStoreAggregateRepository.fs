@@ -33,15 +33,14 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
             let eventData = newEvents |> List.map (fun e -> this.ToEventData e commitHeaders)
             
             let! result = 
-                client.AppendToStreamAsync(streamName, expectedRevision, eventData)
-                |> Async.AwaitTask
+                client.AppendToStreamAsync(streamName, expectedRevision, eventData).ConfigureAwait(false)
             aggregate.Changes.Clear()
         }
 
     member private this.TrySaveAggregate (aggregate: IAggregate) =
         task {
             try
-                do! this.SaveAggregate aggregate
+                do! this.SaveAggregate(aggregate).ConfigureAwait(false)
             with
             | :? AggregateException as ex when (ex.InnerException :? WrongExpectedVersionException) -> 
                 raise (ConcurrencyException ex.Message)
@@ -52,7 +51,7 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
     interface IAggregateRepository with
         member this.StoreAsync aggregate = 
             task {
-                do! this.TrySaveAggregate aggregate
+                do! this.TrySaveAggregate(aggregate).ConfigureAwait(false)
             }
 
         member this.GetAsync<'TAggregate, 'TEvents 

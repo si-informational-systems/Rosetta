@@ -46,7 +46,7 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
             let handlerType = typeof<'TAggregateHandler>
             let handler = Activator.CreateInstance(handlerType, repository :> IAggregateRepository) :?> 'TAggregateHandler
 
-            do! handler.ExecuteAsync command
+            do! handler.ExecuteAsync(command).ConfigureAwait(false)
             let producedEvents = repository.GetProducedEvents
             let publishedEvents = handler.GetPublishedEvents()
 
@@ -65,16 +65,6 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
         
     member this.When(command: IAggregateCommands) =
         WhenCommand <- command
-        
-    member this.ThenNoEvents() = 
-        task {
-            return! this.Then(ResizeArray<IAggregateEvents>(), ResizeArray<IAggregateEvents>())
-        }
-    
-    member this.Then([<ParamArray>] expectedProducedEvents: IAggregateEvents array) = 
-        task {
-            return! this.Then(ResizeArray expectedProducedEvents, ResizeArray<IAggregateEvents>())
-        }
     
     member this.Then(expectedProducedEvents: ResizeArray<IAggregateEvents>, expectedPublishedEvents: ResizeArray<IAggregateEvents>) = 
         task {
@@ -83,7 +73,7 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
             let expectedEventsArray = expectedProducedEvents.ToArray()
             let expectedPublishedEventsArray = expectedPublishedEvents.ToArray()
             let givenEventsArray = GivenEvents.ToArray()
-            let! res = this.ExecuteCommand(AggregateId, givenEventsArray, WhenCommand)
+            let! res = this.ExecuteCommand(AggregateId, givenEventsArray, WhenCommand).ConfigureAwait(false)
             let resultProducedEvents = res.ProducedEvents |> Seq.toArray
             let resultPublishedEvents = res.PublishedEvents |> Seq.toArray
         
@@ -109,11 +99,23 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
             TestValid <- true
             try
                 let givenEvents = GivenEvents.ToArray()
-                let! _ = this.ExecuteCommand(AggregateId, givenEvents, WhenCommand)
+                let! _ = this.ExecuteCommand(AggregateId, givenEvents, WhenCommand).ConfigureAwait(false)
                 raise (XunitException(sprintf "[TEST FAILED] Test did not fail on error: %s as was expected" name))
             with 
             | :? DomainException as e when e.Name = name -> ()
             | _ -> raise (XunitException(sprintf "[TEST FAILED] Test did not fail on error: %s as was expected" name))
+        }
+        
+    member this.ThenNoEvents() = 
+        task {
+            let result = this.Then(ResizeArray<IAggregateEvents>(), ResizeArray<IAggregateEvents>())
+            return! result.ConfigureAwait(false)
+        }
+    
+    member this.Then([<ParamArray>] expectedProducedEvents: IAggregateEvents array) = 
+        task {
+            let result = this.Then(ResizeArray expectedProducedEvents, ResizeArray<IAggregateEvents>())
+            return! result.ConfigureAwait(false)
         }
     
     interface IDisposable with

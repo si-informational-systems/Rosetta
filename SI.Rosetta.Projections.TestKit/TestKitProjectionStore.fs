@@ -17,7 +17,7 @@ type TestKitProjectionStore() =
             
         member this.StoreInUnitOfWorkAsync<'T>(docs: 'T[]) = task {
             for doc in docs do
-                do! (this :> IProjectionsStore).StoreAsync<'T>(doc)
+                do! (this :> IProjectionsStore).StoreAsync<'T>(doc).ConfigureAwait(false)
         }
             
         member _.LoadAsync<'T when 'T : not struct>(ids: obj[]) = task {

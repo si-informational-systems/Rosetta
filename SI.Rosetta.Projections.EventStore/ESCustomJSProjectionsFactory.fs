@@ -49,7 +49,7 @@ type ESCustomJSProjectionsFactory(conf: IConfiguration) =
                 let newProjections = this.GetNewProjectionNames(projectDefinitions, projectionNames)
 
                 for KeyValue(name, code) in newProjections do
-                    do! ProjectionManagementClient.CreateContinuousAsync(name, code)
+                    do! ProjectionManagementClient.CreateContinuousAsync(name, code).ConfigureAwait(false)
 
                 for KeyValue(name, code) in projectDefinitions do
                     do! ProjectionManagementClient.UpdateAsync(name, code, emitEnabled = true).ConfigureAwait(false)

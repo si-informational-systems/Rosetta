@@ -30,21 +30,21 @@ and PersonProjectionHandler(store: INoSqlStore) =
                         Status = "Active"
                         Metadata = e.Metadata
                     }
-                    do! Store.StoreAsync person
+                    do! Store.StoreAsync(person).ConfigureAwait(false)
 
                 | PersonEvents.NameChanged e ->
                     do! this.Project(e.Id, fun person ->
-                        { person with Name = e.Name })
+                        { person with Name = e.Name }).ConfigureAwait(false)
                 | PersonEvents.HeightSet e ->
                     do! this.Project(e.Id, fun person ->
-                        { person with Height = e.Height })
+                        { person with Height = e.Height }).ConfigureAwait(false)
             }
             
     member private this.Project(id: string, update: Person -> Person) =
         task {
-            let! doc = Store.LoadAsync<Person>([|id|])
+            let! doc = Store.LoadAsync<Person>([|id|]).ConfigureAwait(false)
             let person = doc.[id]
             let updated = update person
-            do! Store.StoreAsync(updated)
+            do! Store.StoreAsync(updated).ConfigureAwait(false)
         }
 

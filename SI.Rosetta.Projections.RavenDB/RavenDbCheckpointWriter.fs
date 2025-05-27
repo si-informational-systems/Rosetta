@@ -22,12 +22,12 @@ type RavenDbCheckpointWriter(store: IDocumentStore) =
                 task {
                     try
                         use session = store.OpenAsyncSession()
-                        do! session.StoreAsync(checkpoint)
-                        do! session.SaveChangesAsync()
+                        do! session.StoreAsync(checkpoint).ConfigureAwait(false)
+                        do! session.SaveChangesAsync().ConfigureAwait(false)
                     with ex ->
                         if not (IsTransient ex) || retryCount >= MaxRetries then
                             raise ex
-                        do! Task.Delay(Delay)
+                        do! Task.Delay(Delay).ConfigureAwait(false)
                         do! TryWrite (retryCount + 1)
                 }
             TryWrite 0 

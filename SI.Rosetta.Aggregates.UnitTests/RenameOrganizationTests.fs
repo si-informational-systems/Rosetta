@@ -22,7 +22,7 @@ type RenameOrganizationTests() =
             this.When(OrganizationCommands.ChangeName { Id = id; Name = "New Org Name" })
             
             let expectedEvent = OrganizationEvents.NameChanged { Id = id; Name = "New Org Name" }
-            do! this.Then([| expectedEvent :> IAggregateEvents |])
+            do! this.Then([| expectedEvent :> IAggregateEvents |]).ConfigureAwait(false)
         }
 
     [<Fact>]
@@ -39,7 +39,7 @@ type RenameOrganizationTests() =
 
             this.When(OrganizationCommands.ChangeName { Id = id; Name = "New Org Name" })
 
-            do! this.ThenNoEvents()
+            do! this.ThenNoEvents().ConfigureAwait(false)
         }
 
     [<Fact>]
@@ -53,6 +53,6 @@ type RenameOrganizationTests() =
 
             this.When(OrganizationCommands.ChangeName { Id = id; Name = "New Name" })
 
-            do! this.ThenError "OrganizationDoesNotExist"
+            do! this.ThenError("OrganizationDoesNotExist").ConfigureAwait(false)
         }
 

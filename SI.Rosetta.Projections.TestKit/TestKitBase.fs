@@ -57,7 +57,7 @@ type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent
     member this.Given([<ParamArrayAttribute>] args : 'TEvent[]) =
         task {
             let projectionType = typeof<'TProjection>
-            let! projection = this.ProjectionsFactory.CreateAsync(projectionType)
+            let! projection = this.ProjectionsFactory.CreateAsync(projectionType).ConfigureAwait(false)
             let projectionInstance = projection :?> IProjectionInstance<'TEvent>
             let subscription = projectionInstance.Subscription :?> TestKitSubscription<'TEvent>
             subscription.StoreEvents(args)

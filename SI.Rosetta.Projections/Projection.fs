@@ -6,96 +6,72 @@ open System.Threading.Tasks
 open SI.Rosetta.Common
 
 type Projection<'TEvent when 'TEvent :> IEvents>() =
-    let mutable name = ""
-    let mutable subscriptionStreamName = ""
-    let mutable subscription = Unchecked.defaultof<ISubscription<'TEvent>>
-    let mutable handlers = Unchecked.defaultof<IEnumerable<IProjectionHandler<'TEvent>>>
-    let mutable checkpointWriter = Unchecked.defaultof<ICheckpointWriter>
-    let mutable checkpoint = Unchecked.defaultof<Checkpoint>
+    member val Name = "" with get, set
+    member val SubscriptionStreamName = "" with get, set
+    member val Subscription = Unchecked.defaultof<ISubscription<'TEvent>> with get, set
+    member val Handlers = Unchecked.defaultof<IEnumerable<IProjectionHandler<'TEvent>>> with get, set
+    member val CheckpointWriter = Unchecked.defaultof<ICheckpointWriter> with get, set
+    member val Checkpoint = Unchecked.defaultof<Checkpoint> with get, set
     
-    let CreateProjectionException (ev: obj) (checkpoint: uint64) (ae: AggregateException) =
+    member this.CreateProjectionException (ev: obj) (checkpoint: uint64) (ae: AggregateException) =
         let msg = sprintf "PROJECTION FAILURE: Projection %s on Stream %s FAILED on Checkpoint %d during %s" 
-                    name subscriptionStreamName checkpoint (ev.GetType().FullName)
+                    this.Name this.SubscriptionStreamName checkpoint (ev.GetType().FullName)
         let ex = ProjectionException(msg, ae)
-        ex.ProjectionName <- name
+        ex.ProjectionName <- this.Name
         ex.EventTypeName <- ev.GetType().FullName
         ex.Checkpoint <- checkpoint
-        ex.SubscriptionStreamName <- subscriptionStreamName
+        ex.SubscriptionStreamName <- this.SubscriptionStreamName
         ex
         
-    let StartHandlingTasks (e: 'TEvent) (c: uint64) =
+    member this.StartHandlingTasks (e: 'TEvent) (c: uint64) =
         let tasks = List<Task>()
-        for d in handlers do
+        for d in this.Handlers do
             tasks.Add(d.Handle(e, c))
         tasks.ToArray()
         
-    let handleEvent(ev: 'TEvent, c: uint64) =
+    member this.HandleEvent(ev: 'TEvent, c: uint64) =
         task {
-            checkpoint.Value <- c
-            Task.WaitAll(StartHandlingTasks ev c)
-            do! checkpointWriter.Write checkpoint
+            this.Checkpoint.Value <- c
+            Task.WaitAll(this.StartHandlingTasks ev c)
+            do! this.CheckpointWriter.Write this.Checkpoint
         }
         
     interface IProjectionInstance<'TEvent> with
         member this.Name 
-            with get() = name
-            and set value = name <- value
+            with get() = this.Name
+            and set value = this.Name <- value
             
         member this.Subscription
-            with get() = subscription
-            and set value = subscription <- value
+            with get() = this.Subscription
+            and set value = this.Subscription <- value
 
         member this.SubscriptionStreamName
-            with get() = subscriptionStreamName
-            and set value = subscriptionStreamName <- value
+            with get() = this.SubscriptionStreamName
+            and set value = this.SubscriptionStreamName <- value
             
         member this.Handlers
-            with get() = handlers
-            and set value = handlers <- value
+            with get() = this.Handlers
+            and set value = this.Handlers <- value
             
         member this.Checkpoint
-            with get() = checkpoint
-            and set value = checkpoint <- value
+            with get() = this.Checkpoint
+            and set value = this.Checkpoint <- value
 
         member this.ProjectAsync
             with get() = this.ProjectAsync
             
         member this.StartAsync() =
             task {
-                do! subscription.StartAsync checkpoint.Value
+                do! this.Subscription.StartAsync this.Checkpoint.Value
             }
-            
-    member this.Name
-        with get() = name
-        and set value = name <- value
-        
-    member this.SubscriptionStreamName
-        with get() = subscriptionStreamName
-        and set value = subscriptionStreamName <- value
-        
-    member this.Subscription
-        with get() = subscription
-        and set value = subscription <- value
-        
-    member this.Handlers
-        with get() = handlers
-        and set value = handlers <- value
-        
-    member this.CheckpointWriter
-        with get() = checkpointWriter
-        and set value = checkpointWriter <- value
-        
-    member this.Checkpoint
-        with get() = checkpoint
-        and set value = checkpoint <- value 
         
     member private this.TryHandleEvent(ev: 'TEvent, checkpoint: uint64) =
         task {
             try
-                do! handleEvent(ev, checkpoint)
+                do! this.HandleEvent(ev, checkpoint)
             with
             | :? AggregateException as ex ->
-                raise (CreateProjectionException ev checkpoint ex)
+                raise (this.CreateProjectionException ev checkpoint ex)
         }
 
     member this.ProjectAsync(ev: 'TEvent, checkpoint: uint64) = 

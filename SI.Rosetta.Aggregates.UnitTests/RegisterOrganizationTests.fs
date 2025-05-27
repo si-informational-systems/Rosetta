@@ -22,6 +22,6 @@ type RegisterOrganizationTests() =
 
             this.When(OrganizationCommands.Register { Id = id; Name = "Test Org" })
 
-            do! this.Then(expectedProducedEvents, expectedPublishedEvents)
+            do! this.Then(expectedProducedEvents, expectedPublishedEvents).ConfigureAwait(false)
         }
 

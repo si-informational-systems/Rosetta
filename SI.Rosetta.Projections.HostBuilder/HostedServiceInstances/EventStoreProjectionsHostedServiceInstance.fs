@@ -16,7 +16,7 @@ type EventStoreProjectionsHostedServiceInstance(
             
     member private this.RunProjections() =
         task {
-            let! projections = projectionsFactory.CreateFromAssemblyAsync(assemblyContainingProjections)
+            let! projections = projectionsFactory.CreateFromAssemblyAsync(assemblyContainingProjections).ConfigureAwait(false)
             let projectionsToRun =
                 projections
                 |> Seq.map (fun projection -> 
@@ -24,14 +24,14 @@ type EventStoreProjectionsHostedServiceInstance(
                     projection.StartAsync())
                 |> Seq.toArray
                 
-            do! Task.WhenAll(projectionsToRun)
+            do! Task.WhenAll(projectionsToRun).ConfigureAwait(false)
         }
         
     interface IHostedService with
         member this.StartAsync(cancellationToken: CancellationToken) =
             task {
-                do! jsProjectionsFactory.CreateCustomProjections(assemblyContainingProjections)
-                do! this.RunProjections()
+                do! jsProjectionsFactory.CreateCustomProjections(assemblyContainingProjections).ConfigureAwait(false)
+                do! this.RunProjections().ConfigureAwait(false)
             }
             
         member this.StopAsync(cancellationToken: CancellationToken) =

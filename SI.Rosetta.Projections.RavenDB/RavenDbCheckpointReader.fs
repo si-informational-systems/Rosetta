@@ -16,12 +16,12 @@ type RavenDbCheckpointReader(store: IDocumentStore) =
         | _ -> false
 
     interface ICheckpointReader with
-        member this.Read(id: string) =
+        member this.ReadAsync(id: string) =
             let rec TryRead retryCount =
                 task {
                     try
                         use session = store.OpenAsyncSession()
-                        let! checkpoint = session.LoadAsync<Checkpoint>(id)
+                        let! checkpoint = session.LoadAsync<Checkpoint>(id).ConfigureAwait(false)
                         return 
                             match Option.ofObj checkpoint with
                             | None -> Checkpoint(Id = id, Value = 0UL)
@@ -29,7 +29,7 @@ type RavenDbCheckpointReader(store: IDocumentStore) =
                     with ex ->
                         if not (IsTransient ex) || retryCount >= MaxRetries then
                             raise ex
-                        do! Task.Delay(Delay)
+                        do! Task.Delay(Delay).ConfigureAwait(false)
                         return! TryRead (retryCount + 1)
                 }
             TryRead 0 

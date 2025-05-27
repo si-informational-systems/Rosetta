@@ -24,18 +24,18 @@ and OrganizationProjectionHandler(store: INoSqlStore) =
                         Id = e.Id
                         Name = e.Name
                     }
-                    do! Store.StoreAsync organization
+                    do! Store.StoreAsync(organization).ConfigureAwait(false)
 
                 | OrganizationEvents.NameChanged e ->
                     do! this.Project(e.Id, fun organization ->
-                        { organization with Name = e.Name })
+                        { organization with Name = e.Name }).ConfigureAwait(false)
             }
             
     member private this.Project(id: string, update: Organization -> Organization) =
         task {
-            let! doc = Store.LoadAsync<Organization>([|id|])
+            let! doc = Store.LoadAsync<Organization>([|id|]).ConfigureAwait(false)
             let organization = doc.[id]
             let updated = update organization
-            do! Store.StoreAsync(updated)
+            do! Store.StoreAsync(updated).ConfigureAwait(false)
         }
 

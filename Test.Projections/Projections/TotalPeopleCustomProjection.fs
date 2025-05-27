@@ -32,20 +32,20 @@ and TotalPeopleCustomProjectionHandler(store: INoSqlStore) =
                 | TotalPeopleCustomProjectionEvents.Registered _ ->
                     do! this.Project(fun custom ->
                         { custom with
-                            TotalPersons = custom.TotalPersons + 1 })
+                            TotalPersons = custom.TotalPersons + 1 }).ConfigureAwait(false)
 
                 | TotalPeopleCustomProjectionEvents.NameChanged _ -> ()
 
                 | TotalPeopleCustomProjectionEvents.OrganizationRegistered _ ->
                     do! this.Project(fun custom ->
                         { custom with
-                            TotalOrganizations = custom.TotalOrganizations + 1 })
+                            TotalOrganizations = custom.TotalOrganizations + 1 }).ConfigureAwait(false)
             }
             
     member private this.Project(update: TotalPeople -> TotalPeople) =
         task {
             let id = "TotalPeople-All"
-            let! doc = Store.LoadAsync<TotalPeople>([|id|])
+            let! doc = Store.LoadAsync<TotalPeople>([|id|]).ConfigureAwait(false)
             let custom = 
                 if isNull (box doc.[id]) then 
                     { Id = id
@@ -53,7 +53,7 @@ and TotalPeopleCustomProjectionHandler(store: INoSqlStore) =
                       TotalOrganizations = 0 }
                 else doc.[id]
             let updated = update custom
-            do! Store.StoreAsync(updated)
+            do! Store.StoreAsync(updated).ConfigureAwait(false)
         }
 
 and TotalMladensCustomProjectionHandler(store: INoSqlStore) =
@@ -67,7 +67,7 @@ and TotalMladensCustomProjectionHandler(store: INoSqlStore) =
                     if (ev.Name = "Mladen") then
                         do! this.Project(fun totalPeople ->
                             { totalPeople with
-                                TotalPersons = totalPeople.TotalPersons + 1 })
+                                TotalPersons = totalPeople.TotalPersons + 1 }).ConfigureAwait(false)
 
                 | TotalPeopleCustomProjectionEvents.NameChanged ev ->
                    do! this.Project(fun totalPeople -> 
@@ -75,18 +75,18 @@ and TotalMladensCustomProjectionHandler(store: INoSqlStore) =
                            { totalPeople with TotalPersons = totalPeople.TotalPersons + 1 }
                        else
                            { totalPeople with TotalPersons = totalPeople.TotalPersons - 1 }
-                       )
+                       ).ConfigureAwait(false)
 
                 | TotalPeopleCustomProjectionEvents.OrganizationRegistered _ ->
                     do! this.Project(fun totalPeople ->
                         { totalPeople with
-                            TotalOrganizations = totalPeople.TotalOrganizations + 1 })
+                            TotalOrganizations = totalPeople.TotalOrganizations + 1 }).ConfigureAwait(false)
             }
             
     member private this.Project(update: TotalPeople -> TotalPeople) =
         task {
             let id = "TotalPeople-Mladens"
-            let! doc = Store.LoadAsync<TotalPeople>([|id|])
+            let! doc = Store.LoadAsync<TotalPeople>([|id|]).ConfigureAwait(false)
             let custom = 
                 if isNull (box doc.[id]) then 
                     { Id = id
@@ -94,6 +94,6 @@ and TotalMladensCustomProjectionHandler(store: INoSqlStore) =
                       TotalOrganizations = 0 }
                 else doc.[id]
             let updated = update custom
-            do! Store.StoreAsync(updated)
+            do! Store.StoreAsync(updated).ConfigureAwait(false)
         }
 

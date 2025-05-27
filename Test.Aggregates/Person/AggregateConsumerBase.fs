@@ -9,7 +9,7 @@ type AggregateConsumerBase<'TCommands when 'TCommands :> IAggregateCommands and 
     member this.TryHandle(message: 'TCommands, svc: IAggregateHandler, logger: ILogger) = 
         task {
             try
-                do! svc.ExecuteAsync(message)
+                do! svc.ExecuteAsync(message).ConfigureAwait(false)
                 for event in svc.GetPublishedEvents() do
                     logger.LogInformation("Published event: {Event}", event)
             with

@@ -3,4 +3,4 @@ namespace SI.Rosetta.Projections
 open System.Threading.Tasks
 
 type ICheckpointReader =
-    abstract member Read: id: string -> Task<Checkpoint> 
+    abstract member ReadAsync: id: string -> Task<Checkpoint> 

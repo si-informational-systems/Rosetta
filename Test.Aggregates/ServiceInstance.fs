@@ -83,15 +83,15 @@ type ServiceInstance(
                         TimeIssued = DateTime.Now
                     }
                     let registerCmd : RegisterPerson = { 
-                        Id = "Persons-5"
-                        Name = "Steff"
+                        Id = "Persons-7"
+                        Name = "Nikola"
                         Metadata = metadata
                     }
 
                     //Benchmark register command
                     let sw = Stopwatch.StartNew()
                     let memBefore = GC.GetTotalMemory(true)
-                    do! consumer.Consume(registerCmd)
+                    do! consumer.Consume(registerCmd).ConfigureAwait(false)
                     let memAfter = GC.GetTotalMemory(true)
                     sw.Stop()
                     printfn "Register Command - Time: %dms, Memory: %dKB" sw.ElapsedMilliseconds ((memAfter - memBefore) / 2024L)

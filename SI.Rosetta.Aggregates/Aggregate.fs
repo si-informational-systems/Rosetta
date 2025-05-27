@@ -10,32 +10,27 @@ type Aggregate<'TAggregateState, 'TCommands, 'TEvents
     and 'TCommands :> IAggregateCommands
     and 'TEvents :> IAggregateEvents 
     and 'TAggregateState : (new : unit -> 'TAggregateState)>() =
-    let mutable state = new 'TAggregateState()
-    let changes = List<IAggregateEvents>()
-    let publishedEvents = List<IAggregateEvents>()
+    member val State = new 'TAggregateState() with get, set
+    member val Changes = List<IAggregateEvents>() with get, set
+    member val PublishedEvents = List<IAggregateEvents>() with get, set
         
     interface IAggregateInstance<'TCommands> with
-        member this.Id = state.Id
-        member this.Version = state.Version
-        member this.Changes = changes
-        member this.PublishedEvents = publishedEvents
+        member this.Id = this.State.Id
+        member this.Version = this.State.Version
+        member this.Changes = this.Changes
+        member this.PublishedEvents = this.PublishedEvents
         member this.SetState state = 
             this.State <- state :?> 'TAggregateState     
         member this.Execute command =
             this.Execute command
             
-    member this.Id = state.Id
-    member this.Version = state.Version
-    member this.Changes = changes
-    member this.PublishedEvents = publishedEvents
-    member this.ShouldHandleIdempotency = state.Version > 0
-    member this.State
-        with get() = state
-        and set value = state <- value
+    member this.Id = this.State.Id
+    member this.Version = this.State.Version
+    member this.ShouldHandleIdempotency = this.State.Version > 0
         
     member this.Apply event =
-        state.Mutate event
-        changes.Add event
+        this.State.Mutate event
+        this.Changes.Add event
 
     abstract Execute: command: 'TCommands -> unit
     

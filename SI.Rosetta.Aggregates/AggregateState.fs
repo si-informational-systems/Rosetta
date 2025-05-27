@@ -5,20 +5,15 @@ open SI.Rosetta.Common
 [<AbstractClass>]
 [<AllowNullLiteral>]
 type AggregateState<'TEvents when 'TEvents :> IAggregateEvents>() =
-    let mutable id : obj = null
-    let mutable version = 0
+    member val Id : obj = null with get, set
+    member val Version = 0 with get, set
     
     interface IAggregateState with
-        member this.Id = id
-        member this.Version = version
-
-    member this.Id
-        with get() = id
-        and set value = id <- value
-    member this.Version = version
+        member this.Id = this.Id
+        member this.Version = this.Version
 
     member this.Mutate event =
         this.ApplyEvent event
-        version <- version + 1
+        this.Version <- this.Version + 1
 
     abstract ApplyEvent: ev: 'TEvents -> unit

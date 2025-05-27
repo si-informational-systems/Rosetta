@@ -28,7 +28,7 @@ type ESSubscription<'TEvent when 'TEvent :> IEvents>
             let oneBasedCheckPoint = event.OriginalEventNumber.ToUInt64() + 1UL
             if isNotDeleted event then
                 let ev = EventStoreSerialization.Deserialize event
-                do! eventReceived (ev, oneBasedCheckPoint)
+                do! eventReceived(ev, oneBasedCheckPoint).ConfigureAwait(false)
             
             currentCheckpoint <- oneBasedCheckPoint
             if resubscriptionAttempt > 0 then
@@ -99,7 +99,7 @@ type ESSubscription<'TEvent when 'TEvent :> IEvents>
                             logger.LogError("Subscription {Name}-{StreamName} DROPPED: {Exception}", this.Name, this.StreamName, ex)
                             resubscriptionAttempt <- resubscriptionAttempt + 1
                             if resubscriptionAttempt < MaxResubscriptionAttempts then
-                                return! subscribe()
+                                return! subscribe().ConfigureAwait(false)
                             else
                                 hasFailed <- true
                                 error <- ex.Message
@@ -107,7 +107,7 @@ type ESSubscription<'TEvent when 'TEvent :> IEvents>
                                     this.Name, this.StreamName)
                                 raise ex
                     }
-                do! subscribe()
+                do! subscribe().ConfigureAwait(false)
             } 
 
     member this.Name

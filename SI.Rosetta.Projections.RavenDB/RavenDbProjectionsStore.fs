@@ -13,22 +13,22 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
     let rec DefensivelyLoad (retryCount: int) (operation: unit -> Task<'T>) =
         task {
             try
-                return! operation()
+                return! operation().ConfigureAwait(false)
             with ex ->
                 if not (RavenDbProjectionsStore.IsTransient ex) || retryCount >= MaxRetries then
                     raise ex
-                do! Task.Delay(Delay)
+                do! Task.Delay(Delay).ConfigureAwait(false)
                 return! DefensivelyLoad (retryCount + 1) operation
         }
 
     let rec DefensivelyStore (retryCount: int) (operation: unit -> Task) =
         task {
             try
-                do! operation()
+                do! operation().ConfigureAwait(false)
             with ex ->
                 if not (RavenDbProjectionsStore.IsTransient ex) || retryCount >= MaxRetries then
                     raise ex
-                do! Task.Delay(Delay)
+                do! Task.Delay(Delay).ConfigureAwait(false)
                 do! DefensivelyStore (retryCount + 1) operation
         }
 
@@ -43,8 +43,8 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
             DefensivelyStore 0 (fun () -> 
                 task {
                     use session = store.OpenAsyncSession()
-                    do! session.StoreAsync(doc)
-                    do! session.SaveChangesAsync()
+                    do! session.StoreAsync(doc).ConfigureAwait(false)
+                    do! session.SaveChangesAsync().ConfigureAwait(false)
                 })
 
         member this.StoreInUnitOfWorkAsync(docs: 'T[]) =
@@ -52,8 +52,8 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                 task {
                     use session = store.OpenAsyncSession()
                     for doc in docs do
-                        do! session.StoreAsync(doc)
-                    do! session.SaveChangesAsync()
+                        do! session.StoreAsync(doc).ConfigureAwait(false)
+                    do! session.SaveChangesAsync().ConfigureAwait(false)
                 })
 
         member this.LoadAsync(ids: obj[]) =
@@ -65,7 +65,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                             with
                             | ex -> raise (InvalidOperationException("Failed to convert ids to string array", ex))
                     use session = store.OpenAsyncSession()
-                    let! ravenResult = session.LoadAsync<'T>(stringIds)
+                    let! ravenResult = session.LoadAsync<'T>(stringIds).ConfigureAwait(false)
                     let result = System.Collections.Generic.Dictionary<obj, 'T>()
                     for kvp in ravenResult do
                         result.[kvp.Key :> obj] <- kvp.Value
@@ -77,7 +77,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                 task {
                     use session = store.OpenAsyncSession()
                     session.Delete(id)
-                    do! session.SaveChangesAsync()
+                    do! session.SaveChangesAsync().ConfigureAwait(false)
                 })
 
         member this.DeleteInUnitOfWorkAsync(ids: obj[]) =
@@ -86,7 +86,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                     use session = store.OpenAsyncSession()
                     for id in ids do
                         session.Delete(id)
-                    do! session.SaveChangesAsync()
+                    do! session.SaveChangesAsync().ConfigureAwait(false)
                 })
 
     interface INoSqlStore
