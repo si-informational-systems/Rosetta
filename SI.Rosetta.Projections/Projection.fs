@@ -33,7 +33,7 @@ type Projection<'TEvent when 'TEvent :> IEvents>() =
         task {
             this.Checkpoint.Value <- c
             Task.WaitAll(this.StartHandlingTasks ev c)
-            do! this.CheckpointStore.WriteAsync this.Checkpoint
+            do! this.CheckpointStore.StoreAsync this.Checkpoint
         }
         
     interface IProjectionInstance<'TEvent> with

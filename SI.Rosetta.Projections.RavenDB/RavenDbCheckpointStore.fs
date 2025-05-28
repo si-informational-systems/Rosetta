@@ -16,7 +16,7 @@ type RavenDbCheckpointStore(store: IDocumentStore) =
         | _ -> false
 
     interface ICheckpointStore with
-        member this.WriteAsync(checkpoint: Checkpoint) =
+        member this.StoreAsync(checkpoint: Checkpoint) =
             let rec TryWrite retryCount =
                 task {
                     try

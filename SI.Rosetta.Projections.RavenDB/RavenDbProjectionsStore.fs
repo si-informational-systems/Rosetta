@@ -39,7 +39,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
         | _ -> false
 
     interface IProjectionsStore with
-        member this.StoreAsync(doc: 'T) =
+        member this.StoreAsync<'T when 'T : not struct>(doc: 'T) =
             DefensivelyStore 0 (fun () -> 
                 task {
                     use session = store.OpenAsyncSession()
@@ -47,7 +47,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                     do! session.SaveChangesAsync().ConfigureAwait(false)
                 })
 
-        member this.StoreInUnitOfWorkAsync(docs: 'T[]) =
+        member this.StoreInUnitOfWorkAsync<'T when 'T : not struct>(docs: 'T[]) =
             DefensivelyStore 0 (fun () ->
                 task {
                     use session = store.OpenAsyncSession()
@@ -56,7 +56,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                     do! session.SaveChangesAsync().ConfigureAwait(false)
                 })
 
-        member this.LoadAsync(ids: obj[]) =
+        member this.LoadAsync<'T when 'T : not struct>(ids: obj[]) =
             DefensivelyLoad 0 (fun () ->
                 task {
                     let stringIds = 

@@ -8,5 +8,5 @@ type StubCheckpointStore() =
         member this.ReadAsync(id: string): Task<Checkpoint> =
             let c = Checkpoint(Id = id, Value = 0UL)
             Task.FromResult(c)
-        member this.WriteAsync(checkpoint: Checkpoint): Task = 
+        member this.StoreAsync(checkpoint: Checkpoint): Task = 
             Task.CompletedTask

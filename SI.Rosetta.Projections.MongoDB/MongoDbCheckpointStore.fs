@@ -4,8 +4,9 @@ open System
 open System.Threading.Tasks
 open MongoDB.Driver
 open SI.Rosetta.Projections
+open SI.Rosetta.Common
 
-type MongoDbCheckpointStore(store: IMongoClient) =
+type MongoDbCheckpointStore(db: IMongoDatabase) =
     let MaxRetries = 3
     let Delay = TimeSpan.FromMilliseconds(50.0)
 
@@ -15,13 +16,13 @@ type MongoDbCheckpointStore(store: IMongoClient) =
         | _ -> false
 
     interface ICheckpointStore with
-        member this.WriteAsync(checkpoint: Checkpoint) =
+        member this.StoreAsync(checkpoint: Checkpoint) =
                 let rec TryWrite retryCount =
                     task {
                         try
-                            use session = store.OpenAsyncSession()
-                            do! session.StoreAsync(checkpoint).ConfigureAwait(false)
-                            do! session.SaveChangesAsync().ConfigureAwait(false)
+                            let collectionName = PluralizeName(checkpoint.GetType().Name)
+                            let collection = db.GetCollection(collectionName)
+                            do! collection.InsertOneAsync(checkpoint).ConfigureAwait(false)
                         with ex ->
                             if not (IsTransient ex) || retryCount >= MaxRetries then
                                 raise ex
@@ -33,9 +34,10 @@ type MongoDbCheckpointStore(store: IMongoClient) =
             let rec TryRead retryCount =
                 task {
                     try
-                        use! session = store.StartSessionAsync()
-                        let client = session.Client
-                        let! checkpoint = client.
+                        let collectionName = PluralizeName(typeof<Checkpoint>.Name)
+                        let collection = db.GetCollection(collectionName)
+                        let filter = Builders<Checkpoint>.Filter.Eq("_id", id)
+                        let! checkpoint = collection.Find(filter).FirstOrDefaultAsync().ConfigureAwait(false)
                         return 
                             match Option.ofObj checkpoint with
                             | None -> Checkpoint(Id = id, Value = 0UL)
