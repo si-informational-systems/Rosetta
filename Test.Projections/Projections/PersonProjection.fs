@@ -2,6 +2,7 @@
 
 open SI.Rosetta.Projections
 
+[<CLIMutable>]
 type Person = {
     mutable Id: string
     Name: string

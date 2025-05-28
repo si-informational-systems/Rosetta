@@ -6,6 +6,8 @@ open System.Threading
 open SI.Rosetta.Projections
 open MongoDB.Driver
 open SI.Rosetta.Common
+open System.Runtime.ExceptionServices
+open System.Collections.Generic
 
 type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
     let MaxRetries = 3
@@ -45,7 +47,22 @@ type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
                 task {
                     let collectionName = PluralizeName(typeof<'T>.Name)
                     let collection = db.GetCollection(collectionName)
-                    do! collection.InsertOneAsync(doc).ConfigureAwait(false)
+                    let docType = typeof<'T>
+                    let idProp = docType.GetProperty("Id")
+                    let id = if idProp <> null then idProp.GetValue(doc) else null
+                    let filter = Builders<'T>.Filter.Eq("Id", id.ToString())
+                    
+                    // Build update definition: SetOnInsert for Id, Set for other properties
+                    let mutable updateDef = Builders<'T>.Update.SetOnInsert("Id", id)
+                    for prop in docType.GetProperties() do
+                        if prop.Name <> "Id" then
+                            let value = prop.GetValue(doc)
+                            updateDef <- updateDef.Set(prop.Name, value)
+                    
+                    let options = UpdateOptions(IsUpsert = true)
+                    let cancellationToken = CancellationToken.None
+                    let! _ = collection.UpdateOneAsync(filter, updateDef, options, cancellationToken).ConfigureAwait(false)
+                    ()
                 })
 
         member this.StoreInUnitOfWorkAsync<'T when 'T : not struct>(docs: 'T[]) =
@@ -54,16 +71,32 @@ type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
                     use! session = client.StartSessionAsync()
                     let transactionOptions = TransactionOptions(writeConcern = WriteConcern.WMajority)
                     let cancellationToken = CancellationToken.None
-                    do! session.WithTransactionAsync(
-                        (fun s ct ->
-                            task {
+                    let transactionFunc = Func<IClientSessionHandle, CancellationToken, Task<unit>>(fun s ct ->
+                        task {
+                            try
                                 let collectionName = PluralizeName(typeof<'T>.Name)
                                 let collection = db.GetCollection(collectionName)
+                                let docType = typeof<'T>
                                 for doc in docs do
-                                    do! collection.InsertOneAsync(s, doc, cancellationToken = ct).ConfigureAwait(false)
-                            } :> Task),
-                        transactionOptions,
-                        cancellationToken)
+                                    let idProp = docType.GetProperty("Id")
+                                    let id = if idProp <> null then idProp.GetValue(doc) else null
+                                    let filter = Builders<'T>.Filter.Eq("Id", id.ToString())
+                    
+                                    // Build update definition: SetOnInsert for Id, Set for other properties
+                                    let mutable updateDef = Builders<'T>.Update.SetOnInsert("Id", id)
+                                    for prop in docType.GetProperties() do
+                                        if prop.Name <> "Id" then
+                                            let value = prop.GetValue(doc)
+                                            updateDef <- updateDef.Set(prop.Name, value)
+                    
+                                    let options = UpdateOptions(IsUpsert = true)
+                                    let cancellationToken = CancellationToken.None
+                                    let! _ = collection.UpdateOneAsync(filter, updateDef, options, cancellationToken).ConfigureAwait(false)
+                                    ()
+                                ()
+                            with ex -> ExceptionDispatchInfo.Capture(ex).Throw()
+                        })
+                    do! session.WithTransactionAsync<unit>(transactionFunc, transactionOptions, cancellationToken)
                 })
 
         member this.LoadAsync<'T when 'T : not struct>(ids: obj[]) =
@@ -76,19 +109,35 @@ type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
                             | ex -> raise (InvalidOperationException("Failed to convert ids to string array", ex))
                     let collectionName = PluralizeName(typeof<'T>.Name)
                     let collection = db.GetCollection<'T>(collectionName)
-                    let filter = Builders<'T>.Filter.In("_id", stringIds)
-                    let! mongoResult = collection.Find(filter).ToListAsync().ConfigureAwait(false)
-                    let result = System.Collections.Generic.Dictionary<obj, 'T>()
-                    for doc in mongoResult do
-                        let docType = doc.GetType()
-                        let idProperty = docType.GetProperty("Id")
-                        let idField = docType.GetField("Id")
-                        let id = 
-                            if idProperty <> null then idProperty.GetValue(doc)
-                            elif idField <> null then idField.GetValue(doc)
-                            else null
-                        if id <> null then
-                            result.[id] <- doc
+                    let filter = Builders<'T>.Filter.In("Id", stringIds)
+                    let! mongoResult =
+                        task {
+                            try
+                                let! docs = collection.Find(filter).ToListAsync().ConfigureAwait(false)
+                                return docs |> Seq.cast<'T> |> Seq.toArray
+                            with
+                            | :? MongoException -> return Array.empty<'T>
+                        }
+
+                    let foundDocs = 
+                        mongoResult
+                        |> Seq.choose (fun doc ->
+                            let docType = doc.GetType()
+                            let id =
+                                match docType.GetProperty("Id"), docType.GetField("Id") with
+                                | (null, null) -> null
+                                | (prop, _) when prop <> null -> prop.GetValue(doc)
+                                | (_, field) -> field.GetValue(doc)
+                            if isNull id then None else Some (id, doc))
+                        |> dict
+
+                    // Build result: Every input ID maps to either the doc or null
+                    let result = Dictionary<obj, 'T>()
+                    for id in ids do
+                        match foundDocs.TryGetValue(id) with
+                        | true, doc -> result[id] <- doc
+                        | false, _ -> result[id] <- Unchecked.defaultof<'T> // null for reference types
+            
                     return result
                 })
 
@@ -97,7 +146,7 @@ type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
                 task {
                     let collectionName = PluralizeName(typeof<'T>.Name)
                     let collection = db.GetCollection<'T>(collectionName)
-                    let filter = Builders<'T>.Filter.Eq("_id", id.ToString())
+                    let filter = Builders<'T>.Filter.Eq("Id", id.ToString())
                     let! _ = collection.DeleteOneAsync(filter).ConfigureAwait(false)
                     return ()
                 })
@@ -108,17 +157,18 @@ type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
                     use! session = client.StartSessionAsync()
                     let transactionOptions = TransactionOptions(writeConcern = WriteConcern.WMajority)
                     let cancellationToken = CancellationToken.None
-                    do! session.WithTransactionAsync(
-                        (fun s ct ->
-                            task {
+                    let transactionFunc = Func<IClientSessionHandle, CancellationToken, Task<unit>>(fun s ct ->
+                        task {
+                            try 
                                 let stringIds = ids |> Array.map (fun id -> id.ToString())
                                 let collectionName = PluralizeName(typeof<'T>.Name)
                                 let collection = db.GetCollection<'T>(collectionName)
-                                let filter = Builders<'T>.Filter.In("_id", stringIds)
+                                let filter = Builders<'T>.Filter.In("Id", stringIds)
                                 let! _ = collection.DeleteManyAsync(s, filter, cancellationToken = ct).ConfigureAwait(false)
-                            } :> Task),
-                        transactionOptions,
-                        cancellationToken)
+                                return ()
+                            with ex -> ExceptionDispatchInfo.Capture(ex).Throw()
+                        })
+                    do! session.WithTransactionAsync<unit>(transactionFunc, transactionOptions, cancellationToken)
                 })
 
     interface INoSqlStore

@@ -2,11 +2,13 @@
 
 open System
 
+[<CLIMutable>]
 type UserReference = {
     Id: string
     Name: string
 }
 
+[<CLIMutable>]
 type MessageMetadata = {
     IssuedBy: UserReference
     TimeIssued: DateTime

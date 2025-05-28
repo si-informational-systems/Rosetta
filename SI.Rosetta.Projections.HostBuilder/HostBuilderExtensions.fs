@@ -61,7 +61,7 @@ module HostBuilderExtensions =
                 )) |> ignore
         )
 
-    let UseProjectionsWith<'AggregateRepository, 'ProjectionsRepository 
+    let UseProjectionsWithMongo<'AggregateRepository, 'ProjectionsRepository 
     when 'AggregateRepository : not struct
     and 'AggregateRepository :> EventStore
     and 'ProjectionsRepository : not struct
@@ -91,6 +91,7 @@ module HostBuilderExtensions =
                 conventions.Add(CamelCaseElementNameConvention())
                 conventions.Add(IgnoreExtraElementsConvention(true))
                 conventions.Add(EnumRepresentationConvention(MongoDB.Bson.BsonType.String))
+                ConventionRegistry.Register("FSharpConventions", conventions, fun _ -> true)
 
             services
                 .AddSingleton<INoSqlStore, MongoDbProjectionsStore>()

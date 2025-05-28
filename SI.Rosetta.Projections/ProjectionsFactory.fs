@@ -118,8 +118,8 @@ type ProjectionsFactory(provider: IServiceProvider) =
                 do! (loadCheckpointMethod.Invoke(this, [|projection|]) :?> Task).ConfigureAwait(false)
                 
                 // Set checkpoint writer
-                let checkpointWriterProp = projectionType.GetProperty("CheckpointWriter")
-                checkpointWriterProp.SetValue(projection, provider.GetRequiredService<ICheckpointStore>())
+                let checkpointStoreProp = projectionType.GetProperty("CheckpointStore")
+                checkpointStoreProp.SetValue(projection, provider.GetRequiredService<ICheckpointStore>())
                 
                 // Create and set subscription
                 let createSubscriptionMethod = 

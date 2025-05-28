@@ -3,6 +3,7 @@
 open SI.Rosetta.Projections
 open SI.Rosetta.Common
 
+[<CLIMutable>]
 type TotalPeople = {
     mutable Id: string
     TotalPersons: int
