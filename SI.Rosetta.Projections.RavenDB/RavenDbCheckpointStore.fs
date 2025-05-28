@@ -1,4 +1,4 @@
-namespace SI.Rosetta.Projections.RavenDB
+﻿namespace SI.Rosetta.Projections.RavenDB
 
 open System
 open System.Threading.Tasks
@@ -6,16 +6,31 @@ open Raven.Client.Documents
 open Raven.Client.Exceptions
 open SI.Rosetta.Projections
 
-type RavenDbCheckpointReader(store: IDocumentStore) =
+type RavenDbCheckpointStore(store: IDocumentStore) =
     let MaxRetries = 3
-    let Delay = TimeSpan.FromMilliseconds(50.0)
+    let Delay = TimeSpan.FromMilliseconds(100.0)
 
     let IsTransient (ex: Exception) =
         match ex with
         | :? RavenException -> true
         | _ -> false
 
-    interface ICheckpointReader with
+    interface ICheckpointStore with
+        member this.WriteAsync(checkpoint: Checkpoint) =
+            let rec TryWrite retryCount =
+                task {
+                    try
+                        use session = store.OpenAsyncSession()
+                        do! session.StoreAsync(checkpoint).ConfigureAwait(false)
+                        do! session.SaveChangesAsync().ConfigureAwait(false)
+                    with ex ->
+                        if not (IsTransient ex) || retryCount >= MaxRetries then
+                            raise ex
+                        do! Task.Delay(Delay).ConfigureAwait(false)
+                        do! TryWrite (retryCount + 1)
+                }
+            TryWrite 0 
+
         member this.ReadAsync(id: string) =
             let rec TryRead retryCount =
                 task {

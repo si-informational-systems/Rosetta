@@ -18,8 +18,7 @@ type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent
         let serviceCollection = new ServiceCollection()
         let handlerType = typeof<'TProjectionHandler>
         serviceCollection.AddTransient(handlerType) |> ignore
-        serviceCollection.AddTransient<ICheckpointReader, StubCheckpointReader>() |> ignore
-        serviceCollection.AddTransient<ICheckpointWriter, StubCheckpointWriter>() |> ignore
+        serviceCollection.AddTransient<ICheckpointStore, StubCheckpointStore>() |> ignore
         serviceCollection.AddTransient<IProjectionHandlerFactory, ProjectionHandlerFactory>() |> ignore
         serviceCollection.AddTransient<ISubscriptionFactory, TestKitSubscriptionFactory>() |> ignore
         serviceCollection.AddTransient<IProjectionsFactory, ProjectionsFactory>() |> ignore

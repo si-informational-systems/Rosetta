@@ -34,7 +34,7 @@ type ProjectionsFactory(provider: IServiceProvider) =
         
     member this.LoadCheckpoint(proj: Projection<_>) =
         task {
-            let cr = provider.GetRequiredService<ICheckpointReader>()
+            let cr = provider.GetRequiredService<ICheckpointStore>()
             let! checkpoint = cr.ReadAsync(sprintf "%s-%s" CheckpointsPrefix proj.Name).ConfigureAwait(false)
             proj.Checkpoint <- checkpoint
         }
@@ -119,7 +119,7 @@ type ProjectionsFactory(provider: IServiceProvider) =
                 
                 // Set checkpoint writer
                 let checkpointWriterProp = projectionType.GetProperty("CheckpointWriter")
-                checkpointWriterProp.SetValue(projection, provider.GetRequiredService<ICheckpointWriter>())
+                checkpointWriterProp.SetValue(projection, provider.GetRequiredService<ICheckpointStore>())
                 
                 // Create and set subscription
                 let createSubscriptionMethod = 

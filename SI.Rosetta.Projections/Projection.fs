@@ -10,7 +10,7 @@ type Projection<'TEvent when 'TEvent :> IEvents>() =
     member val SubscriptionStreamName = "" with get, set
     member val Subscription = Unchecked.defaultof<ISubscription<'TEvent>> with get, set
     member val Handlers = Unchecked.defaultof<IEnumerable<IProjectionHandler<'TEvent>>> with get, set
-    member val CheckpointWriter = Unchecked.defaultof<ICheckpointWriter> with get, set
+    member val CheckpointStore = Unchecked.defaultof<ICheckpointStore> with get, set
     member val Checkpoint = Unchecked.defaultof<Checkpoint> with get, set
     
     member this.CreateProjectionException (ev: obj) (checkpoint: uint64) (ae: AggregateException) =
@@ -33,7 +33,7 @@ type Projection<'TEvent when 'TEvent :> IEvents>() =
         task {
             this.Checkpoint.Value <- c
             Task.WaitAll(this.StartHandlingTasks ev c)
-            do! this.CheckpointWriter.Write this.Checkpoint
+            do! this.CheckpointStore.WriteAsync this.Checkpoint
         }
         
     interface IProjectionInstance<'TEvent> with

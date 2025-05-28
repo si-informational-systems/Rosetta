@@ -20,9 +20,7 @@
 
   <ItemGroup>
     <Compile Include="ProjectionCheckpoints\Checkpoint.fs" />
-    <Compile Include="ProjectionCheckpoints\ICheckpointReader.fs" />
-    <Compile Include="ProjectionCheckpoints\ICheckpointWriter.fs" />
-    <Compile Include="ProjectionCheckpoints\ICheckpointWriterFactory.fs" />
+    <Compile Include="ProjectionCheckpoints\ICheckpointStore.fs" />
     <Compile Include="ProjectionException.fs" />
     <Compile Include="IProjectionHandler.fs" />
     <Compile Include="IProjectionHandlerFactory.fs" />

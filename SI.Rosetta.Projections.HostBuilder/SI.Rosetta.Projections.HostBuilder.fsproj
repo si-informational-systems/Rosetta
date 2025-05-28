@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <Compile Include="HostedServiceInstances\EventStoreProjectionsHostedServiceInstance.fs" />
+    <Compile Include="ProjectionStores\MongoDB.fs" />
     <Compile Include="ProjectionStores\RavenDB.fs" />
     <Compile Include="ProjectionRepositories\EventStore.fs" />
     <Compile Include="ProjectionsExtractor.fs" />
@@ -24,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SI.Rosetta.Projections.EventStore\SI.Rosetta.Projections.EventStore.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Projections.MongoDB\SI.Rosetta.Projections.MongoDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections.RavenDB\SI.Rosetta.Projections.RavenDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />
   </ItemGroup>
@@ -31,6 +33,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.5" />
     <PackageReference Include="SI.Stack.RavenDB" Version="1.7.0" />
+    <PackageReference Include="SI.Stack.MongoDB" Version="1.5.0" />
   </ItemGroup>
 
   <ItemGroup>

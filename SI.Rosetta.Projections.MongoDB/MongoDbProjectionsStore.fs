@@ -1,21 +1,20 @@
-namespace SI.Rosetta.Projections.RavenDB
+namespace SI.Rosetta.Projections.MongoDB
 
 open System
 open System.Threading.Tasks
-open Raven.Client.Documents
-open Raven.Client.Exceptions
 open SI.Rosetta.Projections
+open MongoDB.Driver
 
-type RavenDbProjectionsStore(store: IDocumentStore) =
+type MongoDbProjectionsStore(store: IMongoClient) =
     let MaxRetries = 3
-    let Delay = TimeSpan.FromMilliseconds(100.0)
+    let Delay = TimeSpan.FromMilliseconds(50.0)
 
     let rec DefensivelyLoad (retryCount: int) (operation: unit -> Task<'T>) =
         task {
             try
                 return! operation().ConfigureAwait(false)
             with ex ->
-                if not (RavenDbProjectionsStore.IsTransient ex) || retryCount >= MaxRetries then
+                if not (MongoDbProjectionsStore.IsTransient ex) || retryCount >= MaxRetries then
                     raise ex
                 do! Task.Delay(Delay).ConfigureAwait(false)
                 return! DefensivelyLoad (retryCount + 1) operation
@@ -26,7 +25,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
             try
                 do! operation().ConfigureAwait(false)
             with ex ->
-                if not (RavenDbProjectionsStore.IsTransient ex) || retryCount >= MaxRetries then
+                if not (MongoDbProjectionsStore.IsTransient ex) || retryCount >= MaxRetries then
                     raise ex
                 do! Task.Delay(Delay).ConfigureAwait(false)
                 do! DefensivelyStore (retryCount + 1) operation
@@ -34,8 +33,8 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
 
     static member private IsTransient (ex: Exception) =
         match ex with
-        | :? AggregateException as ex when (ex.InnerException :? RavenException) -> true
-        | :? RavenException -> true
+        | :? AggregateException as ex when (ex.InnerException :? MongoException) -> true
+        | :? MongoException -> true
         | _ -> false
 
     interface IProjectionsStore with
