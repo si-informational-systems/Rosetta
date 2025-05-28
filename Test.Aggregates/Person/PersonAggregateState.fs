@@ -20,6 +20,7 @@ type PersonAggregateState() =
         match ev with
         | PersonEvents.Registered ev ->
             this.Id <- ev.Id
+            this.Name <- ev.Name
         | PersonEvents.NameChanged ev ->
             this.Name <- ev.Name
         | PersonEvents.HeightSet ev ->

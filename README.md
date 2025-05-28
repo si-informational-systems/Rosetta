@@ -6,6 +6,7 @@
 ![F#](https://img.shields.io/badge/F%23-functional-blue)
 ![Event Sourcing](https://img.shields.io/badge/Event%20Sourcing-Enabled-brightgreen)
 ![RavenDB](https://img.shields.io/badge/RavenDB-Integrated-red)
+![MongoDB](https://img.shields.io/badge/MongoDB-Integrated-red)
 ![EventStoreDB](https://img.shields.io/badge/EventStoreDB-Integrated-orange)
 ![CI](https://img.shields.io/badge/CI-GitHub%20Actions-blue)
 
@@ -13,7 +14,7 @@
 
 ## ✨ Overview
 
-**Rosetta** is a powerful, opinionated framework for building robust, event-sourced, domain-driven microservices in .NET and F#. 
+**Rosetta** is a powerful, opinionated framework for building robust, Event-Sourced, Domain-Driven Microservices in .NET
 
 Levarage the power of **F# Discriminated Unions** inside Rosetta to create error-proof Domain Solutions!
 
@@ -21,7 +22,8 @@ It provides:
 
 - 🧩 **Aggregate Roots** and **Domain Events** (DDD)
 - ⚡ **Event Sourcing** with EventStoreDB
-- 📊 **Projections** with RavenDB (NoSQL) and extensible stores
+- 📊 **Projections** with RavenDB and MongoDB (NoSQL) and extensible stores
+- 📊 **Custom Projection Definitions** with RavenDB and MongoDB (NoSQL) and extensible stores
 - 🏗️ **HostBuilder Extensions** for seamless DI and service registration
 - 🛠️ **CQRS**-friendly patterns and handler abstractions
 - 🧪 **Testability** and clean separation of concerns
@@ -31,7 +33,7 @@ It provides:
 ## 📝 Note:
 
  - While **Rosetta** is opinionated in its choice of technologies, it is built to be easily extensible.
- - You can integrate any Event Sourcing backend or SQL/NoSQL database implementation with minimal effort, adapting the framework to your unique requirements and infrastructure.
+ - You can integrate any Event Sourcing Store and SQL/NoSQL database implementation with minimal effort, adapting the framework to your unique requirements and infrastructure.
  - Any additional implementations are very welcome and would contribute to the Framework's out-of-the-box usability!
 
 ## 📦 Features
@@ -88,35 +90,79 @@ Host
 
 ## 🧑‍💻 Example: Person Aggregate
 
+### Domain Messages
+```fsharp
+type RegisterPerson = {
+    Id: string
+    Name: string
+}
+
+type ChangePersonName = {
+    Id: string
+    Name: string
+}
+
+type PersonRegistered = {
+    Id: string
+    Name: string
+}
+
+type PersonNameChanged = {
+    Id: string
+    Name: string
+}
+
+type PersonCommands =
+    | Register of RegisterPerson
+    | ChangeName of ChangePersonName
+    interface IAggregateCommands // [REQUIRED]
+
+type PersonEvents =
+    | Registered of PersonRegistered
+    | NameChanged of PersonNameChanged
+    interface IAggregateEvents // [REQUIRED]
+```
+
 ### Domain Model
 
 ```fsharp
 type PersonAggregate() =
-    inherit Aggregate<PersonAggregateState, PersonCommands, PersonEvents>()
-    override this.Execute(command) =
+    inherit Aggregate<PersonAggregateState, PersonCommands, PersonEvents>() // <IAggregateState, IAggregateCommands, IAggregateEvents>
+    override this.Execute(command: PersonCommands) =
         match command with
-        | Register cmd -> if this.State.Version > 0 then ... else this.Register cmd
-        | ChangeName cmd -> ...
-        | SetHeight cmd -> ...
+            | PersonCommands.Register cmd -> this.Register cmd
+            | PersonCommands.ChangeName cmd -> this.ChangeName cmd
+
+    member private this.Register(cmd: RegisterPerson) =
+        let event = PersonEvents.Registered { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
+        this.PublishedEvents.Add event //OPTIONAL
+        this.Apply event
+
+    member private this.ChangeName(cmd: ChangePersonName) =
+        let event = PersonEvents.NameChanged { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
+        this.PublishedEvents.Add event //OPTIONAL
+        this.Apply event
 ```
 
 ### State
 
 ```fsharp
 type PersonAggregateState() =
-    inherit AggregateState<PersonEvents>()
+    inherit AggregateState<PersonEvents>() //<IAggregateEvents>
     override this.ApplyEvent(ev) =
         match ev with
-        | Registered e -> this.Id <- e.Id
-        | NameChanged e -> this.Name <- e.Name
-        | HeightSet e -> this.Height <- e.Height
+        | Registered e -> 
+            this.Id <- e.Id
+            this.Name <- e.Name
+        | NameChanged e -> 
+            this.Name <- e.Name
 ```
 
 ### Handler
 
 ```fsharp
 type PersonAggregateHandler(repo: IAggregateRepository) =
-    inherit AggregateHandler<PersonAggregate, PersonCommands, PersonEvents>()
+    inherit AggregateHandler<PersonAggregate, PersonCommands, PersonEvents>() // <IAggregateState, IAggregateCommands, IAggregateEvents>
     override this.ExecuteAsync(command) =
         task {
             match command with
@@ -130,6 +176,11 @@ type PersonAggregateHandler(repo: IAggregateRepository) =
 ## 📊 Example: Person Projection
 
 ```fsharp
+[<HandlesStream(ProjectionStreamNames.PersonStream)>]
+type PersonProjection() =
+    inherit Projection<PersonEvents>() // <IAggregateEvents>
+    interface IAmHandledBy<PersonProjectionHandler, PersonEvents> // <IProjectionHandler, IAggregateEvents>
+
 type PersonProjectionHandler(store: INoSqlStore) =
     interface IProjectionHandler<PersonEvents> with
         member this.Handle(event, checkpoint) =
@@ -137,18 +188,46 @@ type PersonProjectionHandler(store: INoSqlStore) =
                 match event with
                 | Registered e -> let person = { ... }; do! store.StoreAsync person
                 | NameChanged e -> do! this.Project(e.Id, fun p -> { p with Name = e.Name })
-                | HeightSet e -> do! this.Project(e.Id, fun p -> { p with Height = e.Height })
             }
 ```
 
 ---
 
+## 📊 Example: Custom Projections
+
+```fsharp
+[<CustomProjectionStream(ProjectionStreamNames.TotalPeopleStream)>]
+type TotalPeopleCustomProjectionEvents = 
+    | Registered of PersonRegistered
+    interface ICustomProjectionEvents
+
+[<HandlesStream(ProjectionStreamNames.TotalPeopleStream)>]
+type TotalPeopleCustomProjection() =
+    inherit Projection<TotalPeopleCustomProjectionEvents>()
+    interface IAmHandledBy<TotalPeopleCustomProjectionHandler, TotalPeopleCustomProjectionEvents>
+
+type TotalPeopleCustomProjectionHandler(store: INoSqlStore) =
+    let Store = store
+    
+    interface IProjectionHandler<TotalPeopleCustomProjectionEvents> with
+        member this.Handle(event: TotalPeopleCustomProjectionEvents, checkpoint: uint64) =
+            task {
+                match event with
+                | TotalPeopleCustomProjectionEvents.Registered _ ->
+                    do! this.Project(fun custom ->
+                        { custom with
+                            TotalPersons = custom.TotalPersons + 1 }).ConfigureAwait(false)
+```
+
+---
+
+
 ## 🏆 Why Rosetta?
 
-- **DDD-first**: Designed for rich, expressive domain models.
-- **Event Sourcing**: Every state change is an event, not just a row update.
-- **Projections**: Build fast, query-optimized read models.
-- **Extensible**: Add your own aggregates, projections, and stores.
+- **DDD-first**: Designed for rich, expressive Domain Models.
+- **Event Sourcing**: Every state change is an Event, not just a row update.
+- **Projections**: Build fast, query-optimized Read Models.
+- **Extensible**: Add your own Aggregates, (Custom) Projections, and Stores.
 - **Modern .NET**: Async/await, DI, HostBuilder, and more.
 
 ---
@@ -156,10 +235,9 @@ type PersonProjectionHandler(store: INoSqlStore) =
 ## 🛡️ Best Practices
 
 - Use **CQRS**: Separate command and query responsibilities.
-- Keep **domain logic** in aggregates, not handlers or controllers.
-- Use **FluentValidation** for input validation.
+- Keep **Domain logic** in Aggregates, not Handlers or Controllers.
 - Register all services via HostBuilder extensions.
-- Write **unit tests** for aggregates and projections.
+- Write minimal-code **Unit Tests** for Aggregates and Projections using **Aggregate Test Kit** and **Projections Test Kit**
 
 ---
 
@@ -168,6 +246,7 @@ type PersonProjectionHandler(store: INoSqlStore) =
 - [Event Sourcing Concepts](https://martinfowler.com/eaaDev/EventSourcing.html)
 - [Domain-Driven Design](https://dddcommunity.org/)
 - [RavenDB Docs](https://ravendb.net/docs/)
+- [MongoDB Docs](https://www.mongodb.com/docs/)
 - [EventStoreDB Docs](https://developers.eventstore.com/)
 
 ---
