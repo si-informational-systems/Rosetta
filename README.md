@@ -23,7 +23,7 @@ It provides:
 - 🧩 **Aggregate Roots** and **Domain Events** (DDD)
 - ⚡ **Event Sourcing** with EventStoreDB
 - 📊 **Projections** with RavenDB and MongoDB (NoSQL) and extensible stores
-- 📊 **Custom Projection Definitions** with RavenDB and MongoDB (NoSQL) and extensible stores
+- 📊 **Custom (Cross-Aggregate) Projection Definitions** with RavenDB and MongoDB (NoSQL) and extensible stores
 - 🏗️ **HostBuilder Extensions** for seamless DI and service registration
 - 🛠️ **CQRS**-friendly patterns and handler abstractions
 - 🧪 **Testability** and clean separation of concerns
@@ -193,30 +193,35 @@ type PersonProjectionHandler(store: INoSqlStore) =
 
 ---
 
-## 📊 Example: Custom Projections
+## 📊 Example: Cross-Aggregate Custom Projections
 
 ```fsharp
 [<CustomProjectionStream(ProjectionStreamNames.TotalPeopleStream)>]
-type TotalPeopleCustomProjectionEvents = 
-    | Registered of PersonRegistered
+type TotalPeopleAndOrganizationsCustomProjectionEvents = 
+    | PersonRegistered of PersonRegistered
+    | OrganizationRegistered of OrganizationRegistered
     interface ICustomProjectionEvents
 
 [<HandlesStream(ProjectionStreamNames.TotalPeopleStream)>]
-type TotalPeopleCustomProjection() =
+type TotalPeopleAndOrganizationsCustomProjection() =
     inherit Projection<TotalPeopleCustomProjectionEvents>()
-    interface IAmHandledBy<TotalPeopleCustomProjectionHandler, TotalPeopleCustomProjectionEvents>
+    interface IAmHandledBy<TotalPeopleAndOrganizationsCustomProjectionHandler, TotalPeopleAndOrganizationsCustomProjectionEvents>
 
-type TotalPeopleCustomProjectionHandler(store: INoSqlStore) =
+type TotalPeopleAndOrganizationsCustomProjectionHandler(store: INoSqlStore) =
     let Store = store
     
-    interface IProjectionHandler<TotalPeopleCustomProjectionEvents> with
-        member this.Handle(event: TotalPeopleCustomProjectionEvents, checkpoint: uint64) =
+    interface IProjectionHandler<TotalPeopleAndOrganizationsCustomProjectionEvents> with
+        member this.Handle(event: TotalPeopleAndOrganizationsCustomProjectionEvents, checkpoint: uint64) =
             task {
                 match event with
-                | TotalPeopleCustomProjectionEvents.Registered _ ->
+                | TotalPeopleCustomProjectionEvents.PersonRegistered _ ->
                     do! this.Project(fun custom ->
                         { custom with
                             TotalPersons = custom.TotalPersons + 1 }).ConfigureAwait(false)
+                | TotalPeopleCustomProjectionEvents.OrganizationRegistered _ ->
+                    do! this.Project(fun custom ->
+                        { custom with
+                            TotalOrganizations = custom.TotalOrganizations + 1 }).ConfigureAwait(false)
 ```
 
 ---
