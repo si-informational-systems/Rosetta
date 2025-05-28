@@ -1,4 +1,6 @@
 ﻿namespace SI.Rosetta.Projections.HostBuilder
 
+type EventRepository() = class end
+
 type EventStore() = 
-    class end
+    inherit EventRepository()

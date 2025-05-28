@@ -15,7 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="AggregateRepositories\EventStore.fs" />
+    <Compile Include="EventRepositories\EventRepositories.fs" />
     <Compile Include="AggregateInteractorExtractor.fs" />
     <Compile Include="HostBuilderExtensions.fs" />
   </ItemGroup>

@@ -16,9 +16,8 @@
 
   <ItemGroup>
     <Compile Include="HostedServiceInstances\EventStoreProjectionsHostedServiceInstance.fs" />
-    <Compile Include="ProjectionStores\MongoDB.fs" />
-    <Compile Include="ProjectionStores\RavenDB.fs" />
-    <Compile Include="ProjectionRepositories\EventStore.fs" />
+    <Compile Include="ProjectionStores\ProjectionStores.fs" />
+    <Compile Include="EventRepositories\EventRepositories.fs" />
     <Compile Include="ProjectionsExtractor.fs" />
     <Compile Include="HostBuilderExtensions.fs" />
   </ItemGroup>

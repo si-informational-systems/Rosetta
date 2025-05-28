@@ -27,7 +27,7 @@ module HostBuilderExtensionCommmon =
 
 [<AutoOpen>]
 module HostBuilderExtensions =
-    let UseAggregatesWith<'AggregateRepository when 'AggregateRepository : not struct and 'AggregateRepository :> EventStore> 
+    let UseAggregatesWith<'AggregateRepository when 'AggregateRepository : not struct and 'AggregateRepository :> EventRepository> 
         (hostBuilder: IHostBuilder) (aggregatesAssembly: Assembly) =
         hostBuilder.ConfigureServices(fun ctx services ->
             if ctx.Properties.ContainsKey(HostBuilderExtensionInUse) then
@@ -35,8 +35,12 @@ module HostBuilderExtensions =
                 
             ctx.Properties.Add(HostBuilderExtensionInUse, null)
             
-            let esAggRep = InitializeEventStore (ctx.Configuration)
-            services.AddSingleton(typeof<IAggregateRepository>, esAggRep) |> ignore
+            match typeof<'AggregateRepository> with 
+            | t when t = typeof<EventStore> ->
+                let esAggRep = InitializeEventStore (ctx.Configuration)
+                services.AddSingleton(typeof<IAggregateRepository>, esAggRep) |> ignore
+                ()
+            | _ -> raise (Exception("Only types extending `EventRepository` can be used as an Aggregate Repository generic option!"))
 
             RegisterAggregateHandlers(services, aggregatesAssembly)
         )
@@ -44,15 +48,20 @@ module HostBuilderExtensions =
 [<Extension>]
 module CSharp_HostBuilderExtensions =
     [<Extension>]
-    let UseAggregatesWith<'T when 'T : not struct and 'T :> EventStore>(hostBuilder: IHostBuilder, aggregatesAssembly: Assembly) =
+    let UseAggregatesWith<'AggregateRepository when 'AggregateRepository : not struct and 'AggregateRepository :> EventRepository>(hostBuilder: IHostBuilder, aggregatesAssembly: Assembly) =
         hostBuilder.ConfigureServices(fun ctx services ->
             if ctx.Properties.ContainsKey(HostBuilderExtensionInUse) then
                 raise (InvalidOperationException("`UseAggregates` can only be used once!"))
                 
             ctx.Properties.Add(HostBuilderExtensionInUse, null)
             
-            let esAggRep = InitializeEventStore (ctx.Configuration)
-            services.AddSingleton(typeof<IAggregateRepository>, esAggRep) |> ignore
+            match typeof<'AggregateRepository> with 
+            | t when t = typeof<EventStore> ->
+                let esAggRep = InitializeEventStore (ctx.Configuration)
+                services.AddSingleton(typeof<IAggregateRepository>, esAggRep) |> ignore
+                ()
+            | _ -> raise (Exception("Only types extending `EventRepository` can be used as an Aggregate Repository generic option!"))
+
 
             RegisterAggregateHandlers(services, aggregatesAssembly)
         )

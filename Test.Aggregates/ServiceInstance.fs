@@ -83,8 +83,8 @@ type ServiceInstance(
                         TimeIssued = DateTime.Now
                     }
                     let registerCmd : RegisterPerson = { 
-                        Id = "Persons-12"
-                        Name = "Rik"
+                        Id = "Persons-13"
+                        Name = "John Cena"
                         Metadata = metadata
                     }
 

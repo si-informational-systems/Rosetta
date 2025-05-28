@@ -26,9 +26,82 @@ module HostBuilderExtensionCommon =
 
 [<AutoOpen>]
 module HostBuilderExtensions =
-    let UseProjectionsWith<'AggregateRepository, 'ProjectionsRepository 
-    when 'AggregateRepository : not struct 
-    and 'AggregateRepository :> EventStore
+    let UseProjectionsWith<'EventRepository, 'ProjectionsStore 
+    when 'EventRepository : not struct 
+    and 'EventRepository :> EventRepository
+    and 'ProjectionsStore : not struct
+    and 'ProjectionsStore :> ProjectionStore
+    > (hostBuilder: IHostBuilder) (projectionsAssembly: Assembly) =
+        hostBuilder.ConfigureServices(fun ctx services ->
+            if ctx.Properties.ContainsKey(HostBuilderExtensionInUse) then
+                raise (InvalidOperationException("`UseProjections` can only be used once!"))
+                
+            ctx.Properties.Add(HostBuilderExtensionInUse, null)
+
+            services.AddTransient<IProjectionsFactory, ProjectionsFactory>() |> ignore
+            services.AddTransient<IProjectionHandlerFactory, ProjectionHandlerFactory>() |> ignore
+            RegisterProjectionHandlers(services, projectionsAssembly)
+            
+            match typeof<'ProjectionsStore> with
+            //RAVEN DB
+            | t when t = typeof<Raven> ->
+                if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IDocumentStore>)) then
+                    services.AddSingleton<IDocumentStore>(CreateRavenDocumentStore(ctx.Configuration)) |> ignore
+                services
+                    .AddSingleton<INoSqlStore, RavenDbProjectionsStore>()
+                    .AddSingleton<ISqlStore, RavenDbProjectionsStore>()
+                    .AddTransient<ICheckpointStore, RavenDbCheckpointStore>() |> ignore
+            //MONGO DB
+            | t when t = typeof<Mongo> ->
+                if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IMongoClient>)) then
+                    let connection = SI.Stack.MongoDB.MongoConfig.FromConfiguration(ctx.Configuration)
+                    let dbConnection = connection.GenerateConnectionString()
+                    let client = new MongoClient(dbConnection)
+                    services.AddSingleton<IMongoClient>(client) |> ignore
+
+                    services.AddScoped<IMongoDatabase>(fun sp -> 
+                        let client = sp.GetRequiredService<IMongoClient>()
+                        let connection = SI.Stack.MongoDB.MongoConfig.FromConfiguration(ctx.Configuration)
+                        let dbName = connection.DatabaseName
+                        let db = client.GetDatabase(dbName)
+                        db
+                    ) |> ignore
+
+                    let conventions = ConventionPack()
+                    conventions.Add(CamelCaseElementNameConvention())
+                    conventions.Add(IgnoreExtraElementsConvention(true))
+                    conventions.Add(EnumRepresentationConvention(MongoDB.Bson.BsonType.String))
+                    ConventionRegistry.Register("FSharpConventions", conventions, fun _ -> true)
+
+                services
+                    .AddSingleton<INoSqlStore, MongoDbProjectionsStore>()
+                    .AddSingleton<ISqlStore, MongoDbProjectionsStore>()
+                    .AddTransient<ICheckpointStore, MongoDbCheckpointStore>() |> ignore
+
+            | _ -> raise (Exception("Only types extending `ProjectionStore` can be used as a Projections Store generic option!"))
+
+            match typeof<'EventRepository> with
+            //EVENT STORE
+            | t when t = typeof<EventStore> ->
+                services
+                    .AddTransient<ISubscriptionFactory, ESSubscriptionFactory>()
+                    .AddTransient<IESCustomJSProjectionsFactory, ESCustomJSProjectionsFactory>() |> ignore
+                services.AddHostedService(fun sp -> 
+                    new EventStoreProjectionsHostedServiceInstance(
+                        sp.GetRequiredService<ILogger<EventStoreProjectionsHostedServiceInstance>>(),
+                        sp.GetRequiredService<IProjectionsFactory>(),
+                        sp.GetRequiredService<IESCustomJSProjectionsFactory>(),
+                        projectionsAssembly
+                    )) |> ignore
+            | _ -> raise (Exception("Only types extending `EventRepository` can be used as an Event Repository generic option!"))
+        )
+
+[<Extension>]
+module CSharp_HostBuilderExtensions =
+    [<Extension>]
+    let UseProjectionsWith<'EventRepository, 'ProjectionsRepository 
+    when 'EventRepository : not struct 
+    and 'EventRepository :> EventStore
     and 'ProjectionsRepository : not struct
     and 'ProjectionsRepository :> HostBuilder.Raven
     > (hostBuilder: IHostBuilder) (projectionsAssembly: Assembly) =
@@ -38,115 +111,60 @@ module HostBuilderExtensions =
                 
             ctx.Properties.Add(HostBuilderExtensionInUse, null)
 
-            if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IDocumentStore>)) then
-                services.AddSingleton<IDocumentStore>(CreateRavenDocumentStore(ctx.Configuration)) |> ignore
-
-            services
-                .AddSingleton<INoSqlStore, RavenDbProjectionsStore>()
-                .AddSingleton<ISqlStore, RavenDbProjectionsStore>()
-                .AddTransient<ICheckpointStore, RavenDbCheckpointStore>()
-                .AddTransient<IProjectionHandlerFactory, ProjectionHandlerFactory>()
-                .AddTransient<ISubscriptionFactory, ESSubscriptionFactory>()
-                .AddTransient<IProjectionsFactory, ProjectionsFactory>()
-                .AddTransient<IESCustomJSProjectionsFactory, ESCustomJSProjectionsFactory>() |> ignore
-
+            services.AddTransient<IProjectionsFactory, ProjectionsFactory>() |> ignore
+            services.AddTransient<IProjectionHandlerFactory, ProjectionHandlerFactory>() |> ignore
             RegisterProjectionHandlers(services, projectionsAssembly)
-
-            services.AddHostedService(fun sp -> 
-                new EventStoreProjectionsHostedServiceInstance(
-                    sp.GetRequiredService<ILogger<EventStoreProjectionsHostedServiceInstance>>(),
-                    sp.GetRequiredService<IProjectionsFactory>(),
-                    sp.GetRequiredService<IESCustomJSProjectionsFactory>(),
-                    projectionsAssembly
-                )) |> ignore
-        )
-
-    let UseProjectionsWithMongo<'AggregateRepository, 'ProjectionsRepository 
-    when 'AggregateRepository : not struct
-    and 'AggregateRepository :> EventStore
-    and 'ProjectionsRepository : not struct
-    and 'ProjectionsRepository :> HostBuilder.Mongo
-    > (hostBuilder: IHostBuilder) (projectionsAssembly: Assembly)  =
-        hostBuilder.ConfigureServices(fun ctx services ->
-            if ctx.Properties.ContainsKey(HostBuilderExtensionInUse) then
-                raise (InvalidOperationException("`UseProjections` can only be used once!"))
-                
-            ctx.Properties.Add(HostBuilderExtensionInUse, null)
-
-            if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IMongoClient>)) then
-                let connection = SI.Stack.MongoDB.MongoConfig.FromConfiguration(ctx.Configuration)
-                let dbConnection = connection.GenerateConnectionString()
-                let client = new MongoClient(dbConnection)
-                services.AddSingleton<IMongoClient>(client) |> ignore
-
-                services.AddScoped<IMongoDatabase>(fun sp -> 
-                    let client = sp.GetRequiredService<IMongoClient>()
+            
+            match typeof<'ProjectionsStore> with
+            //RAVEN DB
+            | t when t = typeof<Raven> ->
+                if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IDocumentStore>)) then
+                    services.AddSingleton<IDocumentStore>(CreateRavenDocumentStore(ctx.Configuration)) |> ignore
+                services
+                    .AddSingleton<INoSqlStore, RavenDbProjectionsStore>()
+                    .AddSingleton<ISqlStore, RavenDbProjectionsStore>()
+                    .AddTransient<ICheckpointStore, RavenDbCheckpointStore>() |> ignore
+            //MONGO DB
+            | t when t = typeof<Mongo> ->
+                if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IMongoClient>)) then
                     let connection = SI.Stack.MongoDB.MongoConfig.FromConfiguration(ctx.Configuration)
-                    let dbName = connection.DatabaseName
-                    let db = client.GetDatabase(dbName)
-                    db
-                ) |> ignore
+                    let dbConnection = connection.GenerateConnectionString()
+                    let client = new MongoClient(dbConnection)
+                    services.AddSingleton<IMongoClient>(client) |> ignore
 
-                let conventions = ConventionPack()
-                conventions.Add(CamelCaseElementNameConvention())
-                conventions.Add(IgnoreExtraElementsConvention(true))
-                conventions.Add(EnumRepresentationConvention(MongoDB.Bson.BsonType.String))
-                ConventionRegistry.Register("FSharpConventions", conventions, fun _ -> true)
+                    services.AddScoped<IMongoDatabase>(fun sp -> 
+                        let client = sp.GetRequiredService<IMongoClient>()
+                        let connection = SI.Stack.MongoDB.MongoConfig.FromConfiguration(ctx.Configuration)
+                        let dbName = connection.DatabaseName
+                        let db = client.GetDatabase(dbName)
+                        db
+                    ) |> ignore
 
-            services
-                .AddSingleton<INoSqlStore, MongoDbProjectionsStore>()
-                .AddSingleton<ISqlStore, MongoDbProjectionsStore>()
-                .AddTransient<ICheckpointStore, MongoDbCheckpointStore>()
-                .AddTransient<IProjectionHandlerFactory, ProjectionHandlerFactory>()
-                .AddTransient<ISubscriptionFactory, ESSubscriptionFactory>()
-                .AddTransient<IProjectionsFactory, ProjectionsFactory>()
-                .AddTransient<IESCustomJSProjectionsFactory, ESCustomJSProjectionsFactory>() |> ignore
+                    let conventions = ConventionPack()
+                    conventions.Add(CamelCaseElementNameConvention())
+                    conventions.Add(IgnoreExtraElementsConvention(true))
+                    conventions.Add(EnumRepresentationConvention(MongoDB.Bson.BsonType.String))
+                    ConventionRegistry.Register("FSharpConventions", conventions, fun _ -> true)
 
-            RegisterProjectionHandlers(services, projectionsAssembly)
+                services
+                    .AddSingleton<INoSqlStore, MongoDbProjectionsStore>()
+                    .AddSingleton<ISqlStore, MongoDbProjectionsStore>()
+                    .AddTransient<ICheckpointStore, MongoDbCheckpointStore>() |> ignore
 
-            services.AddHostedService(fun sp -> 
-                new EventStoreProjectionsHostedServiceInstance(
-                    sp.GetRequiredService<ILogger<EventStoreProjectionsHostedServiceInstance>>(),
-                    sp.GetRequiredService<IProjectionsFactory>(),
-                    sp.GetRequiredService<IESCustomJSProjectionsFactory>(),
-                    projectionsAssembly
-                )) |> ignore
-        )
+            | _ -> raise (Exception("Only types extending `ProjectionStore` can be used as a Projections Store generic option!"))
 
-[<Extension>]
-module CSharp_HostBuilderExtensions =
-    [<Extension>]
-    let UseProjectionsWith<'AggregateRepository, 'ProjectionsRepository 
-    when 'AggregateRepository : not struct 
-    and 'AggregateRepository :> EventStore
-    and 'ProjectionsRepository : not struct
-    and 'ProjectionsRepository :> HostBuilder.Raven
-    > (hostBuilder: IHostBuilder) (projectionsAssembly: Assembly)  =
-        hostBuilder.ConfigureServices(fun ctx services ->
-            if ctx.Properties.ContainsKey(HostBuilderExtensionInUse) then
-                raise (InvalidOperationException("`UseProjections` can only be used once!"))
-                
-            ctx.Properties.Add(HostBuilderExtensionInUse, null)
-
-            if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IDocumentStore>)) then
-                services.AddSingleton<IDocumentStore>(CreateRavenDocumentStore(ctx.Configuration)) |> ignore
-
-            services
-                .AddSingleton<INoSqlStore, RavenDbProjectionsStore>()
-                .AddSingleton<ISqlStore, RavenDbProjectionsStore>()
-                .AddTransient<ICheckpointStore, RavenDbCheckpointStore>()
-                .AddTransient<IProjectionHandlerFactory, ProjectionHandlerFactory>()
-                .AddTransient<ISubscriptionFactory, ESSubscriptionFactory>()
-                .AddTransient<IProjectionsFactory, ProjectionsFactory>()
-                .AddTransient<IESCustomJSProjectionsFactory, ESCustomJSProjectionsFactory>() |> ignore
-
-            RegisterProjectionHandlers(services, projectionsAssembly)
-
-            services.AddHostedService(fun sp -> 
-                new EventStoreProjectionsHostedServiceInstance(
-                    sp.GetRequiredService<ILogger<EventStoreProjectionsHostedServiceInstance>>(),
-                    sp.GetRequiredService<IProjectionsFactory>(),
-                    sp.GetRequiredService<IESCustomJSProjectionsFactory>(),
-                    projectionsAssembly
-                )) |> ignore
+            match typeof<'EventRepository> with
+            //EVENT STORE
+            | t when t = typeof<EventStore> ->
+                services
+                    .AddTransient<ISubscriptionFactory, ESSubscriptionFactory>()
+                    .AddTransient<IESCustomJSProjectionsFactory, ESCustomJSProjectionsFactory>() |> ignore
+                services.AddHostedService(fun sp -> 
+                    new EventStoreProjectionsHostedServiceInstance(
+                        sp.GetRequiredService<ILogger<EventStoreProjectionsHostedServiceInstance>>(),
+                        sp.GetRequiredService<IProjectionsFactory>(),
+                        sp.GetRequiredService<IESCustomJSProjectionsFactory>(),
+                        projectionsAssembly
+                    )) |> ignore
+            | _ -> raise (Exception("Only types extending `EventRepository` can be used as an Event Repository generic option!"))
         )

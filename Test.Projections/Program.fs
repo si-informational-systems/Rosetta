@@ -3,9 +3,9 @@
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Configuration
 open System.IO
+open System.Reflection
 open SI.Rosetta.Projections.HostBuilder
 open TestFSharp
-open System.Reflection
 
 [<EntryPoint>]
 let main args =
@@ -19,7 +19,7 @@ let main args =
                     .AddEnvironmentVariables("SI_")
                     .AddCommandLine(args)
                 |> ignore)
-        |> fun builder -> UseProjectionsWithMongo<EventStore, Mongo> builder (Assembly.GetAssembly(typeof<PersonProjection>))
+        |> fun builder -> UseProjectionsWith<EventStore, Mongo> builder (Assembly.GetAssembly(typeof<PersonProjection>))
         |> fun builder -> builder.Build()
 
     host.Run()

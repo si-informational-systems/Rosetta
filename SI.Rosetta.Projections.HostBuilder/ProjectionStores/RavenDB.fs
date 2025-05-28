@@ -1,4 +1,0 @@
-﻿namespace SI.Rosetta.Projections.HostBuilder
-
-type Raven() = 
-    class end
