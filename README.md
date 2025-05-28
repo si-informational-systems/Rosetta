@@ -40,7 +40,7 @@ It provides:
 
 - **Aggregate & Event Abstractions**: Write expressive, testable domain logic.
 - **EventStoreDB Integration**: Reliable, scalable event storage.
-- **RavenDB Projections**: Fast, flexible read models.
+- **RavenDB/MongoDB Projections**: Fast, flexible read models.
 - **Plug-and-Play HostBuilder Extensions**: Register everything with a single line.
 - **CQRS Handlers**: Command and event handler patterns out-of-the-box.
 - **Idempotency & Consistency**: Built-in support for safe, repeatable operations.
