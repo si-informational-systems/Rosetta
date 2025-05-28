@@ -54,7 +54,7 @@ It provides:
 graph TD
     A[Client/API] -->|Command| B[Aggregate Handler]
     B -->|Event| C[EventStoreDB]
-    C -->|Event| D[Projection Handler]
+    C -->|Event| D[Projection Handler(s)]
     D -->|Read Model| E[RavenDB]
     E -->|Query| F[Client/API]
 ```
