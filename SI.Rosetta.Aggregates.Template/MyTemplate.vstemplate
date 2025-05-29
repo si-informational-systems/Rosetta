@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<VSTemplate Version="3.0.0" Type="Item" xmlns="http://schemas.microsoft.com/developer/vstemplate/2005">
+  <TemplateData>
+    <Name>Rosetta Aggregate</Name>
+    <Description>Creates a complete Rosetta aggregate with State, Aggregate and Handler files</Description>
+    <Icon>__TemplateIcon.ico</Icon>
+    <ProjectType>FSharp</ProjectType>
+    <SortOrder>1000</SortOrder>
+    <DefaultName>SampleAggregate</DefaultName>
+    <ProvideDefaultName>true</ProvideDefaultName>
+  </TemplateData>
+  <TemplateContent>
+    <ProjectItem TargetFileName="$fileinputname$AggregateState.fs" ReplaceParameters="true">AggregateState.fs</ProjectItem>
+    <ProjectItem TargetFileName="$fileinputname$Aggregate.fs" ReplaceParameters="true">Aggregate.fs</ProjectItem>
+    <ProjectItem TargetFileName="$fileinputname$AggregateHandler.fs" ReplaceParameters="true">AggregateHandler.fs</ProjectItem>
+  </TemplateContent>
+</VSTemplate> 
