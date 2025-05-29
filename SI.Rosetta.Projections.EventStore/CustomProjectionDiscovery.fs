@@ -46,20 +46,20 @@ module CustomProjectionDiscovery =
             else name)
 
     let private FindStreamNameConstant (assembly: Assembly) (aggregateName: string) =
-        let expectedStreamNameConstant = aggregateName + "Stream"
         let field = 
             assembly.GetModules()
             |> Array.collect (fun m -> m.GetTypes())
-            |> Array.tryPick (fun t -> 
-                let f = t.GetField(expectedStreamNameConstant, 
-                    BindingFlags.Public ||| 
-                    BindingFlags.Static ||| 
-                    BindingFlags.FlattenHierarchy)
-                if f <> null && f.FieldType = typeof<string> then Some f else None)
+            |> Array.collect (fun t -> 
+                t.GetFields(BindingFlags.Public ||| 
+                           BindingFlags.Static ||| 
+                           BindingFlags.FlattenHierarchy)
+                |> Array.filter (fun f -> 
+                    f.FieldType = typeof<string> && f.Name.Contains(aggregateName)))
+            |> Array.tryHead
             
         match field with
         | Some f -> f.GetValue(null) :?> string
-        | None -> raise (InvalidOperationException(sprintf "Stream constant '%s' not found in assembly %s" expectedStreamNameConstant assembly.FullName))
+        | None -> raise (InvalidOperationException(sprintf "Stream constant containing '%s' not found in assembly %s" aggregateName assembly.FullName))
     
     let private GetCustomProjectionEventsDUTypes (assembly: Assembly) =
         assembly.GetTypes()

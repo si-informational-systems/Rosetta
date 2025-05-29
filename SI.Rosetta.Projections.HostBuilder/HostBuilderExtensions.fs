@@ -99,11 +99,11 @@ module HostBuilderExtensions =
 [<Extension>]
 module CSharp_HostBuilderExtensions =
     [<Extension>]
-    let UseProjectionsWith<'EventRepository, 'ProjectionsRepository 
+    let UseProjectionsWith<'EventRepository, 'ProjectionsStore 
     when 'EventRepository : not struct 
     and 'EventRepository :> EventStore
-    and 'ProjectionsRepository : not struct
-    and 'ProjectionsRepository :> HostBuilder.Raven
+    and 'ProjectionsStore : not struct
+    and 'ProjectionsStore :> HostBuilder.Raven
     > (hostBuilder: IHostBuilder) (projectionsAssembly: Assembly) =
         hostBuilder.ConfigureServices(fun ctx services ->
             if ctx.Properties.ContainsKey(HostBuilderExtensionInUse) then

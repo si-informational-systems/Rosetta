@@ -10,14 +10,14 @@ type TotalPeople = {
     TotalOrganizations: int
 }
 
-[<CustomProjectionStream(ProjectionStreamNames.TotalPeopleStream)>]
+[<CustomProjectionStream(ProjectionStreamNames.TotalPeopleCustomStream)>]
 type TotalPeopleCustomProjectionEvents = 
     | Registered of PersonRegistered
     | NameChanged of PersonNameChanged
     | OrganizationRegistered of OrganizationRegistered
     interface ICustomProjectionEvents
 
-[<HandlesStream(ProjectionStreamNames.TotalPeopleStream)>]
+[<HandlesStream(ProjectionStreamNames.TotalPeopleCustomStream)>]
 type TotalPeopleCustomProjection() =
     inherit Projection<TotalPeopleCustomProjectionEvents>()
     interface IAmHandledBy<TotalPeopleCustomProjectionHandler, TotalPeopleCustomProjectionEvents>

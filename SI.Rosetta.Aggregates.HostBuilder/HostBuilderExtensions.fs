@@ -27,7 +27,7 @@ module HostBuilderExtensionCommmon =
 
 [<AutoOpen>]
 module HostBuilderExtensions =
-    let UseAggregatesWith<'AggregateRepository when 'AggregateRepository : not struct and 'AggregateRepository :> EventRepository> 
+    let UseAggregatesWith<'EventRepository when 'EventRepository : not struct and 'EventRepository :> EventRepository> 
         (hostBuilder: IHostBuilder) (aggregatesAssembly: Assembly) =
         hostBuilder.ConfigureServices(fun ctx services ->
             if ctx.Properties.ContainsKey(HostBuilderExtensionInUse) then
@@ -35,7 +35,7 @@ module HostBuilderExtensions =
                 
             ctx.Properties.Add(HostBuilderExtensionInUse, null)
             
-            match typeof<'AggregateRepository> with 
+            match typeof<'EventRepository> with 
             | t when t = typeof<EventStore> ->
                 let esAggRep = InitializeEventStore (ctx.Configuration)
                 services.AddSingleton(typeof<IAggregateRepository>, esAggRep) |> ignore
@@ -48,14 +48,14 @@ module HostBuilderExtensions =
 [<Extension>]
 module CSharp_HostBuilderExtensions =
     [<Extension>]
-    let UseAggregatesWith<'AggregateRepository when 'AggregateRepository : not struct and 'AggregateRepository :> EventRepository>(hostBuilder: IHostBuilder, aggregatesAssembly: Assembly) =
+    let UseAggregatesWith<'EventRepository when 'EventRepository : not struct and 'EventRepository :> EventRepository>(hostBuilder: IHostBuilder, aggregatesAssembly: Assembly) =
         hostBuilder.ConfigureServices(fun ctx services ->
             if ctx.Properties.ContainsKey(HostBuilderExtensionInUse) then
                 raise (InvalidOperationException("`UseAggregates` can only be used once!"))
                 
             ctx.Properties.Add(HostBuilderExtensionInUse, null)
             
-            match typeof<'AggregateRepository> with 
+            match typeof<'EventRepository> with 
             | t when t = typeof<EventStore> ->
                 let esAggRep = InitializeEventStore (ctx.Configuration)
                 services.AddSingleton(typeof<IAggregateRepository>, esAggRep) |> ignore
