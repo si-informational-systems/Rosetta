@@ -9,13 +9,13 @@ open SI.Rosetta.Common
 
 [<AbstractClass>]
 type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent 
-    when 'TEvent :> IAggregateEvents
+    when 'TEvent :> IEvents
     and 'TProjectionHandler :> IProjectionHandler<'TEvent>>() as this =
     let mutable projectionsFactory = Unchecked.defaultof<IProjectionsFactory>
     let mutable projectionsStore = Unchecked.defaultof<IProjectionsStore>
+    let serviceCollection = ServiceCollection()
 
     let lazyServices = lazy (
-        let serviceCollection = new ServiceCollection()
         let handlerType = typeof<'TProjectionHandler>
         serviceCollection.AddTransient(handlerType) |> ignore
         serviceCollection.AddTransient<ICheckpointStore, StubCheckpointStore>() |> ignore

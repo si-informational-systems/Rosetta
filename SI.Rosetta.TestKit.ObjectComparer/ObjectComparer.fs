@@ -42,10 +42,15 @@ module ObjectComparer =
                         if pointerA <> pointerB then
                             yield sprintf "%s: UIntPtr values differ (%A vs %A)" path pointerA pointerB
                     
-                    // Handle primitive types and strings using direct equality comparison
+                    // Handle primitive types, strings, and DateTime specifically
                     elif aType.IsPrimitive || aType = typeof<string> then
                         if not (a.Equals(b)) then
                             yield sprintf "%s: Values differ (%A vs %A)" path a b
+                    elif aType = typeof<DateTime> then
+                        let dtA = a :?> DateTime
+                        let dtB = b :?> DateTime
+                        if dtA <> dtB then
+                            yield sprintf "%s: DateTime values differ (%A vs %A)" path dtA dtB
                     else
                         // Handle collections (except strings which are also IEnumerable)
                         if aType <> typeof<string> && typeof<IEnumerable>.IsAssignableFrom(aType) then

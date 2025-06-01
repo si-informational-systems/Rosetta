@@ -13,8 +13,6 @@ type RenameOrganizationTests() =
         task {
             let id = sprintf "Organizations-%s" (Guid.NewGuid().ToString())
             
-            this.Init(id)
-
             this.Given([|
                 OrganizationEvents.Registered { Id = id; Name = "Test Org" } :> IAggregateEvents
             |])
@@ -29,8 +27,6 @@ type RenameOrganizationTests() =
     member this.``Rename is idempotent``() = 
         task {
             let id = sprintf "Organizations-%s" (Guid.NewGuid().ToString())
-                        
-            this.Init(id)
 
             this.Given([|
                 OrganizationEvents.Registered { Id = id; Name = "Test Org" } :> IAggregateEvents;
@@ -46,8 +42,6 @@ type RenameOrganizationTests() =
     member this.``Should throw on non-existent Organization``() = 
         task {
             let id = sprintf "Organizations-%s" (Guid.NewGuid().ToString())
-            
-            this.Init(id)
 
             this.Given()
 

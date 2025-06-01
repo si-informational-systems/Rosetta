@@ -6,13 +6,21 @@ open Xunit.Sdk
 open SI.Rosetta.Common
 open SI.Rosetta.Aggregates
 open System.Collections.Generic
+open Microsoft.FSharp.Reflection
 
 [<AbstractClass>]
 type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler>() =
-    let mutable AggregateId = String.Empty
     let mutable TestValid = false
     let GivenEvents = ResizeArray<IAggregateEvents>()
     let mutable WhenCommand = Unchecked.defaultof<IAggregateCommands>
+
+    let GetIdFromCommand(obj: IAggregateCommands) =
+        let _, fields = FSharpValue.GetUnionFields(obj, obj.GetType())
+        let item = fields.[0]
+
+        let recordType = item.GetType()
+        let idProperty = recordType.GetProperty("Id")
+        idProperty.GetValue(item) :?> string
 
     member private this.FormatTestResults(results: ThenResult seq) : string =
         results
@@ -34,14 +42,15 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
                 |> String.concat Environment.NewLine
                 |> sprintf "%s%s" <| Environment.NewLine
 
-    abstract ExecuteCommand : aggregateId: string * events: IAggregateEvents array * command: IAggregateCommands -> Task<HandlerExecutedCommandResult>
-    default _.ExecuteCommand(aggregateId, events, command) =
+    abstract ExecuteCommand : events: IAggregateEvents array * command: IAggregateCommands -> Task<HandlerExecutedCommandResult>
+    default _.ExecuteCommand(events, command) =
         task {
-            if String.IsNullOrEmpty aggregateId then
-                raise (XunitException("[TEST INVALID] AggregateId is not set through Init!"))
+            let id = GetIdFromCommand(command)
+            if String.IsNullOrEmpty id then
+                raise (XunitException("[TEST INVALID] Id field must be present on the Command!"))
 
             let repository = TestKitAggregateRepository()
-            repository.SeedEvents(aggregateId, events)
+            repository.SeedEvents(id, events)
             
             let handlerType = typeof<'TAggregateHandler>
             let handler = Activator.CreateInstance(handlerType, repository :> IAggregateRepository) :?> 'TAggregateHandler
@@ -56,9 +65,6 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
             }
             return result
         }
-
-    member this.Init(aggregateId: string) =
-        AggregateId <- aggregateId
     
     member this.Given([<ParamArray>] events: IAggregateEvents array) =
         GivenEvents.AddRange events
@@ -73,7 +79,7 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
             let expectedEventsArray = expectedProducedEvents.ToArray()
             let expectedPublishedEventsArray = expectedPublishedEvents.ToArray()
             let givenEventsArray = GivenEvents.ToArray()
-            let! res = this.ExecuteCommand(AggregateId, givenEventsArray, WhenCommand).ConfigureAwait(false)
+            let! res = this.ExecuteCommand(givenEventsArray, WhenCommand).ConfigureAwait(false)
             let resultProducedEvents = res.ProducedEvents |> Seq.toArray
             let resultPublishedEvents = res.PublishedEvents |> Seq.toArray
         
@@ -99,7 +105,7 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
             TestValid <- true
             try
                 let givenEvents = GivenEvents.ToArray()
-                let! _ = this.ExecuteCommand(AggregateId, givenEvents, WhenCommand).ConfigureAwait(false)
+                let! _ = this.ExecuteCommand(givenEvents, WhenCommand).ConfigureAwait(false)
                 raise (XunitException(sprintf "[TEST FAILED] Test did not fail on error: %s as was expected" name))
             with 
             | :? DomainException as e when e.Name = name -> ()
@@ -122,6 +128,3 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
         member this.Dispose() =
             if not TestValid then
                 raise (XunitException("[TEST INVALID]: Then or ThenError were not called!"))
-                
-    static member NoProducedEvents = ResizeArray<IAggregateCommands>()
-    static member NoPublishedEvents = ResizeArray<IAggregateCommands>()

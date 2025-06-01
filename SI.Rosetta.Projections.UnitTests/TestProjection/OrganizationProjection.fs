@@ -5,6 +5,7 @@ open SI.Rosetta.Projections
 type Organization = {
     mutable Id: string
     Name: string
+    DateRegistered: System.DateTime
 }
 
 [<HandlesStream(ProjectionStreamNames.OrganizationStream)>]
@@ -23,6 +24,7 @@ and OrganizationProjectionHandler(store: INoSqlStore) =
                     let organization: Organization = {
                         Id = e.Id
                         Name = e.Name
+                        DateRegistered = e.DateRegistered
                     }
                     do! Store.StoreAsync(organization).ConfigureAwait(false)
 
