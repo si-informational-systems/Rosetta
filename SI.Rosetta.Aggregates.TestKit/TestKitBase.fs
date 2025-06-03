@@ -123,8 +123,15 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
             let result = this.Then(ResizeArray expectedProducedEvents, ResizeArray<IAggregateEvents>())
             return! result.ConfigureAwait(false)
         }
+
+    member private this.ResetTestState() =
+        TestValid <- false
+        GivenEvents.Clear()
+        WhenCommand <- Unchecked.defaultof<IAggregateCommands>
     
     interface IDisposable with
         member this.Dispose() =
             if not TestValid then
+                this.ResetTestState()
                 raise (XunitException("[TEST INVALID]: Then or ThenError were not called!"))
+            this.ResetTestState()

@@ -11,8 +11,7 @@
     <Compile Include="TestDomain\OrganizationAggregateState.fs" />
     <Compile Include="TestDomain\OrganizationAggregate.fs" />
     <Compile Include="TestDomain\OrganizationAggregateHandler.fs" />
-    <Compile Include="RegisterOrganizationTests.fs" />
-    <Compile Include="RenameOrganizationTests.fs" />
+    <Compile Include="OrganizationTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
