@@ -11,6 +11,8 @@ open SI.Rosetta.Common
 type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent 
     when 'TEvent :> IEvents
     and 'TProjectionHandler :> IProjectionHandler<'TEvent>>() as this =
+    let mutable TestValid = false
+    let mutable DocumentId = Unchecked.defaultof<obj>
     let mutable projectionsFactory = Unchecked.defaultof<IProjectionsFactory>
     let mutable projectionsStore = Unchecked.defaultof<IProjectionsStore>
     let serviceCollection = ServiceCollection()
@@ -66,12 +68,26 @@ type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent
     member this.Then<'TEntity when 'TEntity : not struct>(expectedEntity: 'TEntity) =
         task {
             let id = GetIdFromObject(expectedEntity)
+            TestValid <- true
+            DocumentId <- id
             let! entityDict = this.ProjectionStore.LoadAsync<'TEntity>([|id|]).ConfigureAwait(false)
             let entity = entityDict.[id]
             let difference = ObjectComparer.DeepCompare(expectedEntity, entity)
             if difference <> String.Empty then
                 raise (XunitException(difference))
         }
+
+    member private this.ResetState() =
+        this.ProjectionStore.DeleteAsync(DocumentId).GetAwaiter().GetResult()
+        DocumentId <- obj
+        TestValid <- false
+
+    interface IDisposable with
+        member this.Dispose() = 
+            if not TestValid then
+                this.ResetState()
+                raise (XunitException("[TEST INVALID]: Then was not called!"))
+            this.ResetState()
 
     abstract ConfigureServices : services: IServiceCollection -> unit
     default _.ConfigureServices(services: IServiceCollection) = ()

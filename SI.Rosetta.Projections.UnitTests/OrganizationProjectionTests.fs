@@ -11,7 +11,7 @@ type OrganizationProjectionTests() =
     member this.``Should register Organization``() =
         task {
             let datetime = DateTime.MinValue
-            let id = sprintf "Organizations-%s" (Guid.NewGuid().ToString())
+            let id = "Organizations-1"
             let ev = OrganizationEvents.Registered { Id = id; Name = "Test Org"; DateRegistered = datetime }
 
             do! this.Given(ev).ConfigureAwait(false)

@@ -8,14 +8,14 @@ type TestKitProjectionStore() =
     let InMemoryStore = ConcurrentDictionary<obj, obj>()
             
     interface IProjectionsStore with
-        member _.StoreAsync<'T>(doc: 'T) = task {
+        member _.StoreAsync<'T when 'T : not struct>(doc: 'T) = task {
             let idProp = doc.GetType().GetProperty("Id")
             let id = idProp.GetValue(doc, null)
             ValidateIdType id
             InMemoryStore.[id.ToString()] <- doc :> obj
         }
             
-        member this.StoreInUnitOfWorkAsync<'T>(docs: 'T[]) = task {
+        member this.StoreInUnitOfWorkAsync<'T when 'T : not struct>(docs: 'T[]) = task {
             for doc in docs do
                 do! (this :> IProjectionsStore).StoreAsync<'T>(doc).ConfigureAwait(false)
         }
