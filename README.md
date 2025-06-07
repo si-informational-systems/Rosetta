@@ -1,6 +1,6 @@
 # 🚀 Rosetta Framework
 
-**Domain-Driven Design, Event Sourcing, and Projections for .NET & F# — with RavenDB, EventStoreDB, and modern HostBuilder integration.**
+**Domain-Driven Design, Event Sourcing, and Projections for .NET & F# — with RavenDB/MongoDB, EventStoreDB, and modern HostBuilder integration.**
 
 ![.NET](https://img.shields.io/badge/.NET-9-blueviolet)
 ![F#](https://img.shields.io/badge/F%23-functional-blue)
