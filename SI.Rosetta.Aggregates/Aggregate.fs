@@ -3,7 +3,6 @@ namespace SI.Rosetta.Aggregates
 open SI.Rosetta.Common
 open System.Collections.Generic
 
-[<AllowNullLiteral>]
 [<AbstractClass>]
 type Aggregate<'TAggregateState, 'TCommands, 'TEvents 
     when 'TAggregateState :> AggregateState<'TEvents>

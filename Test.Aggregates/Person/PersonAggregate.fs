@@ -2,7 +2,7 @@
 
 open SI.Rosetta.Aggregates
 
-[<AllowNullLiteral>]
+
 type PersonAggregate() =
     inherit Aggregate<PersonAggregateState, PersonCommands, PersonEvents>()
 

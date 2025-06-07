@@ -2,7 +2,7 @@
 
 open SI.Rosetta.Aggregates
 
-[<AllowNullLiteral>]
+
 type PersonAggregateState() =
     inherit AggregateState<PersonEvents>()
     let mutable name = ""

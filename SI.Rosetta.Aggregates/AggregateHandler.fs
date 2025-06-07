@@ -8,7 +8,7 @@ open SI.Rosetta.Common
 [<AbstractClass>]
 type AggregateHandler<'TAggregate, 'TCommands, 'TEvents when 'TAggregate :> IAggregateInstance<'TCommands> 
                                         and 'TAggregate : (new : unit -> 'TAggregate)
-                                        and 'TAggregate : null
+                                        and 'TAggregate : not struct
                                         and 'TCommands :> IAggregateCommands
                                         and 'TEvents :> IAggregateEvents>() =
     let mutable publishedEvents = List<IAggregateEvents>()
@@ -19,24 +19,22 @@ type AggregateHandler<'TAggregate, 'TCommands, 'TEvents when 'TAggregate :> IAgg
         sprintf "%sDoesNotExist" aggregateName
 
     abstract ExecuteAsync: command: 'TCommands -> Task<unit>
-
-    member private this.Execute(arg: ICommands) : Task<unit> = 
-        task {
-            do! this.ExecuteAsync(arg :?> 'TCommands).ConfigureAwait(false)
-        }
     
     member this.AggregateRepository
         with get() = aggregateRepository
         and set value = aggregateRepository <- value
 
     interface IAggregateHandler with
-        member this.ExecuteAsync(arg) = this.Execute(arg)
+        member this.ExecuteAsync(arg) = this.ExecuteAsync(arg :?> 'TCommands)
         member this.GetPublishedEvents() = publishedEvents
 
     member this.IdempotentlyCreateAggregate (id: obj) (command: 'TCommands) =
         task {
-            let! agg = aggregateRepository.GetAsync<'TAggregate, 'TEvents>(id).ConfigureAwait(false)
-            let mutable aggregate = if (agg :> obj) = null then new 'TAggregate() else agg
+            let! aggOpt = aggregateRepository.GetAsync<'TAggregate, 'TEvents>(id).ConfigureAwait(false)
+            let aggregate = 
+                match aggOpt with
+                | None -> new 'TAggregate()
+                | Some agg -> agg
             let originalVersion = aggregate.Version
             
             aggregate.Execute command
@@ -48,15 +46,14 @@ type AggregateHandler<'TAggregate, 'TCommands, 'TEvents when 'TAggregate :> IAgg
         
     member this.IdempotentlyUpdateAggregate (id: obj) (command: 'TCommands) =
         task {
-            let! agg = aggregateRepository.GetAsync<'TAggregate, 'TEvents>(id).ConfigureAwait(false)
-            if isNull agg then
-                raise (DomainException.Named(NotFoundResponse, String.Empty))
+            let! aggOpt = aggregateRepository.GetAsync<'TAggregate, 'TEvents>(id).ConfigureAwait(false)
+            match aggOpt with
+            | None -> raise (DomainException.Named(NotFoundResponse, String.Empty))
+            | Some agg ->
+                let originalVersion = agg.Version
+                agg.Execute command
+                publishedEvents <- agg.PublishedEvents
                 
-            let originalVersion = agg.Version
-            
-            agg.Execute command
-            publishedEvents <- agg.PublishedEvents
-            
-            if originalVersion <> agg.Version then
-                do! aggregateRepository.StoreAsync(agg).ConfigureAwait(false)
+                if originalVersion <> agg.Version then
+                    do! aggregateRepository.StoreAsync(agg).ConfigureAwait(false)
         }

@@ -2,7 +2,7 @@
 
 open SI.Rosetta.Aggregates
 
-[<AllowNullLiteral>]
+
 type OrganizationAggregateState() =
     inherit AggregateState<OrganizationEvents>()
     let mutable name = ""

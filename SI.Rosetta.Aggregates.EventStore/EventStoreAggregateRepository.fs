@@ -57,7 +57,7 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
         member this.GetAsync<'TAggregate, 'TEvents 
                                     when 'TAggregate :> IAggregate 
                                     and 'TAggregate : (new : unit -> 'TAggregate)
-                                    and 'TAggregate : null
+                                    and 'TAggregate : not struct
                                     and 'TEvents :> IAggregateEvents>
             (id: obj, version: int) =
             task {
@@ -81,12 +81,12 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
                             )
                     
                     aggregate.SetState instanceOfState
-                    return aggregate
+                    return Some aggregate
 
                 with
                 | :? AggregateException as ex when (ex.InnerException :? StreamNotFoundException) -> 
-                    return null
+                    return None
                 | :? StreamNotFoundException -> 
-                    return null
+                    return None
                 | ex -> return raise ex
             }

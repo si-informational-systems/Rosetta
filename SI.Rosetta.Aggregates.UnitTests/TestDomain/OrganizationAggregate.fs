@@ -1,9 +1,7 @@
 ﻿namespace SI.Rosetta.Aggregates.UnitTests
 
 open SI.Rosetta.Aggregates
-open System.Collections.Generic
 
-[<AllowNullLiteral>]
 type OrganizationAggregate() =
     inherit Aggregate<OrganizationAggregateState, OrganizationCommands, OrganizationEvents>()
 

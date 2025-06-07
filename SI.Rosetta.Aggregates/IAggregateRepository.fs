@@ -9,6 +9,6 @@ type IAggregateRepository =
     abstract member GetAsync<'TAggregate, 'TEvents
                                         when 'TAggregate : (new : unit -> 'TAggregate) 
                                         and 'TAggregate :> IAggregate
-                                        and 'TAggregate : null
+                                        and 'TAggregate : not struct
                                         and 'TEvents :> IAggregateEvents> : 
-        id: obj * [<Optional; DefaultParameterValue(2147483647)>] version: int -> Task<'TAggregate>
+        id: obj * [<Optional; DefaultParameterValue(2147483647)>] version: int -> Task<Option<'TAggregate>>

@@ -2,7 +2,7 @@ namespace $rootnamespace$.$fileinputname$
 
 open SI.Rosetta.Aggregates
 
-[<AllowNullLiteral>]
+
 type $fileinputname$AggregateState() =
     inherit AggregateState<$fileinputname$Events>()
 

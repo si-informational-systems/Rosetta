@@ -3,7 +3,6 @@ namespace SI.Rosetta.Aggregates
 open SI.Rosetta.Common
 
 [<AbstractClass>]
-[<AllowNullLiteral>]
 type AggregateState<'TEvents when 'TEvents :> IAggregateEvents>() =
     member val Id : obj = null with get, set
     member val Version = 0 with get, set
