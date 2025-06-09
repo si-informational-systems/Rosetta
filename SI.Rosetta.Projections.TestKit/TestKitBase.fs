@@ -70,8 +70,7 @@ type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent
             let id = GetIdFromObject(expectedEntity)
             TestValid <- true
             DocumentId <- id
-            let! entityDict = this.ProjectionStore.LoadAsync<'TEntity>([|id|]).ConfigureAwait(false)
-            let entity = entityDict.[id]
+            let! entity = this.ProjectionStore.LoadAsync<'TEntity>(id).ConfigureAwait(false)
             let difference = ObjectComparer.DeepCompare(expectedEntity, entity)
             if difference <> String.Empty then
                 raise (XunitException(difference))

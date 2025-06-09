@@ -99,7 +99,29 @@ type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
                     do! session.WithTransactionAsync<unit>(transactionFunc, transactionOptions, cancellationToken)
                 })
 
-        member this.LoadAsync<'T when 'T : not struct>(ids: obj[]) =
+        member this.LoadAsync<'T when 'T : not struct>(id: obj) =
+            DefensivelyLoad 0 (fun () ->
+                task {
+                    let stringId = 
+                        try
+                            id.ToString()
+                        with
+                        | ex -> raise (InvalidOperationException("Failed to convert id to string", ex))
+                    let collectionName = PluralizeName(typeof<'T>.Name)
+                    let collection = db.GetCollection<'T>(collectionName)
+                    let filter = Builders<'T>.Filter.Eq("Id", stringId)
+                    let! mongoResult =
+                        task {
+                            try
+                                let! doc = collection.Find(filter).FirstOrDefaultAsync().ConfigureAwait(false)
+                                return doc
+                            with
+                            | :? MongoException -> return Unchecked.defaultof<'T>
+                        }
+                    return mongoResult
+                })
+
+        member this.LoadManyAsync<'T when 'T : not struct>(ids: obj[]) =
             DefensivelyLoad 0 (fun () ->
                 task {
                     let stringIds = 

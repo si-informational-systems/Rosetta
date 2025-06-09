@@ -19,15 +19,22 @@ type TestKitProjectionStore() =
             for doc in docs do
                 do! (this :> IProjectionsStore).StoreAsync<'T>(doc).ConfigureAwait(false)
         }
+
+        member this.LoadAsync<'T when 'T : not struct>(id: obj) = 
+             task {
+                match InMemoryStore.TryGetValue(id) with
+                | _, obj -> return obj :?> 'T
+            }
             
-        member _.LoadAsync<'T when 'T : not struct>(ids: obj[]) = task {
-            let dict = Dictionary<obj, 'T>()
-            for id in ids do
-                match InMemoryStore.TryGetValue id with
-                | true, value -> dict.Add(id, value :?> 'T)
-                | false, _ -> dict.Add(id, null)
-            return dict
-        }
+        member this.LoadManyAsync<'T when 'T : not struct>(ids: obj[]) = 
+            task {
+                let dict = Dictionary<obj, 'T>()
+                for id in ids do
+                    match InMemoryStore.TryGetValue id with
+                    | true, value -> dict.Add(id, value :?> 'T)
+                    | false, _ -> dict.Add(id, null)
+                return dict
+            }
             
         member _.DeleteAsync(id: obj) = task {
             let mutable removed = null

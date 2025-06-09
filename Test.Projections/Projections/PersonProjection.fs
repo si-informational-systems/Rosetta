@@ -43,8 +43,7 @@ and PersonProjectionHandler(store: INoSqlStore) =
             
     member private this.Project(id: string, update: Person -> Person) =
         task {
-            let! doc = Store.LoadAsync<Person>([|id|]).ConfigureAwait(false)
-            let person = doc.[id]
+            let! person = Store.LoadAsync<Person>(id).ConfigureAwait(false)
             let updated = update person
             do! Store.StoreAsync(updated).ConfigureAwait(false)
         }

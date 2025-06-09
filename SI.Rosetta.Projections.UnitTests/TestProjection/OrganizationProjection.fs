@@ -35,8 +35,7 @@ and OrganizationProjectionHandler(store: INoSqlStore) =
             
     member private this.Project(id: string, update: Organization -> Organization) =
         task {
-            let! doc = Store.LoadAsync<Organization>([|id|]).ConfigureAwait(false)
-            let organization = doc.[id]
+            let! organization = Store.LoadAsync<Organization>(id).ConfigureAwait(false)
             let updated = update organization
             do! Store.StoreAsync(updated).ConfigureAwait(false)
         }

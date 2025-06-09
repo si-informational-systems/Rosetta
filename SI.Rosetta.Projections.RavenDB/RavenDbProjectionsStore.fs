@@ -56,14 +56,27 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                     do! session.SaveChangesAsync().ConfigureAwait(false)
                 })
 
-        member this.LoadAsync<'T when 'T : not struct>(ids: obj[]) =
+        member this.LoadAsync<'T when 'T : not struct>(id: obj): Task<'T> = 
+            DefensivelyLoad 0 (fun () ->
+                task {
+                    use session = store.OpenAsyncSession()
+                    let stringId = 
+                        try
+                            id.ToString()
+                        with
+                        | ex -> raise (InvalidOperationException("Failed to convert id to string", ex))
+                    let! ravenResult = session.LoadAsync<'T>(stringId).ConfigureAwait(false)
+                    return ravenResult
+                })
+
+        member this.LoadManyAsync<'T when 'T : not struct>(ids: obj[]) =
             DefensivelyLoad 0 (fun () ->
                 task {
                     let stringIds = 
-                            try
-                                ids |> Array.map (fun id -> id.ToString())
-                            with
-                            | ex -> raise (InvalidOperationException("Failed to convert ids to string array", ex))
+                        try
+                            ids |> Array.map (fun id -> id.ToString())
+                        with
+                        | ex -> raise (InvalidOperationException("Failed to convert ids to string array", ex))
                     use session = store.OpenAsyncSession()
                     let! ravenResult = session.LoadAsync<'T>(stringIds).ConfigureAwait(false)
                     let result = System.Collections.Generic.Dictionary<obj, 'T>()

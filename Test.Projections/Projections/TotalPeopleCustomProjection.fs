@@ -46,13 +46,13 @@ and TotalPeopleCustomProjectionHandler(store: INoSqlStore) =
     member private this.Project(update: TotalPeople -> TotalPeople) =
         task {
             let id = "TotalPeople-All"
-            let! doc = Store.LoadAsync<TotalPeople>([|id|]).ConfigureAwait(false)
+            let! doc = Store.LoadAsync<TotalPeople>(id).ConfigureAwait(false)
             let custom = 
-                if isNull (box doc.[id]) then 
+                if isNull (box doc) then 
                     { Id = id
                       TotalPersons = 0
                       TotalOrganizations = 0 }
-                else doc.[id]
+                else doc
             let updated = update custom
             do! Store.StoreAsync(updated).ConfigureAwait(false)
         }
@@ -87,13 +87,13 @@ and TotalMladensCustomProjectionHandler(store: INoSqlStore) =
     member private this.Project(update: TotalPeople -> TotalPeople) =
         task {
             let id = "TotalPeople-Mladens"
-            let! doc = Store.LoadAsync<TotalPeople>([|id|]).ConfigureAwait(false)
+            let! doc = Store.LoadAsync<TotalPeople>(id).ConfigureAwait(false)
             let custom = 
-                if isNull (box doc.[id]) then 
+                if isNull (box doc) then 
                     { Id = id
                       TotalPersons = 0
                       TotalOrganizations = 0 }
-                else doc.[id]
+                else doc
             let updated = update custom
             do! Store.StoreAsync(updated).ConfigureAwait(false)
         }
