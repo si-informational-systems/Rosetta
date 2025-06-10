@@ -114,13 +114,13 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
         
     member this.ThenNoEvents() = 
         task {
-            let result = this.Then(ResizeArray<IAggregateEvents>(), ResizeArray<IAggregateEvents>())
+            let result = this.Then(NoProducedEvents, NoPublishedEvents)
             return! result.ConfigureAwait(false)
         }
     
     member this.Then([<ParamArray>] expectedProducedEvents: IAggregateEvents array) = 
         task {
-            let result = this.Then(ResizeArray expectedProducedEvents, ResizeArray<IAggregateEvents>())
+            let result = this.Then(ResizeArray expectedProducedEvents, NoPublishedEvents)
             return! result.ConfigureAwait(false)
         }
 
