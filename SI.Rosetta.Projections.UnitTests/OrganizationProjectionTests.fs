@@ -14,11 +14,13 @@ type OrganizationProjectionTests() =
             let id = "Organizations-1"
             let ev = OrganizationEvents.Registered { Id = id; Name = "Test Org"; DateRegistered = datetime }
 
-            do! this.Given(ev).ConfigureAwait(false)
+            let nameChanged = OrganizationEvents.NameChanged { Id = id; Name = "Test Org 2" }
+
+            do! this.Given(ev, nameChanged).ConfigureAwait(false)
 
             let doc : Organization = {
                 Id = id
-                Name = "Test Org"
+                Name = "Test Org 2"
                 DateRegistered = datetime
             }
 

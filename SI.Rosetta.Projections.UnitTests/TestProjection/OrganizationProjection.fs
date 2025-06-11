@@ -2,8 +2,9 @@
 
 open SI.Rosetta.Projections
 
+[<CLIMutable>]
 type Organization = {
-    mutable Id: string
+    Id: string
     Name: string
     DateRegistered: System.DateTime
 }
