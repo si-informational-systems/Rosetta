@@ -5,16 +5,8 @@ open SI.Rosetta.Aggregates
 
 type PersonAggregateState() =
     inherit AggregateState<PersonEvents>()
-    let mutable name = ""
-    let mutable height = 0
-
-    member this.Name 
-        with get() = name
-        and set value = name <- value
-
-    member this.Height 
-        with get() = height
-        and set value = height <- value
+    member val Name = "" with get, set
+    member val Height = 0 with get, set
 
     override this.ApplyEvent(ev: PersonEvents) =
         match ev with
