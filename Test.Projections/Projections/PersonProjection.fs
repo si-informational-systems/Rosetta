@@ -4,7 +4,7 @@ open SI.Rosetta.Projections
 
 [<CLIMutable>]
 type Person = {
-    mutable Id: string
+    Id: string
     Name: string
     Height: int
     Status: string

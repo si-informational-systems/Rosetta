@@ -103,7 +103,7 @@ module CSharp_HostBuilderExtensions =
     when 'EventRepository : not struct 
     and 'EventRepository :> EventStore
     and 'ProjectionsStore : not struct
-    and 'ProjectionsStore :> HostBuilder.Raven
+    and 'ProjectionsStore :> ProjectionStore
     > (hostBuilder: IHostBuilder) (projectionsAssembly: Assembly) =
         hostBuilder.ConfigureServices(fun ctx services ->
             if ctx.Properties.ContainsKey(HostBuilderExtensionInUse) then

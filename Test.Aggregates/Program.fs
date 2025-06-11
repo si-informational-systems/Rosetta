@@ -4,8 +4,6 @@ open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Configuration
 open System.IO
-open SI.Rosetta.Projections
-open SI.Rosetta.Aggregates
 open SI.Rosetta.Aggregates.HostBuilder
 open TestFSharp
 

@@ -9,12 +9,12 @@ type OrganizationTests() =
     inherit TestKitBase<OrganizationAggregateHandler>()
 
     [<Fact>]
-    member this.``Should Open Wallet``() = 
+    member this.``Should Register Organization``() = 
         task {
             let id = sprintf "Organizations-%s" (Guid.NewGuid().ToString())
             let ev = OrganizationEvents.Registered { Id = id; Name = "Test Org" }
             let expectedProducedEvents = ResizeArray([ev :> IAggregateEvents])
-            let expectedPublishedEvents = expectedProducedEvents
+            let expectedPublishedEvents = ResizeArray([ev :> IAggregateEvents])
 
             this.Given()
 
@@ -24,7 +24,7 @@ type OrganizationTests() =
         }
 
     [<Fact>]
-    member this.``Should rename Organization``() = 
+    member this.``Should Rename Organization``() = 
         task {
             let id = sprintf "Organizations-%s" (Guid.NewGuid().ToString())
             
