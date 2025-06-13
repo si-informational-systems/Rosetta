@@ -5,7 +5,7 @@ open SI.Rosetta.Aggregates
 type IPersonAggregateHandler =
     inherit IAggregateHandler
 
-type PersonAggregateHandler(repo: IAggregateRepository) = 
+type PersonAggregateHandler(repo: IStateBasedAggregateRepository) = 
     inherit AggregateHandler<PersonAggregate, PersonCommands, PersonEvents>()
     do base.AggregateRepository <- repo
     interface IPersonAggregateHandler

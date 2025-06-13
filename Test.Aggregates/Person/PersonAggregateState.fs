@@ -2,7 +2,7 @@
 
 open SI.Rosetta.Aggregates
 
-type PersonAggregateState() =
+type Person() =
     inherit AggregateState<PersonEvents>()
     member val Name = "" with get, set
     member val Height = 0 with get, set

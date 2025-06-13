@@ -48,6 +48,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Projections.Mong
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Aggregates.Template", "SI.Rosetta.Aggregates.Template\SI.Rosetta.Aggregates.Template.fsproj", "{918627F3-0538-430B-AEDB-3FA5B245B8C1}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Aggregates.RavenDB", "SI.Rosetta.Aggregates.RavenDB\SI.Rosetta.Aggregates.RavenDB.fsproj", "{7FA9935A-5513-43F5-8E17-27E07C467F3E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -130,6 +132,10 @@ Global
 		{918627F3-0538-430B-AEDB-3FA5B245B8C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{918627F3-0538-430B-AEDB-3FA5B245B8C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{918627F3-0538-430B-AEDB-3FA5B245B8C1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7FA9935A-5513-43F5-8E17-27E07C467F3E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7FA9935A-5513-43F5-8E17-27E07C467F3E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7FA9935A-5513-43F5-8E17-27E07C467F3E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7FA9935A-5513-43F5-8E17-27E07C467F3E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -154,6 +160,7 @@ Global
 		{9563C6F2-296B-4D40-9FED-7FD3D6A0D40F} = {D7AE495A-4F56-47E4-91FD-2866D8FB6EC7}
 		{2A6D8DDB-CCBE-4321-886D-25DEF4A683A0} = {D7AE495A-4F56-47E4-91FD-2866D8FB6EC7}
 		{918627F3-0538-430B-AEDB-3FA5B245B8C1} = {04929264-B7C1-4366-9DFD-A194F17622EA}
+		{7FA9935A-5513-43F5-8E17-27E07C467F3E} = {04929264-B7C1-4366-9DFD-A194F17622EA}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {F787795A-E570-44CC-95A9-8DE3140DE4D0}

@@ -3,7 +3,7 @@
 open SI.Rosetta.Aggregates
 
 type PersonAggregate() =
-    inherit Aggregate<PersonAggregateState, PersonCommands, PersonEvents>()
+    inherit Aggregate<Person, PersonCommands, PersonEvents>()
 
     override this.Execute(command: PersonCommands) =
         match command with

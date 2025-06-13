@@ -8,22 +8,6 @@ open SI.Rosetta.TestKit
 open Microsoft.Extensions.Logging
 open System.Diagnostics
 
-type Disease = {
-    DiseaseName: string
-    SickSince: DateTime
-}
-
-type PersonalData = {
-    Card: string
-    SocialSecurity: string
-    Diseases: Disease list
-}
-
-type Person = {
-    Name: string
-    PersonalData: PersonalData
-}
-
 type ServiceInstance(
     serviceProvider: IServiceProvider
     ) =
@@ -46,22 +30,22 @@ type ServiceInstance(
                         IssuedBy = userReference
                         TimeIssued = DateTime.Now
                     }
-                    let registerPersonCmd : RegisterPerson = {
-                        Id = "Persons-1"
-                        Name = "John Cena"
+                    let registerPersonCmd : ChangePersonName = {
+                        Id = "People-1"
+                        Name = "Tripple H"
                         Metadata = metadata
                     }
                     
                     do! personConsumer.Consume(registerPersonCmd).ConfigureAwait(false)
 
-                    let orgConsumer = OrganizationConsumer(orgHandler, orgLogger)
-                    let registerOrganizationCmd : RegisterOrganization = {
-                        Id = "Organizations-1"
-                        Name = "WWE"
-                        Metadata = metadata
-                    }
+                    //let orgConsumer = OrganizationConsumer(orgHandler, orgLogger)
+                    //let registerOrganizationCmd : RegisterOrganization = {
+                    //    Id = "Organizations-1"
+                    //    Name = "WWE"
+                    //    Metadata = metadata
+                    //}
                     
-                    do! orgConsumer.Consume(registerOrganizationCmd).ConfigureAwait(false)
+                    //do! orgConsumer.Consume(registerOrganizationCmd).ConfigureAwait(false)
                 with 
                 | ex -> 
                     printfn "Error: %s" ex.Message

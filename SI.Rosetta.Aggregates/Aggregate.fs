@@ -4,11 +4,12 @@ open SI.Rosetta.Common
 open System.Collections.Generic
 
 [<AbstractClass>]
-type Aggregate<'TAggregateState, 'TCommands, 'TEvents 
-    when 'TAggregateState :> AggregateState<'TEvents>
-    and 'TCommands :> IAggregateCommands
-    and 'TEvents :> IAggregateEvents 
-    and 'TAggregateState : (new : unit -> 'TAggregateState)>() =
+type Aggregate<'TAggregateState, 'TCommands, 'TEvents
+        when 'TAggregateState :> AggregateState<'TEvents>
+        and 'TCommands :> IAggregateCommands
+        and 'TEvents :> IAggregateEvents
+        and 'TAggregateState : (new : unit -> 'TAggregateState)>() =
+
     member val State = new 'TAggregateState() with get, set
     member val Changes = List<IAggregateEvents>() with get, set
     member val PublishedEvents = List<IAggregateEvents>() with get, set
@@ -19,7 +20,9 @@ type Aggregate<'TAggregateState, 'TCommands, 'TEvents
         member this.Changes = this.Changes
         member this.PublishedEvents = this.PublishedEvents
         member this.SetState state = 
-            this.State <- state :?> 'TAggregateState     
+            this.State <- state :?> 'TAggregateState
+        member this.GetState() = 
+            this.State :> obj
         member this.Execute command =
             this.Execute command
             

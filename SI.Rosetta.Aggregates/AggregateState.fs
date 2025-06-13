@@ -4,7 +4,7 @@ open SI.Rosetta.Common
 
 [<AbstractClass>]
 type AggregateState<'TEvents when 'TEvents :> IAggregateEvents>() =
-    member val Id : obj = null with get, set
+    member val Id : string = null with get, set
     member val Version = 0 with get, set
     
     interface IAggregateState with

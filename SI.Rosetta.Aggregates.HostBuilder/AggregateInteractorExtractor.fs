@@ -11,7 +11,7 @@ module AggregateHandlerExtractor =
             |> Seq.filter (fun t -> 
                 typeof<IAggregateHandler>.IsAssignableFrom(t) && t.IsClass)
             |> Seq.iter (fun t ->
-                let iinteractor = 
+                let iinteractor =
                     t.GetInterfaces()
                     |> Array.filter (fun x -> x.Name <> typeof<IAggregateHandler>.Name)
                     |> Array.head

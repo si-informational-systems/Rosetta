@@ -19,8 +19,8 @@ let main args =
                     .AddEnvironmentVariables("SI_")
                     .AddCommandLine(args)
                 |> ignore)
-        |> fun builder -> UseAggregatesWith<EventStore> builder typeof<PersonAggregateHandler>.Assembly
-        |> fun builder -> builder.ConfigureServices(fun ctx services -> 
+        |> fun builder -> UseAggregatesWith<EventStore, RavenDB> builder typeof<PersonAggregateHandler>.Assembly
+        |> fun builder -> builder.ConfigureServices(fun ctx services ->
             services.AddHostedService<ServiceInstance>() |> ignore
         )
         |> fun builder -> builder.Build()

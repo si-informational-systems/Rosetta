@@ -6,11 +6,13 @@ open System.Threading.Tasks
 open SI.Rosetta.Common
 
 [<AbstractClass>]
-type AggregateHandler<'TAggregate, 'TCommands, 'TEvents when 'TAggregate :> IAggregateInstance<'TCommands> 
-                                        and 'TAggregate : (new : unit -> 'TAggregate)
-                                        and 'TAggregate : not struct
-                                        and 'TCommands :> IAggregateCommands
-                                        and 'TEvents :> IAggregateEvents>() =
+type AggregateHandler<'TAggregate, 'TCommands, 'TEvents 
+        when 'TAggregate :> IAggregateInstance<'TCommands> 
+        and 'TAggregate : (new : unit -> 'TAggregate)
+        and 'TAggregate : not struct
+        and 'TCommands :> IAggregateCommands
+        and 'TEvents :> IAggregateEvents>() =
+
     let mutable publishedEvents = List<IAggregateEvents>()
     let mutable aggregateRepository = Unchecked.defaultof<IAggregateRepository>
     let NotFoundResponse = 
@@ -28,7 +30,7 @@ type AggregateHandler<'TAggregate, 'TCommands, 'TEvents when 'TAggregate :> IAgg
         member this.ExecuteAsync(arg) = this.ExecuteAsync(arg :?> 'TCommands)
         member this.GetPublishedEvents() = publishedEvents
 
-    member this.IdempotentlyCreateAggregate (id: obj) (command: 'TCommands) =
+    member this.IdempotentlyCreateAggregate (id: string) (command: 'TCommands) =
         task {
             let! aggOpt = aggregateRepository.GetAsync<'TAggregate, 'TEvents>(id).ConfigureAwait(false)
             let aggregate = 
@@ -44,7 +46,7 @@ type AggregateHandler<'TAggregate, 'TCommands, 'TEvents when 'TAggregate :> IAgg
                 do! aggregateRepository.StoreAsync(aggregate).ConfigureAwait(false)
         }
         
-    member this.IdempotentlyUpdateAggregate (id: obj) (command: 'TCommands) =
+    member this.IdempotentlyUpdateAggregate (id: string) (command: 'TCommands) =
         task {
             let! aggOpt = aggregateRepository.GetAsync<'TAggregate, 'TEvents>(id).ConfigureAwait(false)
             match aggOpt with

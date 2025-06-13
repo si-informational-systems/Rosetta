@@ -20,10 +20,6 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
                 dict.Add(EventStoreSerialization.AggregateClrTypeNameHeader, aggregate.GetType().AssemblyQualifiedName :> obj)
                 dict
 
-            let streamName = 
-                    match aggregate.Id with
-                    | :? string as s -> s
-                    | _ -> raise (System.ArgumentException("EventStore expects a string for the id argument so it can assign a proper StreamName"))
             let newEvents = aggregate.Changes |> Seq.toList
             let originalVersion = aggregate.Version - newEvents.Length
             let expectedRevision = 
@@ -33,7 +29,7 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
             let eventData = newEvents |> List.map (fun e -> this.ToEventData e commitHeaders)
             
             let! result = 
-                client.AppendToStreamAsync(streamName, expectedRevision, eventData).ConfigureAwait(false)
+                client.AppendToStreamAsync(aggregate.Id, expectedRevision, eventData).ConfigureAwait(false)
             aggregate.Changes.Clear()
         }
 
@@ -48,7 +44,7 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
                 raise (ConcurrencyException ex.Message)
         }
 
-    interface IAggregateRepository with
+    interface IEventSourcedAggregateRepository with
         member this.StoreAsync aggregate = 
             task {
                 do! this.TrySaveAggregate(aggregate).ConfigureAwait(false)
@@ -59,18 +55,14 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
                                     and 'TAggregate : (new : unit -> 'TAggregate)
                                     and 'TAggregate : not struct
                                     and 'TEvents :> IAggregateEvents>
-            (id: obj, version: int) =
+            (id: string, version: int) =
             task {
-                let streamName = 
-                    match id with
-                    | :? string as s -> s
-                    | _ -> raise (System.ArgumentException("EventStore expects a string for the id argument so it can assign a proper StreamName"))
                 let aggregateType = typeof<'TAggregate>
                 let instanceOfState = AggregateStateFactory.CreateStateFor<'TEvents> aggregateType
                 let aggregate = new 'TAggregate()
 
                 try
-                    let events = client.ReadStreamAsync(Direction.Forwards, streamName, StreamPosition.Start, version)
+                    let events = client.ReadStreamAsync(Direction.Forwards, id, StreamPosition.Start, version)
                     let asyncEvents = AsyncSeq.ofAsyncEnum events
                     
                     do! asyncEvents

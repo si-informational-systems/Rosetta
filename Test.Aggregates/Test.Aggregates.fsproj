@@ -7,10 +7,10 @@
 
   <ItemGroup>
     <PackageReference Include="MassTransit" Version="8.4.1" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.6" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="RavenDB.Client" Version="7.0.2" />
-    <PackageReference Include="SI.Stack.RavenDB" Version="1.7.0" />
+    <PackageReference Include="RavenDB.Client" Version="7.0.3" />
+    <PackageReference Include="SI.Stack.RavenDB" Version="1.8.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -41,10 +41,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SI.Rosetta.Aggregates.HostBuilder\SI.Rosetta.Aggregates.HostBuilder.fsproj" />
-    <ProjectReference Include="..\SI.Rosetta.Projections.EventStore\SI.Rosetta.Projections.EventStore.fsproj" />
-    <ProjectReference Include="..\SI.Rosetta.Projections.HostBuilder\SI.Rosetta.Projections.HostBuilder.fsproj" />
-    <ProjectReference Include="..\SI.Rosetta.Projections.RavenDB\SI.Rosetta.Projections.RavenDB.fsproj" />
-    <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.TestKit.ObjectComparer\SI.Rosetta.TestKit.ObjectComparer.fsproj" />
     <ProjectReference Include="..\Test.PL\Test.PL.fsproj" />
   </ItemGroup>

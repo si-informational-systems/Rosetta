@@ -3,7 +3,7 @@
 open SI.Rosetta.Projections
 
 [<CLIMutable>]
-type Person = {
+type PersonA = {
     Id: string
     Name: string
     Height: int
@@ -24,7 +24,7 @@ and PersonProjectionHandler(store: INoSqlStore) =
             task {
                 match event with
                 | PersonEvents.Registered e ->
-                    let person: Person = {
+                    let person: PersonA = {
                         Id = e.Id
                         Name = e.Name
                         Height = 0
@@ -41,9 +41,9 @@ and PersonProjectionHandler(store: INoSqlStore) =
                         { person with Height = e.Height }).ConfigureAwait(false)
             }
             
-    member private this.Project(id: string, update: Person -> Person) =
+    member private this.Project(id: string, update: PersonA -> PersonA) =
         task {
-            let! person = Store.LoadAsync<Person>(id).ConfigureAwait(false)
+            let! person = Store.LoadAsync<PersonA>(id).ConfigureAwait(false)
             let updated = update person
             do! Store.StoreAsync(updated).ConfigureAwait(false)
         }
