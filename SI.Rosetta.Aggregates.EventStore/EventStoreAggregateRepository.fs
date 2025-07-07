@@ -21,10 +21,10 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
                 dict
 
             let newEvents = aggregate.Changes |> Seq.toList
-            let originalVersion = aggregate.Version - newEvents.Length
+            let originalVersion = aggregate.Version - int64 newEvents.Length
             let expectedRevision = 
-                if originalVersion = 0 then StreamRevision.None 
-                else StreamRevision.FromInt64(int64 (originalVersion - 1))
+                if originalVersion = 0L then StreamRevision.None 
+                else StreamRevision.FromInt64(originalVersion - 1L)
             
             let eventData = newEvents |> List.map (fun e -> this.ToEventData e commitHeaders)
             
@@ -40,7 +40,7 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
             with
             | :? AggregateException as ex when (ex.InnerException :? WrongExpectedVersionException) -> 
                 raise (ConcurrencyException ex.Message)
-            | :? WrongExpectedVersionException as ex -> 
+            | :? WrongExpectedVersionException as ex ->
                 raise (ConcurrencyException ex.Message)
         }
 
@@ -55,7 +55,7 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
                                     and 'TAggregate : (new : unit -> 'TAggregate)
                                     and 'TAggregate : not struct
                                     and 'TEvents :> IAggregateEvents>
-            (id: string, version: int) =
+            (id: string, version: int64) =
             task {
                 let aggregateType = typeof<'TAggregate>
                 let instanceOfState = AggregateStateFactory.CreateStateFor<'TEvents> aggregateType

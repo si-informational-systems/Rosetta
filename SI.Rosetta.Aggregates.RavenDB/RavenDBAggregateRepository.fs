@@ -5,7 +5,7 @@ open SI.Rosetta.Aggregates
 
 type RavenDBAggregateRepository(store: IDocumentStore) =
     interface IStateBasedAggregateRepository with
-        member this.GetAsync(id: string, version: int): System.Threading.Tasks.Task<Option<'TAggregate>> = 
+        member this.GetAsync(id: string, version: int64): System.Threading.Tasks.Task<Option<'TAggregate>> = 
             task {
                 use session = store.OpenAsyncSession()
                 let aggregate = new 'TAggregate()

@@ -19,7 +19,7 @@
 
 
   <ItemGroup>
-    <PackageReference Include="SI.Stack.RavenDB" Version="1.8.0" />
+    <PackageReference Include="SI.Stack.RavenDB" Version="1.9.0" />
   </ItemGroup>
 
 </Project>

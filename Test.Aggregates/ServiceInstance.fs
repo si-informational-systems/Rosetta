@@ -30,9 +30,9 @@ type ServiceInstance(
                         IssuedBy = userReference
                         TimeIssued = DateTime.Now
                     }
-                    let registerPersonCmd : ChangePersonName = {
-                        Id = "People-1"
-                        Name = "Tripple H"
+                    let registerPersonCmd : RegisterPerson = {
+                        Id = "People-2"
+                        Name = "Undertaker"
                         Metadata = metadata
                     }
                     

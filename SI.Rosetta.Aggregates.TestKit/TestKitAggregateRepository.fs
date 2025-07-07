@@ -62,4 +62,7 @@ type TestKitAggregateRepository() =
                 agg.Changes.Clear()
             }
 
+    interface IEventSourcedAggregateRepository
+    interface IStateBasedAggregateRepository
+
 

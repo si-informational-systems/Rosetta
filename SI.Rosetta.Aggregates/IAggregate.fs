@@ -5,7 +5,7 @@ open SI.Rosetta.Common
 
 type IAggregate =
     abstract member Id: string
-    abstract member Version: int
+    abstract member Version: int64
     abstract member Changes: List<IAggregateEvents>
     abstract member PublishedEvents: List<IAggregateEvents>
     abstract member SetState: state: obj -> unit

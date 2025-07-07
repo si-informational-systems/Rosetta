@@ -53,7 +53,7 @@ type TestKitBase<'TAggregateHandler when 'TAggregateHandler :> IAggregateHandler
             repository.SeedEvents(id, events)
             
             let handlerType = typeof<'TAggregateHandler>
-            let handler = Activator.CreateInstance(handlerType, repository :> IAggregateRepository) :?> 'TAggregateHandler
+            let handler = Activator.CreateInstance(handlerType, repository :> IEventSourcedAggregateRepository) :?> 'TAggregateHandler
 
             do! handler.ExecuteAsync(command).ConfigureAwait(false)
             let producedEvents = repository.GetProducedEvents

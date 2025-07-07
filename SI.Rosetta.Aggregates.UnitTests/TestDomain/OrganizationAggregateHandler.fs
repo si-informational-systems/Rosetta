@@ -5,7 +5,7 @@ open SI.Rosetta.Aggregates
 type IOrganizationAggregateHandler =
     inherit IAggregateHandler
 
-type OrganizationAggregateHandler(repo: IAggregateRepository) = 
+type OrganizationAggregateHandler(repo: IEventSourcedAggregateRepository) = 
     inherit AggregateHandler<OrganizationAggregate, OrganizationCommands, OrganizationEvents>()
     do base.AggregateRepository <- repo
     interface IOrganizationAggregateHandler
