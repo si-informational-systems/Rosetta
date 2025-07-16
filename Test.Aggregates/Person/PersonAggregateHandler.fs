@@ -5,7 +5,7 @@ open SI.Rosetta.Aggregates
 type IPersonAggregateHandler =
     inherit IAggregateHandler
 
-type PersonAggregateHandler(repo: IStateBasedAggregateRepository) = 
+type PersonAggregateHandler(repo: IEventSourcedAggregateRepository) = 
     inherit AggregateHandler<PersonAggregate, PersonCommands, PersonEvents>()
     do base.AggregateRepository <- repo
     interface IPersonAggregateHandler
@@ -16,6 +16,8 @@ type PersonAggregateHandler(repo: IStateBasedAggregateRepository) =
             | PersonCommands.Register cmd ->
                 do! this.IdempotentlyCreateAggregate cmd.Id command
                 
+            | PersonCommands.AddRecord cmd ->
+                do! this.IdempotentlyUpdateAggregate cmd.Id command
             | PersonCommands.ChangeName cmd ->
                 do! this.IdempotentlyUpdateAggregate cmd.Id command
             | PersonCommands.SetHeight cmd ->

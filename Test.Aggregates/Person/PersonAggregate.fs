@@ -3,7 +3,7 @@
 open SI.Rosetta.Aggregates
 
 type PersonAggregate() =
-    inherit Aggregate<Person, PersonCommands, PersonEvents>()
+    inherit Aggregate<PersonAggregateState, PersonCommands, PersonEvents>()
 
     override this.Execute(command: PersonCommands) =
         match command with
@@ -12,6 +12,9 @@ type PersonAggregate() =
                 if this.IsIdempotent cmd then ()
                 else raise (DomainException("Person already registered"))
             else this.Register cmd
+
+        | PersonCommands.AddRecord cmd -> 
+            this.AddRecord cmd
 
         | PersonCommands.ChangeName cmd -> 
             if this.IsIdempotent cmd then ()
@@ -24,6 +27,10 @@ type PersonAggregate() =
     member private this.Register(cmd: RegisterPerson) =
         let event = PersonEvents.Registered { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
         this.PublishedEvents.Add event
+        this.Apply event
+
+    member private this.AddRecord(cmd: AddPersonRecord) =
+        let event = PersonEvents.RecordAdded { Id = cmd.Id; Record = cmd.Record; Metadata = cmd.Metadata }
         this.Apply event
 
     member private this.ChangeName(cmd: ChangePersonName) =

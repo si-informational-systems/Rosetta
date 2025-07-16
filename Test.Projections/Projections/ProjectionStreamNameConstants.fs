@@ -2,7 +2,7 @@
 module ProjectionStreamNames
 
     [<Literal>]
-    let PersonStream = "$ce-Persons"
+    let PersonStream = "$ce-People"
 
     [<Literal>]
     let OrganizationStream = "$ce-Organizations"

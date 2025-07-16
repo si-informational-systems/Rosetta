@@ -28,7 +28,7 @@ type TestKitAggregateRepository() =
                             and 'TAggregate : (new : unit -> 'TAggregate)
                             and 'TAggregate : not struct
                             and 'TEvents :> IAggregateEvents>
-            (id: string, version: int) =
+            (id: string, version: int64) =
             task {
                 if not (InMemoryStore.ContainsKey id) then
                     return None
