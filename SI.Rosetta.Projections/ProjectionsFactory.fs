@@ -20,8 +20,12 @@ type ProjectionsFactory(provider: IServiceProvider) =
         t.Name.Replace(ProjectionPrefix, String.Empty)
         
     member private this.GetSubscriptionStreamName(t: Type) =
-        let attrInfo = t.GetCustomAttribute(typeof<HandlesStream>) :?> HandlesStream
-        attrInfo.Name
+        try
+            let attrInfo = t.GetCustomAttribute(typeof<HandlesStream>) :?> HandlesStream
+            attrInfo.Name
+        with
+        | _ ->
+            raise (InvalidOperationException(sprintf "Type %s must have HandlesStream attribute" t.Name))
         
     member private this.GetProjectionInfo(t: Type) : ProjectionInfo =
         { Name = this.GetProjectionName(t)

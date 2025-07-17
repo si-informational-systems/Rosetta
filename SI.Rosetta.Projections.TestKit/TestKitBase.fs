@@ -12,7 +12,7 @@ type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent
     when 'TEvent :> IEvents
     and 'TProjectionHandler :> IProjectionHandler<'TEvent>>() as this =
     let mutable TestValid = false
-    let mutable DocumentId = Unchecked.defaultof<obj>
+    let mutable DocumentId = obj()
     let mutable projectionsFactory = Unchecked.defaultof<IProjectionsFactory>
     let mutable projectionsStore = Unchecked.defaultof<IProjectionsStore>
     let serviceCollection = ServiceCollection()
