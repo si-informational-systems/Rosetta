@@ -56,6 +56,12 @@ type PersonNameChanged = {
     Metadata: MessageMetadata
 } with interface IEvent with member this.Id = this.Id member this.Metadata = this.Metadata
 
+type PersonNameChangedToMladen = {
+    Id: string
+    Name: string
+    Metadata: MessageMetadata
+} with interface IEvent with member this.Id = this.Id member this.Metadata = this.Metadata
+
 type PersonHeightSet = {
     Id: string
     Height: int
@@ -75,5 +81,6 @@ type PersonEvents =
     | Registered of PersonRegistered
     | RecordAdded of PersonRecordAdded
     | NameChanged of PersonNameChanged
+    | NameChangedToMladen of PersonNameChangedToMladen
     | HeightSet of PersonHeightSet
     interface IAggregateEvents

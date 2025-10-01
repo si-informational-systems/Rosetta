@@ -21,5 +21,7 @@ type PersonAggregateState() =
         | PersonEvents.NameChanged ev ->
             this.Name <- ev.Name
 
+        | PersonEvents.NameChangedToMladen ev -> ()
+
         | PersonEvents.HeightSet ev ->
             this.Height <- ev.Height

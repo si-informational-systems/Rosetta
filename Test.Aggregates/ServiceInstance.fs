@@ -31,30 +31,38 @@ type ServiceInstance(
                         TimeIssued = DateTime.Now
                     }
                     let registerPersonCmd : RegisterPerson = {
-                        Id = "People-3"
-                        Name = "John Cena"
+                        Id = "People-5"
+                        Name = "Goran"
                         Metadata = metadata
                     }
                     
                     do! personConsumer.Consume(registerPersonCmd).ConfigureAwait(false)
 
-                    let stopwatch = Stopwatch()
-                    //for i = 1 to 365 do
-                    let record = {
-                        Date = DateTime.Now
-                        Value = 366
-                        Reference = { Id = $"Ref-{366}"; Name = "Reference" }
-                    }
-                    let addRecordCmd : AddPersonRecord = {
-                        Id = registerPersonCmd.Id
-                        Record = record
+                    let changeName : ChangePersonName = {
+                        Id = "People-5"
+                        Name = "Mladen"
                         Metadata = metadata
                     }
-                    stopwatch.Start()
-                    do! personConsumer.Consume(addRecordCmd).ConfigureAwait(false)
-                    stopwatch.Stop()
-                    printfn "Added record %d in %d ms" 366 stopwatch.ElapsedMilliseconds
-                    stopwatch.Reset()
+                    
+                    do! personConsumer.Consume(changeName).ConfigureAwait(false)
+
+                    //let stopwatch = Stopwatch()
+                    ////for i = 1 to 365 do
+                    //let record = {
+                    //    Date = DateTime.Now
+                    //    Value = 366
+                    //    Reference = { Id = $"Ref-{366}"; Name = "Reference" }
+                    //}
+                    //let addRecordCmd : AddPersonRecord = {
+                    //    Id = registerPersonCmd.Id
+                    //    Record = record
+                    //    Metadata = metadata
+                    //}
+                    //stopwatch.Start()
+                    //do! personConsumer.Consume(addRecordCmd).ConfigureAwait(false)
+                    //stopwatch.Stop()
+                    //printfn "Added record %d in %d ms" 366 stopwatch.ElapsedMilliseconds
+                    //stopwatch.Reset()
 
                     //let orgConsumer = OrganizationConsumer(orgHandler, orgLogger)
                     //let registerOrganizationCmd : RegisterOrganization = {
