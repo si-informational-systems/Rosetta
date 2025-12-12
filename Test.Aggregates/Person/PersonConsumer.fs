@@ -9,13 +9,13 @@ type PersonConsumer(handler: IPersonAggregateHandler, logger: ILogger<PersonCons
         task {
             do! this.TryHandle(PersonCommands.Register cmd, handler, logger).ConfigureAwait(false)
         }
-
-    member this.Consume(cmd: AddPersonRecord) =
-        task {
-            do! this.TryHandle(PersonCommands.AddRecord cmd, handler, logger).ConfigureAwait(false)
-        }
             
     member this.Consume(cmd: ChangePersonName) =
         task {
             do! this.TryHandle(PersonCommands.ChangeName cmd, handler, logger).ConfigureAwait(false)
+        }
+
+    member this.Consume(cmd: SetPersonHeight) =
+        task {
+            do! this.TryHandle(PersonCommands.SetHeight cmd, handler, logger).ConfigureAwait(false)
         }

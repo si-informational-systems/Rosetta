@@ -3,7 +3,7 @@ namespace TestFSharp
 open SI.Rosetta.Aggregates
 
 type OrganizationAggregate() =
-    inherit Aggregate<OrganizationAggregateState, OrganizationCommands, OrganizationEvents>()
+    inherit Aggregate<Organization, OrganizationCommands, OrganizationEvents>()
 
     override this.Execute(command: OrganizationCommands) =
         match command with

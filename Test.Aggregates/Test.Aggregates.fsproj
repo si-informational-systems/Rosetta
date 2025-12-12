@@ -14,7 +14,7 @@
 
   <ItemGroup>
     <Compile Include="AggregateConsumerBase.fs" />
-    <Compile Include="Organization\OrganizationAggregateState.fs" />
+    <Compile Include="Organization\Organization.fs" />
     <Compile Include="Organization\OrganizationAggregate.fs" />
     <Compile Include="Organization\OrganizationAggregateHandler.fs" />
     <Compile Include="Organization\OrganizationConsumer.fs" />

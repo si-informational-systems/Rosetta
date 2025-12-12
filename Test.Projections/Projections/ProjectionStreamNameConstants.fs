@@ -8,4 +8,4 @@ module ProjectionStreamNames
     let OrganizationStream = "$ce-Organizations"
     
     [<Literal>]
-    let TotalPeopleCustomStream = "cp-TotalPeople"
+    let TotalPeopleAndOrganizationsCustomStream = "cp-TotalPeopleAndOrganizations"

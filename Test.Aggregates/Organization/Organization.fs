@@ -2,7 +2,7 @@ namespace TestFSharp
 
 open SI.Rosetta.Aggregates
 
-type OrganizationAggregateState() =
+type Organization() =
     inherit AggregateState<OrganizationEvents>()
     member val Name = "" with get, set
 

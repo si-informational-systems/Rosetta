@@ -13,9 +13,6 @@ type PersonAggregate() =
                 else raise (DomainException("Person already registered"))
             else this.Register cmd
 
-        | PersonCommands.AddRecord cmd -> 
-            this.AddRecord cmd
-
         | PersonCommands.ChangeName cmd -> 
             if this.IsIdempotent cmd then ()
             else this.ChangeName cmd
@@ -29,17 +26,13 @@ type PersonAggregate() =
         this.PublishedEvents.Add event
         this.Apply event
 
-    member private this.AddRecord(cmd: AddPersonRecord) =
-        let event = PersonEvents.RecordAdded { Id = cmd.Id; Record = cmd.Record; Metadata = cmd.Metadata }
-        this.Apply event
-
     member private this.ChangeName(cmd: ChangePersonName) =
         let event = PersonEvents.NameChanged { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
         this.Apply event
-        if (this.State.Name = "Mladen") then
-            let mladenEvent = PersonEvents.NameChangedToMladen { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
-            this.Apply mladenEvent
-            this.PublishedEvents.Add(mladenEvent)
+        if (this.State.Name = "John") then
+            let JohnEvent = PersonEvents.NameChangedToJohn { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
+            this.Apply JohnEvent
+            this.PublishedEvents.Add(JohnEvent)
 
     member private this.SetHeight(cmd: SetPersonHeight) =
         let event = PersonEvents.HeightSet { Id = cmd.Id; Height = cmd.Height; Metadata = cmd.Metadata }

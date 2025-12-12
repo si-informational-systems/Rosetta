@@ -16,8 +16,6 @@ type PersonAggregateHandler(repo: IEventSourcedAggregateRepository) =
             | PersonCommands.Register cmd ->
                 do! this.IdempotentlyCreateAggregate cmd.Id command
                 
-            | PersonCommands.AddRecord cmd ->
-                do! this.IdempotentlyUpdateAggregate cmd.Id command
             | PersonCommands.ChangeName cmd ->
                 do! this.IdempotentlyUpdateAggregate cmd.Id command
             | PersonCommands.SetHeight cmd ->

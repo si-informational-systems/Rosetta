@@ -7,21 +7,9 @@ type Reference = {
     Name: string 
 }
 
-type Record = { 
-    Date: System.DateTime
-    Value: int 
-    Reference: Reference
-}
-
 type RegisterPerson = {
     Id: string
     Name: string
-    Metadata: MessageMetadata
-} with interface ICommand with member this.Id = this.Id member this.Metadata = this.Metadata
-
-type AddPersonRecord = {
-    Id: string
-    Record: Record
     Metadata: MessageMetadata
 } with interface ICommand with member this.Id = this.Id member this.Metadata = this.Metadata
 
@@ -44,19 +32,13 @@ type PersonRegistered = {
     Metadata: MessageMetadata
 } with interface IEvent with member this.Id = this.Id member this.Metadata = this.Metadata
 
-type PersonRecordAdded = {
-    Id: string
-    Record: Record
-    Metadata: MessageMetadata
-} with interface IEvent with member this.Id = this.Id member this.Metadata = this.Metadata
-
 type PersonNameChanged = {
     Id: string
     Name: string
     Metadata: MessageMetadata
 } with interface IEvent with member this.Id = this.Id member this.Metadata = this.Metadata
 
-type PersonNameChangedToMladen = {
+type PersonNameChangedToJohn = {
     Id: string
     Name: string
     Metadata: MessageMetadata
@@ -71,7 +53,6 @@ type PersonHeightSet = {
 [<RequireQualifiedAccess>]
 type PersonCommands =
     | Register of RegisterPerson
-    | AddRecord of AddPersonRecord
     | ChangeName of ChangePersonName
     | SetHeight of SetPersonHeight
     interface IAggregateCommands
@@ -79,8 +60,7 @@ type PersonCommands =
 [<RequireQualifiedAccess>]
 type PersonEvents =
     | Registered of PersonRegistered
-    | RecordAdded of PersonRecordAdded
     | NameChanged of PersonNameChanged
-    | NameChangedToMladen of PersonNameChangedToMladen
+    | NameChangedToJohn of PersonNameChangedToJohn
     | HeightSet of PersonHeightSet
     interface IAggregateEvents

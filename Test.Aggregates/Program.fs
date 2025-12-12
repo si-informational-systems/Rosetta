@@ -16,7 +16,6 @@ let main args =
                 config
                     .SetBasePath(Directory.GetCurrentDirectory())
                     .AddJsonFile("config/appsettings.json", optional = false)
-                    .AddEnvironmentVariables("SI_")
                     .AddCommandLine(args)
                 |> ignore)
         |> fun builder -> UseAggregatesWith<EventStore, RavenDB> builder typeof<PersonAggregateHandler>.Assembly

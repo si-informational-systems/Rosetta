@@ -7,7 +7,6 @@ type PersonAggregateState() =
     inherit AggregateState<PersonEvents>()
     member val Name = "" with get, set
     member val Height = 0 with get, set
-    member val Records = List<Record>() with get, set
 
     override this.ApplyEvent(ev: PersonEvents) =
         match ev with
@@ -15,13 +14,10 @@ type PersonAggregateState() =
             this.Id <- ev.Id
             this.Name <- ev.Name
 
-        | PersonEvents.RecordAdded ev ->
-            this.Records.Add(ev.Record)
-
         | PersonEvents.NameChanged ev ->
             this.Name <- ev.Name
 
-        | PersonEvents.NameChangedToMladen ev -> ()
+        | PersonEvents.NameChangedToJohn ev -> ()
 
         | PersonEvents.HeightSet ev ->
             this.Height <- ev.Height
