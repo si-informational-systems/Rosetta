@@ -1,15 +1,13 @@
 ﻿namespace TestFSharp
 
 open SI.Rosetta.Projections
-open System.Collections.Generic
 
 [<CLIMutable>]
-type PersonA = {
+type Person = {
     Id: string
     Name: string
     Height: int
     Status: string
-    Records: List<Record>
     Metadata: MessageMetadata
 }
 
@@ -26,9 +24,8 @@ and PersonProjectionHandler(store: INoSqlStore) =
             task {
                 match event with
                 | PersonEvents.Registered e ->
-                    let person: PersonA = {
+                    let person: Person = {
                         Id = e.Id
-                        Records = List<Record>()
                         Name = e.Name
                         Height = 0
                         Status = "Active"
@@ -36,11 +33,6 @@ and PersonProjectionHandler(store: INoSqlStore) =
                     }
                     do! Store.StoreAsync(person).ConfigureAwait(false)
 
-                | PersonEvents.RecordAdded e ->
-                    do! this.Project(e.Id, fun person ->
-                        person.Records.Add(e.Record)
-                        person
-                        ).ConfigureAwait(false)
                 | PersonEvents.NameChanged e ->
                     do! this.Project(e.Id, fun person ->
                         { person with Name = e.Name }).ConfigureAwait(false)
@@ -50,9 +42,9 @@ and PersonProjectionHandler(store: INoSqlStore) =
                         { person with Height = e.Height }).ConfigureAwait(false)
             }
             
-    member private this.Project(id: string, update: PersonA -> PersonA) =
+    member private this.Project(id: string, update: Person -> Person) =
         task {
-            let! person = Store.LoadAsync<PersonA>(id).ConfigureAwait(false)
+            let! person = Store.LoadAsync<Person>(id).ConfigureAwait(false)
             let updated = update person
             do! Store.StoreAsync(updated).ConfigureAwait(false)
         }
