@@ -19,6 +19,9 @@ let main args =
                     .AddCommandLine(args)
                 |> ignore)
         |> fun builder -> UseAggregatesWith<EventStore, RavenDB> builder typeof<PersonAggregateHandler>.Assembly
+        // UseAggregatesWith is used when a combination of both EventSourced and NonEventSourced persistence is used
+        // UseAggregatesWithEventSourcing is used when only EventSourced persistence is used
+        // UseAggregatesWithoutEventSourcing is used when only NonEventSourced persistence is used
         |> fun builder -> builder.ConfigureServices(fun ctx services ->
             services.AddHostedService<ServiceInstance>() |> ignore
         )
