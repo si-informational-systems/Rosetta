@@ -6,12 +6,12 @@ open Microsoft.Extensions.Configuration
 open System
 open System.Reflection
 open System.Runtime.CompilerServices
-open EventStore.Client
 open SI.Rosetta.Aggregates
 open SI.Rosetta.Aggregates.EventStore
-open SI.Stack.RavenDB
 open SI.Rosetta.Aggregates.RavenDB
 open Raven.Client.Documents
+open SI.Rosetta.Persistence.RavenDB
+open SI.Rosetta.Persistence.EventStore
 
 [<AutoOpen>]
 module HostBuilderExtensionsCommon =
@@ -21,16 +21,10 @@ module HostBuilderExtensionsCommon =
 [<AutoOpen>]
 module HostBuilderEventStoreExtensionCommmon =
 
-    let private CheckEventStoreAvailable(client: EventStoreClient) =
-        (client.GetStreamMetadataAsync("$ce-Any")).Result |> ignore
-
     let InitializeEventStore (config: IConfiguration) =
-        let esAggRep = 
-            let settings = EventStoreClientSettings.Create(config.["EventStoreDB:ConnectionString"])
-            let client = new EventStoreClient(settings)
-            CheckEventStoreAvailable client
-            new EventStoreAggregateRepository(client)
-        esAggRep
+        let client = EventStoreFactory.InitializeEventStore config
+        let esRepo = new EventStoreAggregateRepository(client)
+        esRepo
 
 [<AutoOpen>]
 module HostBuilderRavenDBExtensionCommmon =
@@ -50,16 +44,16 @@ module HostBuilderRavenDBExtensionCommmon =
 
     let CreateRavenDocumentStore(config: IConfiguration) = 
         let docStore = 
-            RavenDocumentStoreFactory.CreateAndInitializeDocumentStore(
-                RavenConfig.FromConfiguration(config),
-                fun conventions -> 
+            RavenDocumentStoreFactory.CreateAndInitializeDocumentStore
+                (RavenConfig.FromConfiguration(config))
+                (Some (fun conventions -> 
                     // Configure serialization to exclude Version field
                     conventions.Serialization <- 
                         let serialization = Raven.Client.Json.Serialization.NewtonsoftJson.NewtonsoftJsonSerializationConventions()
                         serialization.CustomizeJsonSerializer <- fun serializer ->
                             serializer.ContractResolver <- new AggregateStateContractResolver()
                         serialization
-            );
+                        ))
         docStore;
 
 [<AutoOpen>]

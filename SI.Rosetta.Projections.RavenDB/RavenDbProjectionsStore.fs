@@ -85,7 +85,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                     return result
                 })
 
-        member this.DeleteAsync(id: obj) =
+        member this.DeleteAsync<'T when 'T : not struct>(id: obj) =
             DefensivelyStore 0 (fun () ->
                 task {
                     use session = store.OpenAsyncSession()
@@ -93,7 +93,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                     do! session.SaveChangesAsync().ConfigureAwait(false)
                 })
 
-        member this.DeleteInUnitOfWorkAsync(ids: obj[]) =
+        member this.DeleteInUnitOfWorkAsync<'T when 'T : not struct>(ids: obj[]) =
             DefensivelyStore 0 (fun () ->
                 task {
                     use session = store.OpenAsyncSession()

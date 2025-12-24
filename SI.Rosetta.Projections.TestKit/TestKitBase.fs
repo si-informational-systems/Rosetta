@@ -8,7 +8,7 @@ open Xunit.Sdk
 open SI.Rosetta.Common
 
 [<AbstractClass>]
-type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent 
+type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent
     when 'TEvent :> IEvents
     and 'TProjectionHandler :> IProjectionHandler<'TEvent>>() as this =
     let mutable TestValid = false

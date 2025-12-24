@@ -16,11 +16,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SI.Rosetta.Common\SI.Rosetta.Common.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Persistence.MongoDB\SI.Rosetta.Persistence.MongoDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />
-  </ItemGroup>
-  
-  <ItemGroup>
-    <PackageReference Include="SI.Stack.MongoDB" Version="1.5.0" />
   </ItemGroup>
 
 </Project>

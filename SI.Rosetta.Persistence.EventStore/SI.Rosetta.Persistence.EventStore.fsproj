@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EventStore.Client.Grpc.Streams" Version="23.3.9" />
+    <PackageReference Include="EventStore.Client.Grpc.ProjectionManagement" Version="23.3.9" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="EventStoreFactory.fs" />
+  </ItemGroup>
+
+</Project>

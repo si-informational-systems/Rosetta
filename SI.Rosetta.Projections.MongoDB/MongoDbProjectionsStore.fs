@@ -163,7 +163,7 @@ type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
                     return result
                 })
 
-        member this.DeleteAsync(id: obj) =
+        member this.DeleteAsync<'T when 'T : not struct>(id: obj) =
             DefensivelyStore 0 (fun () ->
                 task {
                     let collectionName = PluralizeName(typeof<'T>.Name)
@@ -173,7 +173,7 @@ type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
                     return ()
                 })
 
-        member this.DeleteInUnitOfWorkAsync(ids: obj[]) =
+        member this.DeleteInUnitOfWorkAsync<'T when 'T : not struct>(ids: obj[]) =
             DefensivelyStore 0 (fun () ->
                 task {
                     use! session = client.StartSessionAsync()

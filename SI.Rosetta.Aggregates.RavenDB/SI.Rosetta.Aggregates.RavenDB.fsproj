@@ -15,11 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SI.Rosetta.Aggregates\SI.Rosetta.Aggregates.fsproj" />
-  </ItemGroup>
-
-
-  <ItemGroup>
-    <PackageReference Include="SI.Stack.RavenDB" Version="1.9.0" />
+    <ProjectReference Include="..\SI.Rosetta.Persistence.RavenDB\SI.Rosetta.Persistence.RavenDB.fsproj" />
   </ItemGroup>
 
 </Project>

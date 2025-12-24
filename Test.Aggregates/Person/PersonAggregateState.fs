@@ -1,7 +1,6 @@
 ﻿namespace TestFSharp
 
 open SI.Rosetta.Aggregates
-open System.Collections.Generic
 
 type PersonAggregateState() =
     inherit AggregateState<PersonEvents>()

@@ -6,22 +6,26 @@ open Microsoft.Extensions.Configuration
 open System
 open System.Reflection
 open System.Runtime.CompilerServices
-open SI.Rosetta.Projections
-open SI.Rosetta.Projections.EventStore
-open SI.Stack.RavenDB
-open Raven.Client.Documents
-open SI.Rosetta.Projections.RavenDB
-open SI.Rosetta.Projections.MongoDB
 open Microsoft.Extensions.Logging
 open MongoDB.Driver
 open MongoDB.Bson.Serialization.Conventions;
+open Raven.Client.Documents
+open SI.Rosetta.Projections
+open SI.Rosetta.Projections.EventStore
+open SI.Rosetta.Persistence.RavenDB
+open SI.Rosetta.Persistence.MongoDB
+open SI.Rosetta.Projections.RavenDB
+open SI.Rosetta.Projections.MongoDB
 
 [<AutoOpen>]
 module HostBuilderExtensionCommon =
     let HostBuilderExtensionInUse : string = "SI.Rosetta.Projections.UseProjections"
     
     let CreateRavenDocumentStore(config: IConfiguration) = 
-        let docStore = RavenDocumentStoreFactory.CreateAndInitializeDocumentStore(RavenConfig.FromConfiguration(config));
+        let docStore = 
+            RavenDocumentStoreFactory.CreateAndInitializeDocumentStore 
+                (RavenConfig.FromConfiguration(config)) 
+                None
         docStore;
 
 [<AutoOpen>]
@@ -44,7 +48,7 @@ module HostBuilderExtensions =
             
             match typeof<'ProjectionsStore> with
             //RAVEN DB
-            | t when t = typeof<Raven> ->
+            | t when t = typeof<RavenDB> ->
                 if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IDocumentStore>)) then
                     services.AddSingleton<IDocumentStore>(CreateRavenDocumentStore(ctx.Configuration)) |> ignore
                 services
@@ -52,17 +56,15 @@ module HostBuilderExtensions =
                     .AddSingleton<ISqlStore, RavenDbProjectionsStore>()
                     .AddTransient<ICheckpointStore, RavenDbCheckpointStore>() |> ignore
             //MONGO DB
-            | t when t = typeof<Mongo> ->
+            | t when t = typeof<MongoDB> ->
                 if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IMongoClient>)) then
-                    let connection = SI.Stack.MongoDB.MongoConfig.FromConfiguration(ctx.Configuration)
-                    let dbConnection = connection.GenerateConnectionString()
-                    let client = new MongoClient(dbConnection)
+                    let mongoConfig = MongoConfig.FromConfiguration(ctx.Configuration)
+                    let client = MongoClientFactory.CreateClientWithoutDatabase(mongoConfig)
                     services.AddSingleton<IMongoClient>(client) |> ignore
 
                     services.AddScoped<IMongoDatabase>(fun sp -> 
                         let client = sp.GetRequiredService<IMongoClient>()
-                        let connection = SI.Stack.MongoDB.MongoConfig.FromConfiguration(ctx.Configuration)
-                        let dbName = connection.DatabaseName
+                        let dbName = mongoConfig.DatabaseName
                         let db = client.GetDatabase(dbName)
                         db
                     ) |> ignore
@@ -117,7 +119,7 @@ module CSharp_HostBuilderExtensions =
             
             match typeof<'ProjectionsStore> with
             //RAVEN DB
-            | t when t = typeof<Raven> ->
+            | t when t = typeof<RavenDB> ->
                 if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IDocumentStore>)) then
                     services.AddSingleton<IDocumentStore>(CreateRavenDocumentStore(ctx.Configuration)) |> ignore
                 services
@@ -125,17 +127,15 @@ module CSharp_HostBuilderExtensions =
                     .AddSingleton<ISqlStore, RavenDbProjectionsStore>()
                     .AddTransient<ICheckpointStore, RavenDbCheckpointStore>() |> ignore
             //MONGO DB
-            | t when t = typeof<Mongo> ->
+            | t when t = typeof<MongoDB> ->
                 if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IMongoClient>)) then
-                    let connection = SI.Stack.MongoDB.MongoConfig.FromConfiguration(ctx.Configuration)
-                    let dbConnection = connection.GenerateConnectionString()
-                    let client = new MongoClient(dbConnection)
+                    let mongoConfig = MongoConfig.FromConfiguration(ctx.Configuration)
+                    let client = MongoClientFactory.CreateClientWithoutDatabase(mongoConfig)
                     services.AddSingleton<IMongoClient>(client) |> ignore
 
                     services.AddScoped<IMongoDatabase>(fun sp -> 
                         let client = sp.GetRequiredService<IMongoClient>()
-                        let connection = SI.Stack.MongoDB.MongoConfig.FromConfiguration(ctx.Configuration)
-                        let dbName = connection.DatabaseName
+                        let dbName = mongoConfig.DatabaseName
                         let db = client.GetDatabase(dbName)
                         db
                     ) |> ignore

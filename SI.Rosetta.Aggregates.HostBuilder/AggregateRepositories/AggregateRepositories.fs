@@ -9,3 +9,6 @@ type StateBasedAggregateRepository() = class end
 
 type RavenDB() =
     inherit StateBasedAggregateRepository()
+    
+type MongoDB() =
+    inherit StateBasedAggregateRepository()

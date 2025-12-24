@@ -1,20 +1,17 @@
 namespace SI.Rosetta.Projections.EventStore
 
-open System
 open System.Collections.Generic
 open System.Threading.Tasks
-open EventStore.Client
 open Microsoft.Extensions.Configuration
 open FSharp.Control
 open System.Reflection
+open SI.Rosetta.Persistence.EventStore
 
 type IESCustomJSProjectionsFactory =
     abstract member CreateCustomProjections: Assembly -> Task
 
 type ESCustomJSProjectionsFactory(conf: IConfiguration) =
-    let ProjectionManagementClient = 
-        let settings = EventStoreClientSettings.Create(conf.GetSection("EventStoreDB:ConnectionString").Value)
-        new EventStoreProjectionManagementClient(settings)
+    let ProjectionManagementClient = EventStoreFactory.InitializeProjectionManagementClient conf
     
     member private this.GetNewProjectionNames (projections: Dictionary<string, string>, existing: string list) =
         projections 

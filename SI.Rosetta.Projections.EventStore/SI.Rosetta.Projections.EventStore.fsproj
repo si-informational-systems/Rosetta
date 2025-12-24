@@ -11,8 +11,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="EventStore.Client.Grpc.ProjectionManagement" Version="23.3.9" />
-    <PackageReference Include="EventStore.Client.Grpc.Streams" Version="23.3.9" />
     <PackageReference Include="FSharp.Control.TaskSeq" Version="0.4.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="9.0.7" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.7" />
@@ -22,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\SI.Rosetta.Persistence.EventStore\SI.Rosetta.Persistence.EventStore.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Serialization\SI.Rosetta.Serialization.fsproj" />
   </ItemGroup>

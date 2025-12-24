@@ -2,8 +2,8 @@
 
 type ProjectionStore() = class end
 
-type Mongo() = 
+type MongoDB() = 
     inherit ProjectionStore()
     
-type Raven() = 
+type RavenDB() = 
     inherit ProjectionStore()

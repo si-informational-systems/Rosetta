@@ -8,7 +8,7 @@ type TestKitProjectionStore() =
     let InMemoryStore = ConcurrentDictionary<obj, obj>()
             
     interface IProjectionsStore with
-        member _.StoreAsync<'T when 'T : not struct>(doc: 'T) = task {
+        member this.StoreAsync<'T when 'T : not struct>(doc: 'T) = task {
             let idProp = doc.GetType().GetProperty("Id")
             let id = idProp.GetValue(doc, null)
             ValidateIdType id
@@ -36,12 +36,12 @@ type TestKitProjectionStore() =
                 return dict
             }
             
-        member _.DeleteAsync(id: obj) = task {
+        member this.DeleteAsync<'T when 'T : not struct>(id: obj) = task {
             let mutable removed = null
             InMemoryStore.TryRemove(id, &removed) |> ignore
         }
             
-        member _.DeleteInUnitOfWorkAsync(ids: obj[]) = task {
+        member this.DeleteInUnitOfWorkAsync<'T when 'T : not struct>(ids: obj[]) = task {
             for id in ids do
                 let mutable removed = null
                 InMemoryStore.TryRemove(id, &removed) |> ignore

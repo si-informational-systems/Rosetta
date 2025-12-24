@@ -10,10 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SI.Stack.RavenDB" Version="1.9.0" />
-  </ItemGroup>
-
-  <ItemGroup>
+    <ProjectReference Include="..\SI.Rosetta.Persistence.RavenDB\SI.Rosetta.Persistence.RavenDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />
   </ItemGroup>
 
