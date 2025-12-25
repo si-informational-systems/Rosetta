@@ -93,8 +93,6 @@ graph TD
 ```shell
 dotnet add package SI.Rosetta.Aggregates
 dotnet add package SI.Rosetta.Projections
-dotnet add package EventStore.Client
-dotnet add package RavenDB.Client
 ```
 
 ### 2. Configure Infrastructure
