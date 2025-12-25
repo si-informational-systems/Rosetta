@@ -72,7 +72,33 @@ dotnet add package EventStore.Client
 dotnet add package RavenDB.Client
 ```
 
-### 2. Register Aggregates & Projections
+### 2. Configure Infrastructure
+
+Whether you're using Aggregates, Projections, or both - the persistence underneath needs to be properly configured.
+
+```json
+{
+  "RavenDB": {
+    "Urls": "your_raven_url",
+    "CertificatePath": "relative/path/to/certificate.pfx",
+    "CertificatePassword": "your_password",
+    "DatabaseName": "your_db_name"
+  },
+  "EventStoreDB": {
+    "ConnectionString": "esdb://localhost:2113?Tls=false"
+  },
+   "MongoDB": {
+   "Host": "localhost",
+   "Port": "27017",
+   "Username": "your_username",
+   "Password": "your_password",
+   "AuthSource": "your_auth_source",
+   "DatabaseName": "your_db_name"
+   }
+}
+```
+
+### 3. Register Aggregates & Projections
 
 ```fsharp
 open SI.Rosetta.Aggregates.HostBuilder
@@ -276,7 +302,3 @@ Open an issue or start a discussion!
 ---
 
 **Happy coding!** 🚀
-
----
-
-Let me know if you want to tailor this further for your organization, add more advanced usage, or include badges for build/test status!
