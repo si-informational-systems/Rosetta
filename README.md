@@ -22,11 +22,11 @@ It provides:
 
 - 🧩 **Aggregate Roots** and **Domain Events** (DDD)
 - ⚡ **Event Sourcing** with EventStoreDB
-- 📊 **Projections** with RavenDB and MongoDB (NoSQL) and extensible stores
-- 📊 **Custom (Cross-Aggregate) Projection Definitions** with RavenDB and MongoDB (NoSQL) and extensible stores
+- 📊 **Projections** from EventStoreDB with persistence using RavenDB and MongoDB (NoSQL)
+- 📊 **Custom (Cross-Aggregate) Projection Definitions**
 - 🏗️ **HostBuilder Extensions** for seamless DI and service registration
 - 🛠️ **CQRS**-friendly patterns and handler abstractions
-- 🧪 **Testability** and clean separation of concerns
+- 🧪 **TestKit** for BDD Testing
 
 ---
 
@@ -35,6 +35,31 @@ It provides:
  - While **Rosetta** is opinionated in its choice of technologies, it is built to be easily extensible.
  - You can integrate any Event Sourcing Store and SQL/NoSQL database implementation with minimal effort, adapting the framework to your unique requirements and infrastructure.
  - Any additional implementations are very welcome and would contribute to the Framework's out-of-the-box usability!
+
+```fsharp
+//Implementing the db for Aggregates (either to save the entire AggregateState all at once or to save the produced Events for Event Sourcing purposes)
+type IAggregateRepository =
+    abstract member StoreAsync: aggregate: IAggregate -> Task
+    abstract member GetAsync<'TAggregate, 'TEvents
+            when 'TAggregate : (new : unit -> 'TAggregate) 
+            and 'TAggregate :> IAggregate
+            and 'TAggregate : not struct
+            and 'TEvents :> IAggregateEvents> : 
+        id: string * [<Optional; DefaultParameterValue(Int64.MaxValue)>] version: int64 -> Task<Option<'TAggregate>>
+
+//Implementing the db for Projections
+type ICheckpointStore =
+    abstract member ReadAsync: id: string -> Task<Checkpoint> 
+    abstract member StoreAsync: checkpoint: Checkpoint -> Task
+
+type IProjectionsStore =
+    abstract member StoreAsync<'T when 'T : not struct> : doc: 'T -> Task
+    abstract member StoreInUnitOfWorkAsync<'T when 'T : not struct> : docs: 'T[] -> Task
+    abstract member LoadAsync<'T when 'T : not struct> : id: obj -> Task<'T>
+    abstract member LoadManyAsync<'T when 'T : not struct> : ids: obj[] -> Task<Dictionary<obj, 'T>>
+    abstract member DeleteAsync<'T when 'T : not struct>: id: obj -> Task
+    abstract member DeleteInUnitOfWorkAsync<'T when 'T : not struct>: ids: obj[] -> Task
+```
 
 ## 📦 Features
 
