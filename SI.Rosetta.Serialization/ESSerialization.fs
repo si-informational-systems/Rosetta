@@ -27,7 +27,7 @@ module EventStoreSerialization =
         Metadata: byte[]
     }
 
-    let Serialize(event: IEvents, headers: IDictionary<string, obj>) : EventStoreSerializedEvent =
+    let Serialize(event: IAggregateEvents, headers: IDictionary<string, obj>) : EventStoreSerializedEvent =
         let serializedDU = JsonConvert.SerializeObject(event, JsonSettings)
         let jObject = JObject.Parse serializedDU
         let actualEventData = jObject.["Fields"].[0]
@@ -52,7 +52,7 @@ module EventStoreSerialization =
         }
         serialized
 
-    let Deserialize<'TEvent when 'TEvent :> IEvents>(resolvedEvent: ResolvedEvent) : 'TEvent =
+    let Deserialize<'TEvent when 'TEvent :> IAggregateEvents>(resolvedEvent: ResolvedEvent) : 'TEvent =
         let metadata = resolvedEvent.Event.Metadata.ToArray()
         let data = resolvedEvent.Event.Data.ToArray()
 

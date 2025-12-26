@@ -21,7 +21,6 @@
     <Compile Include="AggregateState.fs" />
     <Compile Include="Aggregate.fs" />
     <Compile Include="AggregateHandler.fs" />
-    <Compile Include="AggregateStateFactory.fs" />
   </ItemGroup>
 
   <ItemGroup>

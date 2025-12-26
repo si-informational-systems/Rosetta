@@ -9,7 +9,7 @@ open SI.Rosetta.Common
 open FSharp.Control
 open SI.Rosetta.Serialization
 
-type ESSubscription<'TEvent when 'TEvent :> IEvents>
+type ESSubscription<'TEvent when 'TEvent :> IAggregateEvents>
     (logger: ILogger<ESSubscription<'TEvent>>, client: EventStoreClient) =
     let mutable name = String.Empty
     let mutable streamName = String.Empty
@@ -23,7 +23,7 @@ type ESSubscription<'TEvent when 'TEvent :> IEvents>
     let isNotDeleted (event: ResolvedEvent) =
         event.Event <> null
 
-    member private this.handleEvent<'T when 'T :> IEvents> (event: ResolvedEvent) =
+    member private this.HandleEvent<'T when 'T :> IAggregateEvents> (event: ResolvedEvent) =
         task {
             let oneBasedCheckPoint = event.OriginalEventNumber.ToUInt64() + 1UL
             if isNotDeleted event then
@@ -77,7 +77,7 @@ type ESSubscription<'TEvent when 'TEvent :> IEvents>
                                     async {
                                         match message with
                                         | :? StreamMessage.Event as evnt ->
-                                            do! this.handleEvent<'TEvent> evnt.ResolvedEvent |> Async.AwaitTask
+                                            do! this.HandleEvent<'TEvent> evnt.ResolvedEvent |> Async.AwaitTask
                                             checkpoint <- FromStream.After(evnt.ResolvedEvent.OriginalEventNumber)
                                             resubscriptionAttempt <- 0
                                         | _ -> ()

@@ -9,7 +9,7 @@ open SI.Rosetta.Common
 
 [<AbstractClass>]
 type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent
-    when 'TEvent :> IEvents
+    when 'TEvent :> IAggregateEvents
     and 'TProjectionHandler :> IProjectionHandler<'TEvent>>() as this =
     let mutable TestValid = false
     let mutable DocumentId = obj()

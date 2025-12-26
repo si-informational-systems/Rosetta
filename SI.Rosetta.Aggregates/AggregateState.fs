@@ -11,8 +11,9 @@ type AggregateState<'TEvents when 'TEvents :> IAggregateEvents>() =
         member this.Id = this.Id
         member this.Version = this.Version
 
-    member this.Mutate event =
-        this.ApplyEvent event
-        this.Version <- this.Version + 1L
+    interface IAggregateStateInstance<'TEvents> with
+        member this.Mutate event =
+            this.ApplyEvent event
+            this.Version <- this.Version + 1L
 
     abstract ApplyEvent: ev: 'TEvents -> unit

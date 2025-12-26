@@ -10,7 +10,7 @@ type IProjection =
     abstract member Checkpoint: Checkpoint with get, set
     abstract member StartAsync: unit -> Task
 
-type IProjectionInstance<'TEvent when 'TEvent :> IEvents> =
+type IProjectionInstance<'TEvent when 'TEvent :> IAggregateEvents> =
     inherit IProjection
     abstract member Subscription: ISubscription<'TEvent> with get, set
     abstract member Handlers: IEnumerable<IProjectionHandler<'TEvent>> with get, set

@@ -6,7 +6,7 @@ type IOrganizationAggregateHandler =
     inherit IAggregateHandler
 
 type OrganizationAggregateHandler(repo: IStateBasedAggregateRepository) = 
-    inherit AggregateHandler<OrganizationAggregate, OrganizationCommands, OrganizationEvents>()
+    inherit AggregateHandler<OrganizationAggregate, Organization, OrganizationCommands, OrganizationEvents>()
     do base.AggregateRepository <- repo
     interface IOrganizationAggregateHandler
     

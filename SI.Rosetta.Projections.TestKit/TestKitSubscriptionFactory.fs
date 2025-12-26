@@ -5,5 +5,5 @@ open SI.Rosetta.Common
 
 type TestKitSubscriptionFactory() =
     interface ISubscriptionFactory with
-        member this.Create<'TEvent when 'TEvent :> IEvents>() =
+        member this.Create<'TEvent when 'TEvent :> IAggregateEvents>() =
             TestKitSubscription<'TEvent>()

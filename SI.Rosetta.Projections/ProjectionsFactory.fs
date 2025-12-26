@@ -43,14 +43,14 @@ type ProjectionsFactory(provider: IServiceProvider) =
             proj.Checkpoint <- checkpoint
         }
         
-    member this.CreateSubscription<'TEvent when 'TEvent :> IEvents>(proj: Projection<'TEvent>) =
+    member this.CreateSubscription<'TEvent when 'TEvent :> IAggregateEvents>(proj: Projection<'TEvent>) =
         let subscription = provider.GetRequiredService<ISubscriptionFactory>().Create<'TEvent>()
         subscription.Name <- proj.Name
         subscription.StreamName <- proj.SubscriptionStreamName
         subscription.EventReceived <- proj.ProjectAsync
         subscription
         
-    member this.CreateHandlers<'TEvent when 'TEvent :> IEvents>(t: Type) =
+    member this.CreateHandlers<'TEvent when 'TEvent :> IAggregateEvents>(t: Type) =
         let handlerTypes = 
             t.GetInterfaces()
             |> Seq.filter (fun iType -> 

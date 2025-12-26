@@ -6,7 +6,7 @@ type IPersonAggregateHandler =
     inherit IAggregateHandler
 
 type PersonAggregateHandler(repo: IEventSourcedAggregateRepository) = 
-    inherit AggregateHandler<PersonAggregate, PersonCommands, PersonEvents>()
+    inherit AggregateHandler<PersonAggregate, PersonAggregateState, PersonCommands, PersonEvents>()
     do base.AggregateRepository <- repo
     interface IPersonAggregateHandler
     

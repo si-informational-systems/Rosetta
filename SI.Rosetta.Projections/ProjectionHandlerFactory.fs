@@ -6,6 +6,6 @@ open SI.Rosetta.Common
 
 type ProjectionHandlerFactory(provider: IServiceProvider) =
     interface IProjectionHandlerFactory with
-        member this.Create<'TEvent when 'TEvent :> IEvents>(handlerType: Type) =
+        member this.Create<'TEvent when 'TEvent :> IAggregateEvents>(handlerType: Type) =
             let handlerInstance = provider.GetRequiredService(handlerType)
             handlerInstance :?> IProjectionHandler<'TEvent>

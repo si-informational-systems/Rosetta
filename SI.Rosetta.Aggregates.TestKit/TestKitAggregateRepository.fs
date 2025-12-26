@@ -23,18 +23,19 @@ type TestKitAggregateRepository() =
             InMemoryStore.[id] <- list
     
     interface IAggregateRepository with
-        member this.GetAsync<'TAggregate, 'TEvents 
-                            when 'TAggregate :> IAggregate 
-                            and 'TAggregate : (new : unit -> 'TAggregate)
-                            and 'TAggregate : not struct
-                            and 'TEvents :> IAggregateEvents>
+        member this.GetAsync<'TAggregate, 'TAggregateState, 'TEvents
+                        when 'TAggregate : (new : unit -> 'TAggregate) 
+                        and 'TAggregate :> IAggregate<'TAggregateState>
+                        and 'TAggregate : not struct
+                        and 'TAggregateState : (new : unit -> 'TAggregateState)
+                        and 'TAggregateState :> IAggregateStateInstance<'TEvents>
+                        and 'TEvents :> IAggregateEvents>
             (id: string, version: int64) =
             task {
                 if not (InMemoryStore.ContainsKey id) then
                     return None
                 else
-                    let aggregateType = typeof<'TAggregate>
-                    let state = AggregateStateFactory.CreateStateFor<'TEvents> aggregateType
+                    let state = new 'TAggregateState()
                     
                     let events = InMemoryStore.[id]
                     events 
@@ -47,7 +48,9 @@ type TestKitAggregateRepository() =
                     return Some agg
             }
             
-        member this.StoreAsync(agg: IAggregate) =
+        member this.StoreAsync<'TAggregate, 'TAggregateState
+                            when 'TAggregate :> IAggregate<'TAggregateState>>
+            (agg: 'TAggregate) =
             task {
                 let events = LoadEvents agg.Id
                 

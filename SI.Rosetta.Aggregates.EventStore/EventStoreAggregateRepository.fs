@@ -13,7 +13,9 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
         let serializedEvent = EventStoreSerialization.Serialize(event, headers)
         EventData(Uuid.NewUuid(), serializedEvent.EventClrName, serializedEvent.Data, ReadOnlyMemory<byte> serializedEvent.Metadata)
 
-    member private this.SaveAggregate (aggregate: IAggregate) = 
+    member private this.SaveAggregate<'TAggregate, 'TAggregateState
+                            when 'TAggregate :> IAggregate<'TAggregateState>> 
+                            (aggregate: 'TAggregate) = 
         task {
             let commitHeaders = 
                 let dict = Dictionary<string, obj>()
@@ -33,10 +35,12 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
             aggregate.Changes.Clear()
         }
 
-    member private this.TrySaveAggregate (aggregate: IAggregate) =
+    member private this.TrySaveAggregate<'TAggregate, 'TAggregateState
+                                when 'TAggregate :> IAggregate<'TAggregateState>> 
+                                (aggregate: 'TAggregate) =
         task {
             try
-                do! this.SaveAggregate(aggregate).ConfigureAwait(false)
+                do! this.SaveAggregate<'TAggregate, 'TAggregateState>(aggregate).ConfigureAwait(false)
             with
             | :? AggregateException as ex when (ex.InnerException :? WrongExpectedVersionException) -> 
                 raise (ConcurrencyException ex.Message)
@@ -45,20 +49,23 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
         }
 
     interface IEventSourcedAggregateRepository with
-        member this.StoreAsync aggregate = 
+        member this.StoreAsync<'TAggregate, 'TAggregateState
+                                when 'TAggregate :> IAggregate<'TAggregateState>> 
+                                aggregate = 
             task {
-                do! this.TrySaveAggregate(aggregate).ConfigureAwait(false)
+                do! this.TrySaveAggregate<'TAggregate, 'TAggregateState>(aggregate).ConfigureAwait(false)
             }
 
-        member this.GetAsync<'TAggregate, 'TEvents 
-                                    when 'TAggregate :> IAggregate 
-                                    and 'TAggregate : (new : unit -> 'TAggregate)
-                                    and 'TAggregate : not struct
-                                    and 'TEvents :> IAggregateEvents>
+        member this.GetAsync<'TAggregate, 'TAggregateState, 'TEvents 
+                                when 'TAggregate : (new : unit -> 'TAggregate) 
+                                and 'TAggregate :> IAggregate<'TAggregateState>
+                                and 'TAggregate : not struct
+                                and 'TAggregateState : (new : unit -> 'TAggregateState)
+                                and 'TAggregateState :> IAggregateStateInstance<'TEvents>
+                                and 'TEvents :> IAggregateEvents>
             (id: string, version: int64) =
             task {
-                let aggregateType = typeof<'TAggregate>
-                let instanceOfState = AggregateStateFactory.CreateStateFor<'TEvents> aggregateType
+                let state = new 'TAggregateState()
                 let aggregate = new 'TAggregate()
 
                 try
@@ -66,13 +73,13 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
                     let asyncEvents = AsyncSeq.ofAsyncEnum events
                     
                     do! asyncEvents
-                        |> AsyncSeq.takeWhile (fun _ -> instanceOfState.Version <> version)
+                        |> AsyncSeq.takeWhile (fun _ -> state.Version <> version)
                         |> AsyncSeq.iter (fun resolvedEvent ->
                             let deserializedEvent = EventStoreSerialization.Deserialize<'TEvents>(resolvedEvent)
-                            instanceOfState.Mutate deserializedEvent
+                            state.Mutate deserializedEvent
                             )
                     
-                    aggregate.SetState instanceOfState
+                    aggregate.SetState state
                     return Some aggregate
 
                 with

@@ -6,10 +6,12 @@ open SI.Rosetta.Common
 
 type RavenDBAggregateRepository(store: IDocumentStore) =
     interface IStateBasedAggregateRepository with
-        member this.GetAsync<'TAggregate, 'TEvents 
-                                    when 'TAggregate :> IAggregate 
+        member this.GetAsync<'TAggregate, 'TAggregateState, 'TEvents 
+                                    when 'TAggregate :> IAggregate<'TAggregateState> 
                                     and 'TAggregate : (new : unit -> 'TAggregate)
                                     and 'TAggregate : not struct
+                                    and 'TAggregateState : (new : unit -> 'TAggregateState)
+                                    and 'TAggregateState :> IAggregateStateInstance<'TEvents>
                                     and 'TEvents :> IAggregateEvents>
             (id: string, version: int64): System.Threading.Tasks.Task<Option<'TAggregate>> = 
             task {
@@ -21,7 +23,9 @@ type RavenDBAggregateRepository(store: IDocumentStore) =
                     aggregate.SetState(aggregateState)
                     return Some aggregate
             }
-        member this.StoreAsync(aggregate: IAggregate): System.Threading.Tasks.Task = 
+        member this.StoreAsync<'TAggregate, 'TAggregateState
+                    when 'TAggregate :> IAggregate<'TAggregateState>>
+                    (aggregate: 'TAggregate): System.Threading.Tasks.Task = 
             task {
                 use session = store.OpenAsyncSession()
                 let state = aggregate.GetState()

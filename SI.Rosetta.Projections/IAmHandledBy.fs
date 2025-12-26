@@ -4,5 +4,5 @@ open SI.Rosetta.Common
 
 type IAmHandledBy<'THandler, 'TEvent 
     when 'THandler :> IProjectionHandler<'TEvent>
-    and 'TEvent :> IEvents> 
+    and 'TEvent :> IAggregateEvents> 
     = interface end 

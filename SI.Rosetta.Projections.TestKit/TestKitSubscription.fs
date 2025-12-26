@@ -5,7 +5,7 @@ open System.Threading.Tasks
 open SI.Rosetta.Projections
 open SI.Rosetta.Common
 
-type TestKitSubscription<'TEvent when 'TEvent :> IEvents>() =
+type TestKitSubscription<'TEvent when 'TEvent :> IAggregateEvents>() =
     let mutable inMemoryEventStream = Dictionary<uint64, 'TEvent>()
     let mutable eventReceived: 'TEvent * uint64 -> Task<unit> = fun (ev, cp) -> Task.FromResult<unit>()
 

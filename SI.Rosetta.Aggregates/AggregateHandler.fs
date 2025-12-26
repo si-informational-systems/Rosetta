@@ -6,10 +6,12 @@ open System.Threading.Tasks
 open SI.Rosetta.Common
 
 [<AbstractClass>]
-type AggregateHandler<'TAggregate, 'TCommands, 'TEvents 
-        when 'TAggregate :> IAggregateInstance<'TCommands> 
+type AggregateHandler<'TAggregate, 'TAggregateState, 'TCommands, 'TEvents 
+        when 'TAggregate :> IAggregateInstance<'TAggregateState, 'TCommands> 
         and 'TAggregate : (new : unit -> 'TAggregate)
         and 'TAggregate : not struct
+        and 'TAggregateState : (new : unit -> 'TAggregateState)
+        and 'TAggregateState :> IAggregateStateInstance<'TEvents>
         and 'TCommands :> IAggregateCommands
         and 'TEvents :> IAggregateEvents>() =
 
@@ -29,7 +31,7 @@ type AggregateHandler<'TAggregate, 'TCommands, 'TEvents
 
     member this.IdempotentlyCreateAggregate (id: string) (command: 'TCommands) =
         task {
-            let! aggOpt = this.AggregateRepository.GetAsync<'TAggregate, 'TEvents>(id).ConfigureAwait(false)
+            let! aggOpt = this.AggregateRepository.GetAsync<'TAggregate, 'TAggregateState, 'TEvents>(id).ConfigureAwait(false)
             let aggregate = 
                 match aggOpt with
                 | None -> new 'TAggregate()
@@ -40,12 +42,12 @@ type AggregateHandler<'TAggregate, 'TCommands, 'TEvents
             this.PublishedEvents <- aggregate.PublishedEvents
             
             if originalVersion <> aggregate.Version then
-                do! this.AggregateRepository.StoreAsync(aggregate).ConfigureAwait(false)
+                do! this.AggregateRepository.StoreAsync<'TAggregate, 'TAggregateState>(aggregate).ConfigureAwait(false)
         }
         
     member this.IdempotentlyUpdateAggregate (id: string) (command: 'TCommands) =
         task {
-            let! aggOpt = this.AggregateRepository.GetAsync<'TAggregate, 'TEvents>(id).ConfigureAwait(false)
+            let! aggOpt = this.AggregateRepository.GetAsync<'TAggregate, 'TAggregateState, 'TEvents>(id).ConfigureAwait(false)
             match aggOpt with
             | None -> raise (DomainException.Named(NotFoundResponse, String.Empty))
             | Some agg ->
@@ -54,5 +56,5 @@ type AggregateHandler<'TAggregate, 'TCommands, 'TEvents
                 this.PublishedEvents <- agg.PublishedEvents
                 
                 if originalVersion <> agg.Version then
-                    do! this.AggregateRepository.StoreAsync(agg).ConfigureAwait(false)
+                    do! this.AggregateRepository.StoreAsync<'TAggregate, 'TAggregateState>(agg).ConfigureAwait(false)
         }

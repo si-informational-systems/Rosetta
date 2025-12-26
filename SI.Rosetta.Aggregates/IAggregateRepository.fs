@@ -6,11 +6,15 @@ open System.Runtime.InteropServices
 open System
 
 type IAggregateRepository =
-    abstract member StoreAsync: aggregate: IAggregate -> Task
-    abstract member GetAsync<'TAggregate, 'TEvents
+    abstract member StoreAsync<'TAggregate, 'TAggregateState
+            when 'TAggregate :> IAggregate<'TAggregateState>> : 
+            aggregate: 'TAggregate -> Task
+    abstract member GetAsync<'TAggregate, 'TAggregateState, 'TEvents
             when 'TAggregate : (new : unit -> 'TAggregate) 
-            and 'TAggregate :> IAggregate
+            and 'TAggregate :> IAggregate<'TAggregateState>
             and 'TAggregate : not struct
+            and 'TAggregateState : (new : unit -> 'TAggregateState)
+            and 'TAggregateState :> IAggregateStateInstance<'TEvents>
             and 'TEvents :> IAggregateEvents> : 
         id: string * [<Optional; DefaultParameterValue(Int64.MaxValue)>] version: int64 -> Task<Option<'TAggregate>>
 

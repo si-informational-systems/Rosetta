@@ -5,7 +5,7 @@ open System.Collections.Generic
 open System.Threading.Tasks
 open SI.Rosetta.Common
 
-type Projection<'TEvent when 'TEvent :> IEvents>() =
+type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
     member val Name = "" with get, set
     member val SubscriptionStreamName = "" with get, set
     member val Subscription = Unchecked.defaultof<ISubscription<'TEvent>> with get, set

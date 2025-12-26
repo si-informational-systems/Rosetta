@@ -8,6 +8,6 @@ open SI.Rosetta.Persistence.EventStore
 
 type ESSubscriptionFactory(loggerFactory: ILoggerFactory, configuration: IConfiguration) =
     interface ISubscriptionFactory with
-        member this.Create<'TEvent when 'TEvent :> IEvents>() =
+        member this.Create<'TEvent when 'TEvent :> IAggregateEvents>() =
             let client = EventStoreFactory.InitializeEventStore configuration
             new ESSubscription<'TEvent>(loggerFactory.CreateLogger<ESSubscription<'TEvent>>(), client) :> ISubscription<'TEvent>
