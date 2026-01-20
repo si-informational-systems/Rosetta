@@ -2,13 +2,12 @@
 
 open SI.Rosetta.Aggregates
 
-
 type OrganizationAggregateState() =
     inherit AggregateState<OrganizationEvents>()
     let mutable name = ""
     let mutable height = 0
 
-    member this.Name 
+    member this.Name
         with get() = name
         and set value = name <- value
 
