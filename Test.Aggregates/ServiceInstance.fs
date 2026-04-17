@@ -29,13 +29,13 @@ type ServiceInstance(
                         TimeIssued = DateTime.Now
                     }
 
-                    let registerPerson : ChangePersonName = {
-                        Id = "People-1"
+                    let renamePerson2 : ChangePersonName = {
+                        Id = "People-2"
                         Name = "Alex"
                         Metadata = metadata
                     }
                     
-                    do! personConsumer.Consume(registerPerson).ConfigureAwait(false)
+                    do! personConsumer.Consume(renamePerson2).ConfigureAwait(false)
 
                 with 
                 | ex -> 

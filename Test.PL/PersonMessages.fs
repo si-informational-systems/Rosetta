@@ -34,7 +34,8 @@ type PersonRegistered = {
 
 type PersonNameChanged = {
     Id: string
-    Name: string
+    OldName: string
+    NewName: string
     Metadata: MessageMetadata
 } with interface IEvent with member this.Id = this.Id member this.Metadata = this.Metadata
 

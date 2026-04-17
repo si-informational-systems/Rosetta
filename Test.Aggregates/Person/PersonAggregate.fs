@@ -28,7 +28,7 @@ type PersonAggregate() =
         this.Apply event
 
     member private this.ChangeName(cmd: ChangePersonName) =
-        let event = PersonEvents.NameChanged { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
+        let event = PersonEvents.NameChanged { Id = cmd.Id; NewName = cmd.Name; OldName = this.State.Name; Metadata = cmd.Metadata }
         this.Apply event
 
     member private this.SetHeight(cmd: SetPersonHeight) =

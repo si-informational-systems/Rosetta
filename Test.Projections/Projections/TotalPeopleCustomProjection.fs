@@ -71,12 +71,14 @@ and TotalJohnsCustomProjectionHandler(store: INoSqlStore) =
                                 TotalPeople = totalPeople.TotalPeople + 1 }).ConfigureAwait(false)
 
                 | TotalPeopleAndOrganizationsCustomProjectionEvents.NameChanged ev ->
-                   do! this.Project(fun totalPeople -> 
-                       if (ev.Name = "John") then
-                           { totalPeople with TotalPeople = totalPeople.TotalPeople + 1 }
-                       else
-                           { totalPeople with TotalPeople = totalPeople.TotalPeople - 1 }
-                       ).ConfigureAwait(false)
+                    do! this.Project(fun totalPeople -> 
+                        if ev.NewName = "John" then
+                            { totalPeople with TotalPeople = totalPeople.TotalPeople + 1 }
+                        elif ev.OldName = "John" then
+                            { totalPeople with TotalPeople = totalPeople.TotalPeople - 1 }
+                        else
+                            totalPeople
+                        ).ConfigureAwait(false)
 
                 | TotalPeopleAndOrganizationsCustomProjectionEvents.OrganizationRegistered _ ->
                     do! this.Project(fun totalPeople ->
