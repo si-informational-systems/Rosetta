@@ -21,6 +21,7 @@ type PersonAggregate() =
             if this.IsIdempotent cmd then ()
             else this.SetHeight cmd
 
+
     member private this.Register(cmd: RegisterPerson) =
         let event = PersonEvents.Registered { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
         this.PublishedEvents.Add event
@@ -29,14 +30,11 @@ type PersonAggregate() =
     member private this.ChangeName(cmd: ChangePersonName) =
         let event = PersonEvents.NameChanged { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
         this.Apply event
-        if (this.State.Name = "John") then
-            let JohnEvent = PersonEvents.NameChangedToJohn { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
-            this.Apply JohnEvent
-            this.PublishedEvents.Add(JohnEvent)
 
     member private this.SetHeight(cmd: SetPersonHeight) =
         let event = PersonEvents.HeightSet { Id = cmd.Id; Height = cmd.Height; Metadata = cmd.Metadata }
         this.Apply event
+
 
     member private this.IsIdempotent(cmd: RegisterPerson) =
         this.State.Name = cmd.Name

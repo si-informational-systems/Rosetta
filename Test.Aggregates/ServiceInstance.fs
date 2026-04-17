@@ -22,20 +22,20 @@ type ServiceInstance(
                     let personConsumer = PersonConsumer(personHandler, personLogger)
                     let userReference = {
                         Id = "User-1"
-                        Name = "Mark"
+                        Name = "ADMIN"
                     }
                     let metadata = {
                         IssuedBy = userReference
                         TimeIssued = DateTime.Now
                     }
 
-                    let changeName : ChangePersonName = {
-                        Id = "People-1"
-                        Name = "Mark"
+                    let registerPerson : RegisterPerson = {
+                        Id = "People-2"
+                        Name = "John"
                         Metadata = metadata
                     }
                     
-                    do! personConsumer.Consume(changeName).ConfigureAwait(false)
+                    do! personConsumer.Consume(registerPerson).ConfigureAwait(false)
 
                 with 
                 | ex -> 

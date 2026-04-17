@@ -36,7 +36,6 @@ and PersonProjectionHandler(store: INoSqlStore) =
                 | PersonEvents.NameChanged e ->
                     do! this.Project(e.Id, fun person ->
                         { person with Name = e.Name }).ConfigureAwait(false)
-                | PersonEvents.NameChangedToJohn e -> ()
                 | PersonEvents.HeightSet e ->
                     do! this.Project(e.Id, fun person ->
                         { person with Height = e.Height }).ConfigureAwait(false)

@@ -6,7 +6,7 @@ open SI.Rosetta.Common
 [<CLIMutable>]
 type TotalPeople = {
     mutable Id: string
-    TotalPersons: int
+    TotalPeople: int
     TotalOrganizations: int
 }
 
@@ -33,7 +33,7 @@ and TotalPeopleCustomProjectionHandler(store: INoSqlStore) =
                 | TotalPeopleAndOrganizationsCustomProjectionEvents.Registered _ ->
                     do! this.Project(fun custom ->
                         { custom with
-                            TotalPersons = custom.TotalPersons + 1 }).ConfigureAwait(false)
+                            TotalPeople = custom.TotalPeople + 1 }).ConfigureAwait(false)
 
                 | TotalPeopleAndOrganizationsCustomProjectionEvents.NameChanged _ -> ()
 
@@ -45,12 +45,12 @@ and TotalPeopleCustomProjectionHandler(store: INoSqlStore) =
             
     member private this.Project(update: TotalPeople -> TotalPeople) =
         task {
-            let id = "TotalPeople-All"
+            let id = "TotalPeopleAndOrganizations-All"
             let! doc = Store.LoadAsync<TotalPeople>(id).ConfigureAwait(false)
             let custom = 
                 if isNull (box doc) then 
                     { Id = id
-                      TotalPersons = 0
+                      TotalPeople = 0
                       TotalOrganizations = 0 }
                 else doc
             let updated = update custom
@@ -68,14 +68,14 @@ and TotalJohnsCustomProjectionHandler(store: INoSqlStore) =
                     if (ev.Name = "John") then
                         do! this.Project(fun totalPeople ->
                             { totalPeople with
-                                TotalPersons = totalPeople.TotalPersons + 1 }).ConfigureAwait(false)
+                                TotalPeople = totalPeople.TotalPeople + 1 }).ConfigureAwait(false)
 
                 | TotalPeopleAndOrganizationsCustomProjectionEvents.NameChanged ev ->
                    do! this.Project(fun totalPeople -> 
                        if (ev.Name = "John") then
-                           { totalPeople with TotalPersons = totalPeople.TotalPersons + 1 }
+                           { totalPeople with TotalPeople = totalPeople.TotalPeople + 1 }
                        else
-                           { totalPeople with TotalPersons = totalPeople.TotalPersons - 1 }
+                           { totalPeople with TotalPeople = totalPeople.TotalPeople - 1 }
                        ).ConfigureAwait(false)
 
                 | TotalPeopleAndOrganizationsCustomProjectionEvents.OrganizationRegistered _ ->
@@ -86,12 +86,12 @@ and TotalJohnsCustomProjectionHandler(store: INoSqlStore) =
             
     member private this.Project(update: TotalPeople -> TotalPeople) =
         task {
-            let id = "TotalPeople-Johns"
+            let id = "TotalPeopleAndOrganizations-Johns"
             let! doc = Store.LoadAsync<TotalPeople>(id).ConfigureAwait(false)
             let custom = 
                 if isNull (box doc) then 
                     { Id = id
-                      TotalPersons = 0
+                      TotalPeople = 0
                       TotalOrganizations = 0 }
                 else doc
             let updated = update custom
