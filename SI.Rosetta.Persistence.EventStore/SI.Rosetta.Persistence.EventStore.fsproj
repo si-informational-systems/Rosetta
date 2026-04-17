@@ -12,11 +12,15 @@
   <ItemGroup>
     <PackageReference Include="EventStore.Client.Grpc.Streams" Version="23.3.9" />
     <PackageReference Include="EventStore.Client.Grpc.ProjectionManagement" Version="23.3.9" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.6" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.6" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="EventStoreFactory.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="10.1.201" />
   </ItemGroup>
 
 </Project>

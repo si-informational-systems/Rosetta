@@ -18,4 +18,8 @@
     <ProjectReference Include="..\SI.Rosetta.Persistence.RavenDB\SI.Rosetta.Persistence.RavenDB.fsproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="10.1.201" />
+  </ItemGroup>
+
 </Project>

@@ -70,9 +70,8 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
 
                 try
                     let events = client.ReadStreamAsync(Direction.Forwards, id, StreamPosition.Start, version)
-                    let asyncEvents = AsyncSeq.ofAsyncEnum events
                     
-                    do! asyncEvents
+                    do! events
                         |> AsyncSeq.takeWhile (fun _ -> state.Version <> version)
                         |> AsyncSeq.iter (fun resolvedEvent ->
                             let deserializedEvent = EventStoreSerialization.Deserialize<'TEvents>(resolvedEvent)

@@ -29,9 +29,9 @@ type ServiceInstance(
                         TimeIssued = DateTime.Now
                     }
 
-                    let registerPerson : RegisterPerson = {
-                        Id = "People-2"
-                        Name = "John"
+                    let registerPerson : ChangePersonName = {
+                        Id = "People-1"
+                        Name = "Alex"
                         Metadata = metadata
                     }
                     

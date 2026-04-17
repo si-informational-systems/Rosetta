@@ -32,7 +32,7 @@ type TestKitProjectionStore() =
                 for id in ids do
                     match InMemoryStore.TryGetValue id with
                     | true, value -> dict.Add(id, value :?> 'T)
-                    | false, _ -> dict.Add(id, null)
+                    | false, _ -> dict.Add(id, Unchecked.defaultof<'T>)
                 return dict
             }
             
