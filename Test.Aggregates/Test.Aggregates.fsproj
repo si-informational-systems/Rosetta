@@ -6,23 +6,33 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="RavenDB.Client" Version="7.2.6" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="AggregateConsumerBase.fs" />
+    <Compile Include="CommandEndpoint.fs" />
+    <Compile Include="QueryEndpoints.fs" />
     <Compile Include="Organization\Organization.fs" />
     <Compile Include="Organization\OrganizationAggregate.fs" />
     <Compile Include="Organization\OrganizationAggregateHandler.fs" />
-    <Compile Include="Organization\OrganizationConsumer.fs" />
+    <Compile Include="Organization\OrganizationEndpoints.fs" />
     <Compile Include="Person\PersonAggregateState.fs" />
     <Compile Include="Person\PersonAggregate.fs" />
     <Compile Include="Person\PersonAggregateHandler.fs" />
-    <Compile Include="Person\PersonConsumer.fs" />
-    <Compile Include="ServiceInstance.fs" />
+    <Compile Include="Person\PersonEndpoints.fs" />
     <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <!-- The test page, served by the app -->
+  <ItemGroup>
+    <Content Include="wwwroot\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <!-- config/ is gitignored (local settings and certificates): copy only what exists -->

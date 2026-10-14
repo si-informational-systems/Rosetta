@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rosetta Test</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f6f8; --card: #ffffff; --text: #1c2130; --muted: #667085; --line: #e2e5ea;
+    --accent: #3b5bdb; --on-accent: #ffffff;
+    --applied: #18794e; --applied-bg: #e2f4ea;
+    --same: #4a5568; --same-bg: #edf0f3;
+    --rejected: #9a5b00; --rejected-bg: #fcefd6;
+    --error: #b42318; --error-bg: #fde7e6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111418; --card: #1a1e24; --text: #e6e8eb; --muted: #98a2b3; --line: #2c323b;
+      --accent: #7b93fc; --on-accent: #0b0d10;
+      --applied: #6fd3a0; --applied-bg: #16352a;
+      --same: #c3c9d1; --same-bg: #262c34;
+      --rejected: #f4c06a; --rejected-bg: #3a2c12;
+      --error: #ff8f85; --error-bg: #3e1b19;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 12px 20px; background: var(--card); border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 16px; }
+  header p { margin: 0; flex: 1 1 320px; color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 16px 20px; align-items: start; }
+  @media (max-width: 960px) { main { grid-template-columns: minmax(0, 1fr); padding: 16px; } }
+  .column { display: grid; gap: 16px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+  h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 10px; font-size: 15px; }
+  h3 { margin: 16px 0 4px; font-size: 13px; }
+  small, .hint { color: var(--muted); font-size: 12px; font-weight: normal; }
+  .hint { margin: 0 0 6px; }
+  form { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 8px; align-items: center; }
+  form label { color: var(--muted); }
+  form .wide { grid-column: span 2; }
+  .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  input { width: 100%; min-width: 0; padding: 5px 8px; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  button { padding: 5px 11px; font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  button:hover:not(:disabled) { border-color: var(--muted); }
+  button:disabled { opacity: .55; cursor: default; }
+  button.primary { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+  .table { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 5px 8px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; }
+  td.empty { color: var(--muted); white-space: normal; }
+  tr.selectable { cursor: pointer; }
+  tr.selectable:hover { background: var(--bg); }
+  code, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12px; }
+  ol { margin: 0; padding: 0; list-style: none; }
+  ol li { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  ol li span:first-child { flex: 1; }
+  .status { min-width: 52px; text-align: right; color: var(--muted); }
+  .pass { color: var(--applied); }
+  .fail { color: var(--error); }
+  .badge { display: inline-block; padding: 0 7px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+  .Applied { color: var(--applied); background: var(--applied-bg); }
+  .NoChanges { color: var(--same); background: var(--same-bg); }
+  .Rejected { color: var(--rejected); background: var(--rejected-bg); }
+  .Conflict, .Error { color: var(--error); background: var(--error-bg); }
+  #log { display: grid; max-height: 75vh; overflow-y: auto; }
+  .entry { padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .entry .line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+  .entry .time { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .entry .note { margin-top: 2px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  details summary { color: var(--muted); font-size: 12px; cursor: pointer; }
+  pre { margin: 4px 0 0; padding: 8px; overflow-x: auto; background: var(--bg); border-radius: 6px; }
+  .heading-actions { margin-left: auto; display: flex; gap: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Rosetta · Test.Aggregates</h1>
+  <p>Commands go through the Aggregate Handlers. The tables show what is in RavenDB. Click a row to select it.</p>
+  <button id="refresh">Refresh</button>
+</header>
+
+<main>
+  <div class="column">
+    <section>
+      <h2>Person <small>Event-Sourced · KurrentDB stream per Id</small></h2>
+      <form data-prefix="People">
+        <label for="person-id">Id</label>
+        <input id="person-id" name="id" class="mono" required autocomplete="off">
+        <button type="button" data-new-id>New Id</button>
+        <label for="person-name">Name</label>
+        <input id="person-name" name="name" class="wide" value="John" autocomplete="off">
+        <label for="person-height">Height</label>
+        <input id="person-height" name="height" class="wide" type="number" value="180">
+        <div class="actions">
+          <button class="primary" data-command="/people/register" data-fields="id,name">Register</button>
+          <button data-command="/people/change-name" data-fields="id,name">Change name</button>
+          <button data-command="/people/set-height" data-fields="id,height">Set height</button>
+        </div>
+      </form>
+      <h3>People <small>RavenDB · Read Model projected by Test.Projections from $ce-People</small></h3>
+      <div class="table"><table id="people"></table></div>
+    </section>
+
+    <section>
+      <h2>Organization <small>State-based · RavenDB document, Version in @metadata</small></h2>
+      <form data-prefix="Organizations">
+        <label for="organization-id">Id</label>
+        <input id="organization-id" name="id" class="mono" required autocomplete="off">
+        <button type="button" data-new-id>New Id</button>
+        <label for="organization-name">Name</label>
+        <input id="organization-name" name="name" class="wide" value="Rosetta" autocomplete="off">
+        <div class="actions">
+          <button class="primary" data-command="/organizations/register" data-fields="id,name">Register</button>
+        </div>
+      </form>
+      <h3>Organizations <small>RavenDB · the Aggregate's own documents</small></h3>
+      <div class="table"><table id="organizations"></table></div>
+    </section>
+
+    <section>
+      <h2>Totals <small>Custom Projection cp-TotalPeopleAndOrganizations</small></h2>
+      <p class="hint">Organization is state-based, so OrganizationRegistered never reaches KurrentDB and TotalOrganizations stays 0.</p>
+      <div class="table"><table id="totals"></table></div>
+    </section>
+  </div>
+
+  <div class="column">
+    <section>
+      <h2>Scenarios <small>each run uses new Ids and checks every step</small>
+        <span class="heading-actions"><button class="primary" id="run-all">Run all</button></span>
+      </h2>
+      <ol id="scenarios"></ol>
+    </section>
+
+    <section>
+      <h2>Log <span class="heading-actions"><button id="clear-log">Clear</button></span></h2>
+      <div id="log"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+  // Each step is [command, body, expected], where expected is what Summary returns for the result
+  const Scenarios = [
+    {
+      title: "Register a Person, change the name, set the height",
+      prefix: "People",
+      steps: id => [
+        ["/people/register", { id, name: "John" }, "Applied · published PersonRegistered"],
+        ["/people/change-name", { id, name: "Johnny" }, "Applied"],
+        ["/people/set-height", { id, height: 180 }, "Applied"],
+      ],
+    },
+    {
+      title: "Repeating a Person command changes nothing (idempotent)",
+      prefix: "People",
+      steps: id => [
+        ["/people/register", { id, name: "John" }, "Applied · published PersonRegistered"],
+        ["/people/register", { id, name: "John" }, "NoChanges"],
+        ["/people/change-name", { id, name: "John" }, "NoChanges"],
+        ["/people/set-height", { id, height: 180 }, "Applied"],
+        ["/people/set-height", { id, height: 180 }, "NoChanges"],
+      ],
+    },
+    {
+      title: "Registering a Person again under another name is rejected",
+      prefix: "People",
+      steps: id => [
+        ["/people/register", { id, name: "John" }, "Applied · published PersonRegistered"],
+        ["/people/register", { id, name: "Jane" }, "Rejected · Person already registered"],
+      ],
+    },
+    {
+      title: "Changing a Person that doesn't exist is rejected",
+      prefix: "People",
+      steps: id => [
+        ["/people/change-name", { id, name: "John" }, "Rejected · PersonDoesNotExist"],
+        ["/people/set-height", { id, height: 180 }, "Rejected · PersonDoesNotExist"],
+      ],
+    },
+    {
+      title: "Register an Organization, again, then under another name",
+      prefix: "Organizations",
+      steps: id => [
+        ["/organizations/register", { id, name: "Rosetta" }, "Applied · published OrganizationRegistered"],
+        ["/organizations/register", { id, name: "Rosetta" }, "NoChanges"],
+        ["/organizations/register", { id, name: "Other" }, "Rejected · Organization already registered"],
+      ],
+    },
+  ];
+
+  const Tables = {
+    people: {
+      path: "/people",
+      columns: ["Id", "Name", "Height", "Status", "Modified"],
+      cells: doc => [IdOf(doc), doc.Name, doc.Height, doc.Status, ModifiedOf(doc)],
+      select: doc => Fill("People", { id: IdOf(doc), name: doc.Name, height: doc.Height }),
+      empty: "No People yet. Person is Event-Sourced, so its documents appear once Test.Projections is running.",
+    },
+    organizations: {
+      path: "/organizations",
+      columns: ["Id", "Name", "Version", "Modified"],
+      cells: doc => [IdOf(doc), doc.Name, doc["@metadata"]["Rosetta-Aggregate-Version"], ModifiedOf(doc)],
+      select: doc => Fill("Organizations", { id: IdOf(doc), name: doc.Name }),
+      empty: "No Organizations yet.",
+    },
+    totals: {
+      path: "/totals",
+      columns: ["Id", "TotalPeople", "TotalOrganizations", "Modified"],
+      cells: doc => [IdOf(doc), doc.TotalPeople, doc.TotalOrganizations, ModifiedOf(doc)],
+      empty: "No totals yet. They appear once Test.Projections is running.",
+    },
+  };
+
+  const IdOf = doc => doc["@metadata"]["@id"];
+  const ModifiedOf = doc => new Date(doc["@metadata"]["@last-modified"]).toLocaleTimeString();
+  const Escape = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const NewId = prefix => `${prefix}-${Array.from(crypto.getRandomValues(new Uint8Array(4)), b => b.toString(16).padStart(2, "0")).join("")}`;
+  const FormOf = prefix => document.querySelector(`form[data-prefix="${prefix}"]`);
+
+  function Fill(prefix, values) {
+    const form = FormOf(prefix);
+    for (const [name, value] of Object.entries(values)) form.elements.namedItem(name).value = value ?? "";
+  }
+
+  // ---------- Commands ----------
+
+  async function Send(command, body) {
+    try {
+      const response = await fetch(command, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const text = await response.text();
+      try { return { status: response.status, result: JSON.parse(text) }; }
+      catch { return { status: response.status, failure: text.split("\n")[0].trim() || response.statusText }; }
+    } catch (error) {
+      return { status: 0, failure: `${error.message} - is Test.Aggregates running?` };
+    }
+  }
+
+  function Note({ result, failure }) {
+    if (failure !== undefined) return failure;
+    if (result.error) return [result.error.name, result.error.message].filter(Boolean).join(" · ");
+    return result.publishedEvents.length ? `published ${result.publishedEvents.map(e => e.type).join(", ")}` : "";
+  }
+
+  function Summary(response) {
+    const outcome = response.failure !== undefined ? `Error ${response.status}` : response.result.outcome;
+    return [outcome, Note(response)].filter(Boolean).join(" · ");
+  }
+
+  async function Execute(command, body, expected) {
+    const response = await Send(command, body);
+    const passed = expected === undefined || Summary(response) === expected;
+    Log(command, body, response, expected, passed);
+    ScheduleRefresh();
+    return passed;
+  }
+
+  function Log(command, body, response, expected, passed) {
+    const { result } = response;
+    const outcome = result ? result.outcome : "Error";
+    const version = !result ? ""
+      : result.versionAfter !== result.versionBefore ? `v${result.versionBefore} → v${result.versionAfter}`
+      : `v${result.versionAfter}`;
+    const check = expected === undefined ? ""
+      : passed ? `<span class="pass">✓ as expected</span>`
+      : `<span class="fail">✗ expected “${Escape(expected)}”</span>`;
+    const note = [Escape(Note(response)), check].filter(Boolean).join(" · ");
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    entry.innerHTML = `
+      <div class="line">
+        <span class="badge ${outcome}">${outcome}</span>
+        <code>${Escape(command)}</code>
+        <span class="mono">${Escape(body.id)}</span>
+        <span class="mono">${version}</span>
+        <span class="time">${new Date().toLocaleTimeString()}</span>
+      </div>
+      ${note ? `<div class="note">${note}</div>` : ""}
+      <details><summary>Request · Response ${response.status}</summary><pre>${Escape(JSON.stringify(body, null, 2))}\n\n${Escape(result ? JSON.stringify(result, null, 2) : response.failure)}</pre></details>`;
+    const log = document.getElementById("log");
+    log.prepend(entry);
+    while (log.children.length > 200) log.lastChild.remove();
+  }
+
+  for (const form of document.querySelectorAll("form[data-prefix]")) {
+    form.elements.namedItem("id").value = NewId(form.dataset.prefix);
+    form.querySelector("[data-new-id]").addEventListener("click", () => form.elements.namedItem("id").value = NewId(form.dataset.prefix));
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const button = event.submitter;
+      const values = Object.fromEntries(new FormData(form));
+      const body = Object.fromEntries(button.dataset.fields.split(",").map(field =>
+        [field, field === "height" ? Number(values.height) || 0 : values[field].trim()]));
+      button.disabled = true;
+      await Execute(button.dataset.command, body);
+      button.disabled = false;
+    });
+  }
+
+  // ---------- Scenarios ----------
+
+  const ScenarioList = document.getElementById("scenarios");
+  const ScenarioButtons = () => document.querySelectorAll("#scenarios button, #run-all");
+
+  for (const scenario of Scenarios) {
+    const item = document.createElement("li");
+    item.innerHTML = `<span>${Escape(scenario.title)}</span><span class="status"></span><button>Run</button>`;
+    scenario.status = item.querySelector(".status");
+    item.querySelector("button").addEventListener("click", () => Run([scenario]));
+    ScenarioList.append(item);
+  }
+  document.getElementById("run-all").addEventListener("click", () => Run(Scenarios));
+
+  async function Run(scenarios) {
+    ScenarioButtons().forEach(button => button.disabled = true);
+    for (const scenario of scenarios) {
+      const steps = scenario.steps(NewId(scenario.prefix));
+      scenario.status.className = "status";
+      scenario.status.textContent = "running";
+      let passed = 0;
+      for (const [command, body, expected] of steps)
+        if (await Execute(command, body, expected)) passed++;
+      scenario.status.className = `status ${passed === steps.length ? "pass" : "fail"}`;
+      scenario.status.textContent = `${passed === steps.length ? "✓" : "✗"} ${passed}/${steps.length}`;
+    }
+    ScenarioButtons().forEach(button => button.disabled = false);
+  }
+
+  // ---------- RavenDB documents ----------
+
+  async function Load(key, table) {
+    const element = document.getElementById(key);
+    let rows;
+    try {
+      const response = await fetch(table.path);
+      if (!response.ok) throw new Error(`${response.status} · ${(await response.text()).split("\n")[0]}`);
+      const documents = (await response.json()).Results;
+      table.documents = new Map(documents.map(doc => [IdOf(doc), doc]));
+      rows = documents.length === 0
+        ? `<tr><td class="empty" colspan="${table.columns.length}">${Escape(table.empty)}</td></tr>`
+        : documents.map(doc =>
+            `<tr${table.select ? ` class="selectable" data-id="${Escape(IdOf(doc))}"` : ""}>${table.cells(doc).map((cell, i) =>
+              `<td${i === 0 ? ' class="mono"' : ""}>${Escape(cell)}</td>`).join("")}</tr>`).join("");
+    } catch (error) {
+      rows = `<tr><td class="empty fail" colspan="${table.columns.length}">Couldn't read RavenDB: ${Escape(error.message)}</td></tr>`;
+    }
+    element.innerHTML = `<thead><tr>${table.columns.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>${rows}</tbody>`;
+  }
+
+  for (const [key, table] of Object.entries(Tables)) {
+    if (!table.select) continue;
+    document.getElementById(key).addEventListener("click", event => {
+      const row = event.target.closest("tr[data-id]");
+      if (row) table.select(table.documents.get(row.dataset.id));
+    });
+  }
+
+  const Refresh = () => Promise.all(Object.entries(Tables).map(([key, table]) => Load(key, table)));
+
+  // Projections are eventually consistent, so look again a moment later
+  let RefreshTimers = [];
+  function ScheduleRefresh() {
+    RefreshTimers.forEach(clearTimeout);
+    RefreshTimers = [setTimeout(Refresh, 150), setTimeout(Refresh, 1500)];
+  }
+
+  document.getElementById("refresh").addEventListener("click", Refresh);
+  document.getElementById("clear-log").addEventListener("click", () => document.getElementById("log").replaceChildren());
+  Refresh();
+</script>
+</body>
+</html>

@@ -732,10 +732,19 @@ Both samples read `config/appsettings.json` from their project folder. It's giti
 
 ```shell
 dotnet run --project Test.Projections   # keeps running: projects $ce-People and the cp-TotalPeopleAndOrganizations Custom Projection
-dotnet run --project Test.Aggregates    # 2nd terminal: registers and renames a Person (KurrentDB) and registers an Organization (RavenDB), then exits
+dotnet run --project Test.Aggregates    # 2nd terminal: the test page, on http://localhost:5000
 ```
 
-The results show up in RavenDB Studio, database `TEST.ROSETTA`: the `People`, `TotalPeoples` and `Checkpoints` collections come from the Projections, and `Organizations` holds the state-based Aggregate (its Version is in the document's metadata). `docker compose down` stops the containers, and `docker compose down -v` also deletes their data.
+Test.Aggregates is a small ASP.NET Core app (`--urls` changes its address). Its test page sends the Person (Event-Sourced, KurrentDB) and Organization (state-based, RavenDB) commands through their Aggregate Handlers, and logs what each command did:
+
+- **Applied**, **NoChanges** (an idempotent repeat) or **Rejected** (a `DomainException`, by name or message);
+- the Aggregate's Version before and after, the published events and the resulting state.
+
+**Scenarios** cover every case in one click: registering, renaming and setting the height; idempotent repeats; registering an existing Id under another name; changing a Person that doesn't exist; and the same for an Organization.
+
+The page's tables list the RavenDB documents (database `TEST.ROSETTA`), which you can also browse in RavenDB Studio. `People` and `TotalPeoples` come from the Projections, so they fill only while Test.Projections runs. `Organizations` holds the state-based Aggregate, whose Version is in the document's metadata. Organization never writes to KurrentDB, so `TotalOrganizations` stays 0. RavenDB refuses cross-origin requests, so the page reads the documents through the app (`GET /people`, `/organizations`, `/totals`).
+
+`docker compose down` stops the containers, and `docker compose down -v` also deletes their data.
 
 ---
 
