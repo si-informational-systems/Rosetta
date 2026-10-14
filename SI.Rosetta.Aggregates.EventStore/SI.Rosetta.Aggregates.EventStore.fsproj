@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
@@ -12,7 +12,6 @@
   <ItemGroup>
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="4.12.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="System.Linq.Async" Version="7.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,10 +22,6 @@
     <ProjectReference Include="..\SI.Rosetta.Aggregates\SI.Rosetta.Aggregates.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Persistence.EventStore\SI.Rosetta.Persistence.EventStore.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Serialization\SI.Rosetta.Serialization.fsproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="FSharp.Core" Version="10.1.202" />
   </ItemGroup>
 
 </Project>

@@ -76,8 +76,9 @@ The generated files provide a basic structure that you can extend:
 - Add your business logic and command handling
 
 ### AggregateHandler
-- Inherits from `AggregateHandler<{Name}Aggregate, {Name}Commands, {Name}Events>`
-- Implements `I{Name}AggregateHandler` interface
+- Inherits from `AggregateHandler<{Name}Aggregate, {Name}AggregateState, {Name}Commands, {Name}Events>`
+- Takes an `IEventSourcedAggregateRepository` (swap it for `IStateBasedAggregateRepository` to persist the state without Event Sourcing)
+- Implements `I{Name}AggregateHandler` interface (required: Handlers are registered in DI under it)
 - Contains a default `ExecuteAsync` implementation
 - Add your specific command routing logic
 
@@ -88,5 +89,5 @@ After generating the aggregate files:
 1. Implement your specific command handling in the `Execute` method
 2. Add state properties and implement proper event application in `ApplyEvent`
 3. Implement command routing in the handler's `ExecuteAsync` method
-4. Register the handler in your DI container
+4. Resolve the handler through `I{Name}AggregateHandler` (Handlers are registered automatically by `UseAggregatesWith…`)
 5. Create unit tests for your aggregate behavior 

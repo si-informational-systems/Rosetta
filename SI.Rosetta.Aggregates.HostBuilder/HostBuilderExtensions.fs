@@ -9,9 +9,12 @@ open System.Runtime.CompilerServices
 open SI.Rosetta.Aggregates
 open SI.Rosetta.Aggregates.EventStore
 open SI.Rosetta.Aggregates.RavenDB
+open SI.Rosetta.Aggregates.MongoDB
 open Raven.Client.Documents
+open MongoDB.Driver
 open SI.Rosetta.Persistence.RavenDB
 open SI.Rosetta.Persistence.EventStore
+open SI.Rosetta.Persistence.MongoDB
 
 [<AutoOpen>]
 module HostBuilderExtensionsCommon =
@@ -28,15 +31,16 @@ module HostBuilderEventStoreExtensionCommmon =
 
 [<AutoOpen>]
 module HostBuilderRavenDBExtensionCommmon =
-    // Custom contract resolver to exclude Version field from serialization
+    // Custom contract resolver to exclude the AggregateState Version field from serialization
+    // (RavenDBAggregateRepository keeps it in the document's @metadata instead)
     type AggregateStateContractResolver() =
         inherit Newtonsoft.Json.Serialization.DefaultContractResolver()
-    
+
         override __.CreateProperty(memberInfo: Reflection.MemberInfo, memberSerialization: Newtonsoft.Json.MemberSerialization) =
             let property = base.CreateProperty(memberInfo, memberSerialization)
-        
-            // Exclude Version field from serialization
-            if property.PropertyName = "Version" then
+
+            // Only AggregateState types - other documents sharing the store (e.g. Read Models) keep their Version
+            if property.PropertyName = "Version" && typeof<IAggregateState>.IsAssignableFrom(memberInfo.DeclaringType) then
                 property.ShouldSerialize <- fun _ -> false
                 property.ShouldDeserialize <- fun _ -> false
         
@@ -55,6 +59,17 @@ module HostBuilderRavenDBExtensionCommmon =
                         serialization
                         ))
         docStore;
+
+[<AutoOpen>]
+module HostBuilderMongoDBExtensionCommmon =
+    let RegisterMongoDatabase(services: IServiceCollection, config: IConfiguration) =
+        let mongoConfig = MongoConfig.FromConfiguration(config)
+        if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IMongoClient>)) then
+            services.AddSingleton<IMongoClient>(MongoClientFactory.CreateClientWithoutDatabase(mongoConfig)) |> ignore
+        if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IMongoDatabase>)) then
+            services.AddSingleton<IMongoDatabase>(fun sp ->
+                sp.GetRequiredService<IMongoClient>().GetDatabase(mongoConfig.DatabaseName)) |> ignore
+        MongoConventions.Register()
 
 [<AutoOpen>]
 module HostBuilderExtensions =
@@ -91,6 +106,9 @@ module HostBuilderExtensions =
                 if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IDocumentStore>)) then
                     services.AddSingleton<IDocumentStore>(CreateRavenDocumentStore(ctx.Configuration)) |> ignore
                 services.AddSingleton<IStateBasedAggregateRepository, RavenDBAggregateRepository>() |> ignore
+            | t when t = typeof<MongoDB> ->
+                RegisterMongoDatabase(services, ctx.Configuration)
+                services.AddSingleton<IStateBasedAggregateRepository, MongoDBAggregateRepository>() |> ignore
             | _ -> raise (Exception("Only types extending `StateBasedAggregateRepository` can be used as an Aggregate Repository generic option!"))
 
             RegisterAggregateHandlers(services, aggregatesAssembly)
@@ -106,48 +124,20 @@ module HostBuilderExtensions =
         UseAggregatesWithoutEventSourcing<'TStateBasedAggregateRepository> hostBuilder aggregatesAssembly |> ignore
         hostBuilder
 
+// C#-friendly (tupled) extension methods delegating to the F# functions above
 [<Extension>]
 module CSharp_HostBuilderExtensions =
     [<Extension>]
-    let UseAggregatesWithEventSourcing<'AggregateRepository 
+    let UseAggregatesWithEventSourcing<'AggregateRepository
         when 'AggregateRepository : not struct and 'AggregateRepository :> EventSourcedAggregateRepository>
         (hostBuilder: IHostBuilder, aggregatesAssembly: Assembly) =
-        hostBuilder.ConfigureServices(fun ctx services ->
-            if ctx.Properties.ContainsKey(HostBuilderEventSourcedExtensionInUse) then
-                raise (InvalidOperationException("`UseAggregatesWithEventSourcing` can only be used once!"))
-                
-            ctx.Properties.Add(HostBuilderEventSourcedExtensionInUse, null)
-            
-            match typeof<'AggregateRepository> with 
-            | t when t = typeof<EventStore> ->
-                let esAggRep = InitializeEventStore (ctx.Configuration)
-                services.AddSingleton(typeof<IEventSourcedAggregateRepository>, esAggRep) |> ignore
-
-            | _ -> raise (Exception("Only types extending `EventSourcedAggregateRepository` can be used as an Aggregate Repository generic option!"))
-
-            RegisterAggregateHandlers(services, aggregatesAssembly)
-        )
+        HostBuilderExtensions.UseAggregatesWithEventSourcing<'AggregateRepository> hostBuilder aggregatesAssembly
 
     [<Extension>]
-    let UseAggregatesWithoutEventSourcing<'AggregateRepository 
+    let UseAggregatesWithoutEventSourcing<'AggregateRepository
         when 'AggregateRepository : not struct and 'AggregateRepository :> StateBasedAggregateRepository>
         (hostBuilder: IHostBuilder, aggregatesAssembly: Assembly) =
-        hostBuilder.ConfigureServices(fun ctx services ->
-            if ctx.Properties.ContainsKey(HostBuilderStateBasedExtensionInUse) then
-                raise (InvalidOperationException("`UseAggregatesWithoutEventSourcing` can only be used once!"))
-                
-            ctx.Properties.Add(HostBuilderStateBasedExtensionInUse, null)
-            
-            match typeof<'AggregateRepository> with 
-            | t when t = typeof<RavenDB> ->
-                if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IDocumentStore>)) then
-                    services.AddSingleton<IDocumentStore>(CreateRavenDocumentStore(ctx.Configuration)) |> ignore
-                services.AddSingleton<IStateBasedAggregateRepository, RavenDBAggregateRepository>() |> ignore
-
-            | _ -> raise (Exception("Only types extending `StateBasedAggregateRepository` can be used as an Aggregate Repository generic option!"))
-
-            RegisterAggregateHandlers(services, aggregatesAssembly)
-        )
+        HostBuilderExtensions.UseAggregatesWithoutEventSourcing<'AggregateRepository> hostBuilder aggregatesAssembly
 
     [<Extension>]
     let UseAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository 

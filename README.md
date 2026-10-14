@@ -1,27 +1,27 @@
 # 🚀 Rosetta Framework
 
-**Domain-Driven Design, Event Sourcing, and Projections for .NET & F# — with RavenDB/MongoDB, EventStoreDB, and modern HostBuilder integration.**
+**Domain-Driven Design, Event Sourcing, and Projections for .NET & F# — with EventStoreDB, RavenDB, MongoDB, and modern HostBuilder integration.**
 
-![.NET](https://img.shields.io/badge/.NET-9-blueviolet)
+![.NET](https://img.shields.io/badge/.NET-10-blueviolet)
 ![F#](https://img.shields.io/badge/F%23-functional-blue)
 ![Event Sourcing](https://img.shields.io/badge/Event%20Sourcing-Enabled-brightgreen)
 ![RavenDB](https://img.shields.io/badge/RavenDB-Integrated-red)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Integrated-red)
 ![EventStoreDB](https://img.shields.io/badge/EventStoreDB-Integrated-orange)
-![CI](https://img.shields.io/badge/CI-GitHub%20Actions-blue)
 
 ---
 
 ## ✨ Overview
 
-**Rosetta** is a powerful, opinionated framework for building robust, Event-Sourced, Domain-Driven Microservices in .NET
+**Rosetta** is a powerful, opinionated framework for building robust, Event-Sourced, Domain-Driven Microservices in .NET.
 
-Levarage the power of **F# Discriminated Unions** inside Rosetta to create error-proof Domain Solutions!
+Leverage the power of **F# Discriminated Unions** inside Rosetta to create error-proof Domain Solutions!
 
 It provides:
 
 - 🧩 **Aggregate Roots** and **Domain Events** (DDD)
 - ⚡ **Event Sourcing** with EventStoreDB
+- 🗄️ **State-based Aggregates** (no Event Sourcing) persisted in RavenDB or MongoDB — or mix both styles in one service
 - 📊 **Projections** from EventStoreDB with persistence using RavenDB and MongoDB (NoSQL)
 - 📊 **Custom (Cross-Aggregate) Projection Definitions**
 - 🏗️ **HostBuilder Extensions** for seamless DI and service registration
@@ -39,13 +39,20 @@ It provides:
 ```fsharp
 //Implementing the db for Aggregates (either to save the entire AggregateState all at once or to save the produced Events for Event Sourcing purposes)
 type IAggregateRepository =
-    abstract member StoreAsync: aggregate: IAggregate -> Task
-    abstract member GetAsync<'TAggregate, 'TEvents
+    abstract member StoreAsync<'TAggregate, 'TAggregateState
+            when 'TAggregate :> IAggregate<'TAggregateState>> : 
+            aggregate: 'TAggregate -> Task
+    abstract member GetAsync<'TAggregate, 'TAggregateState, 'TEvents
             when 'TAggregate : (new : unit -> 'TAggregate) 
-            and 'TAggregate :> IAggregate
+            and 'TAggregate :> IAggregate<'TAggregateState>
             and 'TAggregate : not struct
+            and 'TAggregateState : (new : unit -> 'TAggregateState)
+            and 'TAggregateState :> IAggregateStateInstance<'TEvents>
             and 'TEvents :> IAggregateEvents> : 
         id: string * [<Optional; DefaultParameterValue(Int64.MaxValue)>] version: int64 -> Task<Option<'TAggregate>>
+
+type IEventSourcedAggregateRepository = inherit IAggregateRepository // e.g. EventStoreDB
+type IStateBasedAggregateRepository = inherit IAggregateRepository   // e.g. RavenDB, MongoDB
 
 //Implementing the db for Projections
 type ICheckpointStore =
@@ -64,7 +71,8 @@ type IProjectionsStore =
 ## 📦 Features
 
 - **Aggregate & Event Abstractions**: Write expressive, testable domain logic.
-- **EventStoreDB Integration**: Reliable, scalable event storage.
+- **EventStoreDB Integration**: Reliable, scalable event storage with optimistic concurrency.
+- **State-based Aggregates**: Persist the AggregateState itself in RavenDB or MongoDB when Event Sourcing isn't needed.
 - **RavenDB/MongoDB Projections**: Fast, flexible read models.
 - **Plug-and-Play HostBuilder Extensions**: Register everything with a single line.
 - **CQRS Handlers**: Command and event handler patterns out-of-the-box.
@@ -79,8 +87,9 @@ type IProjectionsStore =
 graph TD
     A[Client/API] -->|Command| B[Aggregate Handler]
     B -->|Event| C[EventStoreDB]
+    B -->|AggregateState| G[RavenDB / MongoDB]
     C -->|Event| D[Projection Handler/s]
-    D -->|Read Model| E[RavenDB]
+    D -->|Read Model| E[RavenDB / MongoDB]
     E -->|Query| F[Client/API]
 ```
 
@@ -90,19 +99,30 @@ graph TD
 
 ### 1. Install NuGet Packages
 
+Rosetta targets **.NET 10**.
+
 ```shell
-dotnet add package SI.Rosetta.Aggregates
-dotnet add package SI.Rosetta.Projections
+# Aggregates (registers the EventStoreDB, RavenDB and MongoDB repositories)
+dotnet add package SI.Rosetta.Aggregates.HostBuilder
+
+# Projections (EventStoreDB subscriptions into RavenDB or MongoDB)
+dotnet add package SI.Rosetta.Projections.HostBuilder
+
+# BDD Test Kits (in your test projects)
+dotnet add package SI.Rosetta.Aggregates.TestKit
+dotnet add package SI.Rosetta.Projections.TestKit
 ```
+
+The HostBuilder packages bring in `SI.Rosetta.Aggregates` / `SI.Rosetta.Projections` and every persistence implementation. Your Published Language project (Commands and Events) only needs `SI.Rosetta.Common`.
 
 ### 2. Configure Infrastructure
 
-Whether you're using Aggregates, Projections, or both - the persistence underneath needs to be properly configured.
+Whether you're using Aggregates, Projections, or both - the persistence underneath needs to be properly configured. Only the sections for the stores you choose are required.
 
 ```json
 {
   "RavenDB": {
-    "Urls": "your_raven_url",
+    "Urls": "your_raven_url;another_raven_url",
     "CertificatePath": "relative/path/to/certificate.pfx",
     "CertificatePassword": "your_password",
     "DatabaseName": "your_db_name"
@@ -110,37 +130,82 @@ Whether you're using Aggregates, Projections, or both - the persistence undernea
   "EventStoreDB": {
     "ConnectionString": "esdb://localhost:2113?Tls=false"
   },
-   "MongoDB": {
-   "Host": "localhost",
-   "Port": "27017",
-   "Username": "your_username",
-   "Password": "your_password",
-   "AuthSource": "your_auth_source",
-   "DatabaseName": "your_db_name"
-   }
+  "MongoDB": {
+    "Host": "localhost",
+    "Port": "27017",
+    "Username": "your_username",
+    "Password": "your_password",
+    "AuthSource": "your_auth_source",
+    "DatabaseName": "your_db_name"
+  }
 }
 ```
 
+`CertificatePath`/`CertificatePassword` and the MongoDB credentials are optional.
+
 ### 3. Register Aggregates & Projections
 
+The first generic argument chooses the Event-Sourced store, the second the store for state-based Aggregates (or Projections).
+
+**F#**
+
 ```fsharp
+// Aggregates service
+open Microsoft.Extensions.Hosting
 open SI.Rosetta.Aggregates.HostBuilder
+
+Host.CreateDefaultBuilder(args)
+|> fun builder -> UseAggregatesWith<EventStore, RavenDB> builder typeof<PersonAggregateHandler>.Assembly
+|> fun builder -> builder.Build().Run()
+```
+
+```fsharp
+// Projections service
+open Microsoft.Extensions.Hosting
 open SI.Rosetta.Projections.HostBuilder
 
-Host
-  .CreateDefaultBuilder()
-  .UseAggregatesWith<SI.Rosetta.HostBuilder.EventStore>(typeof<_Assembly_Containing_Aggregates_>.Assembly)
-  .UseProjectionsWith<SI.Rosetta.HostBuilder.EventStore, SI.Rosetta.HostBuilder.RavenDB>(typeof<_Assembly_Containing_Projections_>.Assembly)
-  .Build()
-  .Run()
+Host.CreateDefaultBuilder(args)
+|> fun builder -> UseProjectionsWith<EventStore, MongoDB> builder typeof<PersonProjection>.Assembly
+|> fun builder -> builder.Build().Run()
 ```
+
+> Both namespaces define the `EventStore`/`RavenDB`/`MongoDB` marker types. If one host registers both Aggregates and Projections, qualify them (e.g. `SI.Rosetta.Projections.HostBuilder.RavenDB`).
+
+**C#**
+
+```csharp
+using Microsoft.Extensions.Hosting;
+using SI.Rosetta.Aggregates.HostBuilder;            // extension methods
+using Stores = SI.Rosetta.Aggregates.HostBuilder;   // store marker types
+
+Host.CreateDefaultBuilder(args)
+    .UseAggregatesWith<Stores.EventStore, Stores.MongoDB>(typeof(PersonAggregateHandler).Assembly)
+    .Build()
+    .Run();
+```
+
+> In C#, refer to the store marker types through an alias: unqualified `EventStore` and `MongoDB` resolve to the `EventStore.Client` and `MongoDB.Driver` root namespaces (CS0118).
+
+| Registration | Use when | Stores |
+|---|---|---|
+| `UseAggregatesWithEventSourcing<TEventSourced>` | every Aggregate is Event-Sourced | `EventStore` |
+| `UseAggregatesWithoutEventSourcing<TStateBased>` | every Aggregate persists its state | `RavenDB`, `MongoDB` |
+| `UseAggregatesWith<TEventSourced, TStateBased>` | a mix of both | both of the above |
+| `UseProjectionsWith<TEventRepository, TProjectionsStore>` | Projections | `EventStore` → `RavenDB`, `MongoDB` |
+
+Aggregate Handlers and Projection Handlers are discovered in the given assembly and registered automatically.
 
 ---
 
 ## 🧑‍💻 Example: Person Aggregate
 
-### Domain Messages
+### Domain Messages (Published Language)
+
+Every Discriminated Union case wraps exactly **one record**, and record type names must be unique - the record type name (e.g. `PersonRegistered`) is the event type stored in EventStoreDB.
+
 ```fsharp
+open SI.Rosetta.Common
+
 type RegisterPerson = {
     Id: string
     Name: string
@@ -158,123 +223,323 @@ type PersonRegistered = {
 
 type PersonNameChanged = {
     Id: string
-    Name: string
+    OldName: string
+    NewName: string
 }
 
+[<RequireQualifiedAccess>]
 type PersonCommands =
     | Register of RegisterPerson
     | ChangeName of ChangePersonName
     interface IAggregateCommands // [REQUIRED]
 
+[<RequireQualifiedAccess>]
 type PersonEvents =
     | Registered of PersonRegistered
     | NameChanged of PersonNameChanged
     interface IAggregateEvents // [REQUIRED]
 ```
 
-### Domain Model
-
-```fsharp
-type PersonAggregate() =
-    inherit Aggregate<PersonAggregateState, PersonCommands, PersonEvents>() // <IAggregateState, IAggregateCommands, IAggregateEvents>
-    override this.Execute(command: PersonCommands) =
-        match command with
-            | PersonCommands.Register cmd -> this.Register cmd
-            | PersonCommands.ChangeName cmd -> this.ChangeName cmd
-
-    member private this.Register(cmd: RegisterPerson) =
-        let event = PersonEvents.Registered { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
-        this.PublishedEvents.Add event //OPTIONAL
-        this.Apply event
-
-    member private this.ChangeName(cmd: ChangePersonName) =
-        let event = PersonEvents.NameChanged { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
-        this.PublishedEvents.Add event //OPTIONAL
-        this.Apply event
-```
-
 ### State
 
 ```fsharp
 type PersonAggregateState() =
-    inherit AggregateState<PersonEvents>() //<IAggregateEvents>
+    inherit AggregateState<PersonEvents>() // <IAggregateEvents>
+    member val Name = "" with get, set
+
     override this.ApplyEvent(ev) =
         match ev with
-        | Registered e -> 
-            this.Id <- e.Id
-            this.Name <- e.Name
-        | NameChanged e -> 
-            this.Name <- e.Name
+        | PersonEvents.Registered ev -> 
+            this.Id <- ev.Id
+            this.Name <- ev.Name
+        | PersonEvents.NameChanged ev -> 
+            this.Name <- ev.NewName
+```
+
+Each applied event increments `Version`, which is used for optimistic concurrency (EventStoreDB) and idempotency checks.
+
+### Domain Model
+
+```fsharp
+type PersonAggregate() =
+    inherit Aggregate<PersonAggregateState, PersonCommands, PersonEvents>() // <AggregateState, IAggregateCommands, IAggregateEvents>
+
+    override this.Execute(command: PersonCommands) =
+        match command with
+        | PersonCommands.Register cmd ->
+            if this.State.Version > 0 then
+                if this.State.Name <> cmd.Name then
+                    raise (DomainException.Named("PersonAlreadyRegistered", "Person already registered"))
+            else this.Register cmd
+        | PersonCommands.ChangeName cmd ->
+            if this.State.Name <> cmd.Name then this.ChangeName cmd
+
+    member private this.Register(cmd: RegisterPerson) =
+        let event = PersonEvents.Registered { Id = cmd.Id; Name = cmd.Name }
+        this.PublishedEvents.Add event // OPTIONAL: integration events for the outside world
+        this.Apply event
+
+    member private this.ChangeName(cmd: ChangePersonName) =
+        let event = PersonEvents.NameChanged { Id = cmd.Id; OldName = this.State.Name; NewName = cmd.Name }
+        this.Apply event
 ```
 
 ### Handler
 
 ```fsharp
-type PersonAggregateHandler(repo: IAggregateRepository) =
-    inherit AggregateHandler<PersonAggregate, PersonCommands, PersonEvents>() // <IAggregateState, IAggregateCommands, IAggregateEvents>
+type IPersonAggregateHandler = // [REQUIRED] the Handler is registered in DI under this interface
+    inherit IAggregateHandler
+
+// IEventSourcedAggregateRepository - Event Sourcing; IStateBasedAggregateRepository - persist the AggregateState instead
+type PersonAggregateHandler(repo: IEventSourcedAggregateRepository) =
+    inherit AggregateHandler<PersonAggregate, PersonAggregateState, PersonCommands, PersonEvents>() // <Aggregate, AggregateState, IAggregateCommands, IAggregateEvents>
+    do base.AggregateRepository <- repo
+    interface IPersonAggregateHandler
+
     override this.ExecuteAsync(command) =
         task {
             match command with
-            | Register cmd -> do! this.IdempotentlyCreateAggregate cmd.Id command
-            | ChangeName cmd | SetHeight cmd -> do! this.IdempotentlyUpdateAggregate cmd.Id command
+            | PersonCommands.Register cmd -> do! this.IdempotentlyCreateAggregate cmd.Id command
+            | PersonCommands.ChangeName cmd -> do! this.IdempotentlyUpdateAggregate cmd.Id command
         }
 ```
+
+- `IdempotentlyUpdateAggregate` raises `DomainException.Named("PersonDoesNotExist")` when the Aggregate doesn't exist.
+- The Aggregate is stored only when its `Version` changed.
+- With EventStoreDB the stream name is the Aggregate `Id` - use ids like `People-1` so that the `$ce-People` category stream can feed Projections.
+
+### Usage
+
+```fsharp
+type PersonConsumer(handler: IPersonAggregateHandler) =
+    member this.Consume(cmd: RegisterPerson) =
+        task {
+            do! handler.ExecuteAsync(PersonCommands.Register cmd)
+            let integrationEvents = handler.GetPublishedEvents()
+            ()
+        }
+```
+
+### State-based persistence
+
+| Store | Where the state lives | Where `Version` lives |
+|---|---|---|
+| RavenDB | the AggregateState document | the document's `@metadata` (`Rosetta-Aggregate-Version`) |
+| MongoDB | the AggregateState document, in the pluralized state type name collection | a regular `version` field |
 
 ---
 
 ## 📊 Example: Person Projection
 
 ```fsharp
+[<AutoOpen>]
+module ProjectionStreamNames =
+    [<Literal>]
+    let PersonStream = "$ce-People"
+
+[<CLIMutable>]
+type Person = {
+    Id: string
+    Name: string
+}
+
 [<HandlesStream(ProjectionStreamNames.PersonStream)>]
 type PersonProjection() =
     inherit Projection<PersonEvents>() // <IAggregateEvents>
     interface IAmHandledBy<PersonProjectionHandler, PersonEvents> // <IProjectionHandler, IAggregateEvents>
 
-type PersonProjectionHandler(store: INoSqlStore) =
+and PersonProjectionHandler(store: INoSqlStore) =
     interface IProjectionHandler<PersonEvents> with
         member this.Handle(event, checkpoint) =
             task {
                 match event with
-                | Registered e -> let person = { ... }; do! store.StoreAsync person
-                | NameChanged e -> do! this.Project(e.Id, fun p -> { p with Name = e.Name })
+                | PersonEvents.Registered e ->
+                    do! store.StoreAsync({ Id = e.Id; Name = e.Name } : Person)
+                | PersonEvents.NameChanged e ->
+                    do! this.Project(e.Id, fun person -> { person with Name = e.NewName })
             }
+
+    member private this.Project(id: string, update: Person -> Person) =
+        task {
+            let! person = store.LoadAsync<Person>(id)
+            do! store.StoreAsync(update person)
+        }
+```
+
+- A Projection can be handled by several Handlers - add one `IAmHandledBy<…>` per Handler.
+- Checkpoints are stored per Projection (`Checkpoints-{ProjectionName}`), so a restarted service continues where it stopped.
+- Add `[<DisabledProjection>]` to switch a Projection off.
+
+### Projections at runtime
+
+- Projections run in a `BackgroundService`. The application finishes starting right away, and stopping it (Ctrl+C) cancels every subscription immediately.
+- When a subscription drops (EventStoreDB is unavailable, or a Handler throws because, say, the read store is down), it resubscribes from its last checkpoint **up to 5 times**, waiting **1, 2, 4, 8 and 16 s**. Only progress resets the count: a handled event, or catching up with the stream. A Handler that keeps failing on the same event therefore doesn't retry forever.
+- If a Projection still fails, **the whole application stops**: Rosetta logs it as Critical, sets `Environment.ExitCode` to 1 and stops the host. The same happens when the Projections can't start, e.g. when EventStoreDB is down at startup.
+- A C# `void Main` exits with `Environment.ExitCode` on its own. An F# `main` returns its exit code explicitly, so return `Environment.ExitCode`, or the process exits with 0 and restart policies won't notice the failure:
+
+```fsharp
+host.Run()
+Environment.ExitCode
 ```
 
 ---
 
 ## 📊 Example: Cross-Aggregate Custom Projections
 
+Custom Projections combine events from several Aggregates into one stream. Rosetta generates and deploys the EventStoreDB JavaScript projection for you on startup.
+
 ```fsharp
-[<CustomProjectionStream(ProjectionStreamNames.TotalPeopleStream)>]
-type TotalPeopleAndOrganizationsCustomProjectionEvents = 
+[<AutoOpen>]
+module ProjectionStreamNames =
+    [<Literal>]
+    let PersonStream = "$ce-People"
+    [<Literal>]
+    let OrganizationStream = "$ce-Organizations"
+    [<Literal>]
+    let TotalPeopleAndOrganizationsStream = "cp-TotalPeopleAndOrganizations"
+
+[<CLIMutable>]
+type Totals = {
+    Id: string
+    TotalPeople: int
+    TotalOrganizations: int
+}
+
+[<CustomProjectionStream(ProjectionStreamNames.TotalPeopleAndOrganizationsStream)>]
+type TotalPeopleAndOrganizationsEvents = 
     | PersonRegistered of PersonRegistered
     | OrganizationRegistered of OrganizationRegistered
     interface ICustomProjectionEvents
 
-[<HandlesStream(ProjectionStreamNames.TotalPeopleStream)>]
-type TotalPeopleAndOrganizationsCustomProjection() =
-    inherit Projection<TotalPeopleCustomProjectionEvents>()
-    interface IAmHandledBy<TotalPeopleAndOrganizationsCustomProjectionHandler, TotalPeopleAndOrganizationsCustomProjectionEvents>
+[<HandlesStream(ProjectionStreamNames.TotalPeopleAndOrganizationsStream)>]
+type TotalPeopleAndOrganizationsProjection() =
+    inherit Projection<TotalPeopleAndOrganizationsEvents>()
+    interface IAmHandledBy<TotalPeopleAndOrganizationsProjectionHandler, TotalPeopleAndOrganizationsEvents>
 
-type TotalPeopleAndOrganizationsCustomProjectionHandler(store: INoSqlStore) =
-    let Store = store
-    
-    interface IProjectionHandler<TotalPeopleAndOrganizationsCustomProjectionEvents> with
-        member this.Handle(event: TotalPeopleAndOrganizationsCustomProjectionEvents, checkpoint: uint64) =
+and TotalPeopleAndOrganizationsProjectionHandler(store: INoSqlStore) =
+    let TotalsId = "Totals-All"
+
+    interface IProjectionHandler<TotalPeopleAndOrganizationsEvents> with
+        member this.Handle(event, checkpoint) =
             task {
                 match event with
-                | TotalPeopleCustomProjectionEvents.PersonRegistered _ ->
-                    do! this.Project(fun custom ->
-                        { custom with
-                            TotalPersons = custom.TotalPersons + 1 }).ConfigureAwait(false)
-                | TotalPeopleCustomProjectionEvents.OrganizationRegistered _ ->
-                    do! this.Project(fun custom ->
-                        { custom with
-                            TotalOrganizations = custom.TotalOrganizations + 1 }).ConfigureAwait(false)
+                | TotalPeopleAndOrganizationsEvents.PersonRegistered _ ->
+                    do! this.Project(fun totals -> { totals with TotalPeople = totals.TotalPeople + 1 })
+                | TotalPeopleAndOrganizationsEvents.OrganizationRegistered _ ->
+                    do! this.Project(fun totals -> { totals with TotalOrganizations = totals.TotalOrganizations + 1 })
+            }
+
+    member private this.Project(update: Totals -> Totals) =
+        task {
+            let! totals = store.LoadAsync<Totals>(TotalsId)
+            let current =
+                if isNull (box totals) then { Id = TotalsId; TotalPeople = 0; TotalOrganizations = 0 }
+                else totals
+            do! store.StoreAsync(update current)
+        }
 ```
+
+Conventions the generator relies on:
+
+- The Custom Projection stream name **must start with `cp-`**.
+- The cases reuse the Aggregates' event records (`PersonRegistered`, `OrganizationRegistered`).
+- For every source Aggregate events DU (`PersonEvents`, `OrganizationEvents`), the Projections assembly must contain a `string` literal named `{AggregateName}Stream` (`PersonStream`, `OrganizationStream`) holding its category stream.
+
+How the JavaScript projections are deployed on startup:
+
+- A projection is **created** when no EventStoreDB projection with its name (`{StreamName without cp-}CustomProjection`) exists.
+- An existing projection is **updated only when needed**. Rosetta reads its stored definition over the EventStoreDB HTTP API, using the address, credentials and TLS settings of `EventStoreDB:ConnectionString`. It re-submits the definition when the query changed, when emit is disabled, or when the projection is Faulted (re-submitting restarts it). Otherwise the projection is left alone.
+- If the stored definition can't be read, the definition is re-submitted anyway and a warning is logged.
+- **Renaming** the stream creates a new projection. The old one is neither removed nor stopped, and keeps linking events into the old stream.
+- A **changed definition** (e.g. a new event case) applies from the projection's last persisted checkpoint, not from the start of history. Older events of the new type are only partly linked, so reset the projection in EventStoreDB, and rebuild the Read Model, if they matter.
 
 ---
 
+## 🧪 Testing
+
+### Aggregates
+
+```fsharp
+type PersonTests() =
+    inherit TestKitBase<PersonAggregateHandler>()
+
+    [<Fact>]
+    member this.``Should change the name``() =
+        task {
+            this.Given(PersonEvents.Registered { Id = "People-1"; Name = "John" })
+            this.When(PersonCommands.ChangeName { Id = "People-1"; Name = "Johnny" })
+            do! this.Then(PersonEvents.NameChanged { Id = "People-1"; OldName = "John"; NewName = "Johnny" })
+        }
+
+    [<Fact>]
+    member this.``Should fail for a missing Person``() =
+        task {
+            this.Given()
+            this.When(PersonCommands.ChangeName { Id = "People-1"; Name = "Johnny" })
+            do! this.ThenError("PersonDoesNotExist")
+        }
+```
+
+- `Then(producedEvents)`, `Then(producedEvents, publishedEvents)`, `ThenNoEvents()` and `ThenError(name)` are available; a test that never calls one of them fails.
+- The Handler must take a single repository constructor argument, and every command record needs an `Id: string`.
+- `ThenError` matches `DomainException.Named(name, …)`.
+
+### Projections
+
+```fsharp
+type PersonProjectionTests() =
+    inherit TestKitBase<PersonProjection, PersonProjectionHandler, PersonEvents>()
+
+    [<Fact>]
+    member this.``Should project the renamed Person``() =
+        task {
+            do! this.Given(
+                    PersonEvents.Registered { Id = "People-1"; Name = "John" },
+                    PersonEvents.NameChanged { Id = "People-1"; OldName = "John"; NewName = "Johnny" })
+            do! this.Then({ Id = "People-1"; Name = "Johnny" } : Person)
+        }
+```
+
+Override `ConfigureServices` to register additional dependencies - or the other Handlers of a Projection with several `IAmHandledBy<…>`.
+
+---
+
+## 🛠️ Building from source
+
+```shell
+dotnet build SI.Rosetta.sln
+dotnet test SI.Rosetta.sln
+```
+
+`global.json` pins the .NET 10 SDK. Every library project produces its NuGet package on build. `SI.Rosetta.Aggregates.Template` is a Visual Studio item template and is excluded from the solution build (see its own README).
+
+---
+
+## 🐳 Running the samples
+
+`docker-compose.yml` starts the infrastructure the samples need, unsecured and for local development only: EventStoreDB (with projections enabled) and RavenDB.
+
+```shell
+docker compose up -d     # EventStoreDB UI: http://localhost:2113, RavenDB Studio: http://localhost:8080
+```
+
+Both samples read `config/appsettings.json` from their project folder. It's gitignored, so create it in `Test.Aggregates/config/` and `Test.Projections/config/`:
+
+```json
+{
+  "RavenDB": { "Urls": "http://127.0.0.1:8080/", "DatabaseName": "TEST.ROSETTA" },
+  "EventStoreDB": { "ConnectionString": "esdb://localhost:2113?Tls=false" }
+}
+```
+
+```shell
+dotnet run --project Test.Projections   # keeps running: projects $ce-People and the cp-TotalPeopleAndOrganizations Custom Projection
+dotnet run --project Test.Aggregates    # 2nd terminal: registers and renames a Person (EventStoreDB) and registers an Organization (RavenDB), then exits
+```
+
+The results show up in RavenDB Studio, database `TEST.ROSETTA`: the `People`, `TotalPeoples` and `Checkpoints` collections come from the Projections, and `Organizations` holds the state-based Aggregate (its Version is in the document's metadata). `docker compose down` stops the containers, and `docker compose down -v` also deletes their data.
+
+---
 
 ## 🏆 Why Rosetta?
 

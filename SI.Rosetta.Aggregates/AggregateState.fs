@@ -9,7 +9,9 @@ type AggregateState<'TEvents when 'TEvents :> IAggregateEvents>() =
     
     interface IAggregateState with
         member this.Id = this.Id
-        member this.Version = this.Version
+        member this.Version
+            with get() = this.Version
+            and set value = this.Version <- value
 
     interface IAggregateStateInstance<'TEvents> with
         member this.Mutate event =

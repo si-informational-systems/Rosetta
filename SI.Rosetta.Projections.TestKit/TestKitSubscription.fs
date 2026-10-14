@@ -15,7 +15,7 @@ type TestKitSubscription<'TEvent when 'TEvent :> IAggregateEvents>() =
         member this.EventReceived
             with get() = eventReceived
             and set(value) = eventReceived <- value        
-        member this.StartAsync fromCheckpoint =
+        member this.StartAsync(fromCheckpoint, _cancellationToken) =
             task {
                 let tasks = 
                     inMemoryEventStream

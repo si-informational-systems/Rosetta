@@ -1,6 +1,7 @@
 namespace SI.Rosetta.Projections
 
 open System.Collections.Generic
+open System.Threading
 open System.Threading.Tasks
 open SI.Rosetta.Common
 
@@ -8,7 +9,7 @@ type IProjection =
     abstract member Name: string with get, set
     abstract member SubscriptionStreamName: string with get, set
     abstract member Checkpoint: Checkpoint with get, set
-    abstract member StartAsync: unit -> Task
+    abstract member StartAsync: cancellationToken: CancellationToken -> Task
 
 type IProjectionInstance<'TEvent when 'TEvent :> IAggregateEvents> =
     inherit IProjection

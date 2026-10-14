@@ -1,0 +1,43 @@
+# Local infrastructure for running the samples (Test.Aggregates / Test.Projections)
+#   start:       docker compose up -d
+#   stop:        docker compose down
+#   wipe data:   docker compose down -v
+#
+# EventStoreDB UI:    http://localhost:2113
+# RavenDB Studio:     http://localhost:8080
+name: rosetta
+
+services:
+  eventstore:
+    image: eventstore/eventstore:24.10
+    environment:
+      EVENTSTORE_INSECURE: "true"
+      EVENTSTORE_RUN_PROJECTIONS: All                # Rosetta deploys Custom (cp-) JS projections
+      EVENTSTORE_START_STANDARD_PROJECTIONS: "true"  # $by_category feeds the $ce-* streams Projections subscribe to
+      EVENTSTORE_ENABLE_ATOM_PUB_OVER_HTTP: "true"   # stream browser in the UI
+    ports:
+      - "2113:2113"
+    volumes:
+      - eventstore-data:/var/lib/eventstore
+      - eventstore-logs:/var/log/eventstore
+
+  ravendb:
+    image: ravendb/ravendb:7.2-latest
+    environment:
+      RAVEN_Setup_Mode: None
+      RAVEN_License_Eula_Accepted: "true"
+      RAVEN_Security_UnsecuredAccessAllowed: PublicNetwork
+      RAVEN_ServerUrl: http://0.0.0.0:8080
+      RAVEN_PublicServerUrl: http://localhost:8080
+      RAVEN_ServerUrl_Tcp: tcp://0.0.0.0:38888
+      RAVEN_PublicServerUrl_Tcp: tcp://localhost:38888
+    ports:
+      - "8080:8080"
+      - "38888:38888"
+    volumes:
+      - ravendb-data:/var/lib/ravendb/data
+
+volumes:
+  eventstore-data:
+  eventstore-logs:
+  ravendb-data:

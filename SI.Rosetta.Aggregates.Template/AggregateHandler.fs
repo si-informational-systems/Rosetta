@@ -5,8 +5,9 @@ open SI.Rosetta.Aggregates
 type I$fileinputname$AggregateHandler =
     inherit IAggregateHandler
 
-type $fileinputname$AggregateHandler(repo: IAggregateRepository) = 
-    inherit AggregateHandler<$fileinputname$Aggregate, $fileinputname$Commands, $fileinputname$Events>()
+// Use IStateBasedAggregateRepository instead to persist the AggregateState without Event Sourcing
+type $fileinputname$AggregateHandler(repo: IEventSourcedAggregateRepository) =
+    inherit AggregateHandler<$fileinputname$Aggregate, $fileinputname$AggregateState, $fileinputname$Commands, $fileinputname$Events>()
     do base.AggregateRepository <- repo
     interface I$fileinputname$AggregateHandler
     

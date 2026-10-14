@@ -3,7 +3,7 @@ module Program
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Configuration
-open System.IO
+open System
 open SI.Rosetta.Aggregates.HostBuilder
 open TestFSharp
 
@@ -14,7 +14,8 @@ let main args =
         |> fun builder -> 
             builder.ConfigureAppConfiguration(fun context config ->
                 config
-                    .SetBasePath(Directory.GetCurrentDirectory())
+                    // config/ is copied to the output, so it's found whatever the working directory is
+                    .SetBasePath(AppContext.BaseDirectory)
                     .AddJsonFile("config/appsettings.json", optional = false)
                     .AddCommandLine(args)
                 |> ignore)

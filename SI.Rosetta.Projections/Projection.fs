@@ -60,9 +60,9 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
         member this.ProjectAsync
             with get() = this.ProjectAsync
             
-        member this.StartAsync() =
+        member this.StartAsync(cancellationToken) =
             task {
-                do! this.Subscription.StartAsync this.Checkpoint.Value
+                do! this.Subscription.StartAsync(this.Checkpoint.Value, cancellationToken)
             }
         
     member private this.TryHandleEvent(ev: 'TEvent, checkpoint: uint64) =

@@ -62,7 +62,7 @@ type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent
             let projectionInstance = projection :?> IProjectionInstance<'TEvent>
             let subscription = projectionInstance.Subscription :?> TestKitSubscription<'TEvent>
             subscription.StoreEvents(args)
-            do! projection.StartAsync().ConfigureAwait(false)
+            do! projection.StartAsync(Threading.CancellationToken.None).ConfigureAwait(false)
         }
 
     member this.Then<'TEntity when 'TEntity : not struct>(expectedEntity: 'TEntity) =

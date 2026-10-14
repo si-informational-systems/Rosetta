@@ -4,7 +4,7 @@ open SI.Rosetta.Common
 
 type IAggregateState =
     abstract member Id: string
-    abstract member Version: int64
+    abstract member Version: int64 with get, set
 
 type IAggregateStateInstance<'TEvents
     when 'TEvents :> IAggregateEvents> =
