@@ -11,11 +11,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharp.Control.TaskSeq" Version="1.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.6" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.6" />
+    <PackageReference Include="FSharp.Control.TaskSeq" Version="1.1.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.13" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="FSharp.Control.AsyncSeq" Version="4.12.0" />
+    <PackageReference Include="FSharp.Control.AsyncSeq" Version="4.15.0" />
   </ItemGroup>
 
   <ItemGroup>

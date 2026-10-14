@@ -457,6 +457,24 @@ How the JavaScript projections are deployed on startup:
 
 ## 🧪 Testing
 
+The TestKits are built for **xUnit v3**. A test project that uses them references `xunit.v3` and is an executable:
+
+```xml
+<PropertyGroup>
+  <OutputType>Exe</OutputType>
+</PropertyGroup>
+<ItemGroup>
+  <PackageReference Include="xunit.v3" Version="4.0.2" />
+  <PackageReference Include="SI.Rosetta.Aggregates.TestKit" Version="..." />
+</ItemGroup>
+```
+
+xUnit v3 runs on the Microsoft Testing Platform. With the .NET 10 SDK, `dotnet test` only runs it after you opt in from `global.json`:
+
+```json
+{ "test": { "runner": "Microsoft.Testing.Platform" } }
+```
+
 ### Aggregates
 
 ```fsharp

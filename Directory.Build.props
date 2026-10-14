@@ -2,6 +2,6 @@
  <PropertyGroup>
    <WarningsAsErrors>FS0025</WarningsAsErrors>
    <!-- Single FSharp.Core version for every project (and the packages' dependency), independent of the installed SDK -->
-   <FSharpCoreImplicitPackageVersion>10.1.202</FSharpCoreImplicitPackageVersion>
+   <FSharpCoreImplicitPackageVersion>10.1.402</FSharpCoreImplicitPackageVersion>
  </PropertyGroup>
 </Project>
