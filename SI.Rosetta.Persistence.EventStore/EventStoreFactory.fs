@@ -1,19 +1,19 @@
 ﻿namespace SI.Rosetta.Persistence.EventStore
 
-open EventStore.Client
+open KurrentDB.Client
 open Microsoft.Extensions.Configuration
 
 module EventStoreFactory =
-    let private CheckEventStoreAvailable(client: EventStoreClient) =
+    let private CheckEventStoreAvailable(client: KurrentDBClient) =
         (client.GetStreamMetadataAsync("$ce-Any")).Result |> ignore
 
     let InitializeEventStore (config: IConfiguration) =
-        let settings = EventStoreClientSettings.Create(config.["EventStoreDB:ConnectionString"])
-        let client = new EventStoreClient(settings)
+        let settings = KurrentDBClientSettings.Create(config.["EventStoreDB:ConnectionString"])
+        let client = new KurrentDBClient(settings)
         CheckEventStoreAvailable client
         client
 
     let InitializeProjectionManagementClient (config: IConfiguration) = 
-        let settings = EventStoreClientSettings.Create(config.GetSection("EventStoreDB:ConnectionString").Value)
-        let managementClient = new EventStoreProjectionManagementClient(settings)
+        let settings = KurrentDBClientSettings.Create(config.GetSection("EventStoreDB:ConnectionString").Value)
+        let managementClient = new KurrentDBProjectionManagementClient(settings)
         managementClient

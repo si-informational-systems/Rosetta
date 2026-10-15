@@ -31,7 +31,7 @@ type ServiceInstance(
                         TimeIssued = DateTime.Now
                     }
 
-                    // Event-Sourced (EventStoreDB): a new Person every run, so Test.Projections has something to project
+                    // Event-Sourced (KurrentDB): a new Person every run, so Test.Projections has something to project
                     let personId = sprintf "People-%s" (Guid.NewGuid().ToString("N").Substring(0, 8))
                     printfn "Registering %s as John, renaming to Johnny, setting height to 180" personId
                     do! personConsumer.Consume({ Id = personId; Name = "John"; Metadata = metadata } : RegisterPerson).ConfigureAwait(false)

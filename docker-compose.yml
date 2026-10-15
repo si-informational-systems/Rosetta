@@ -3,23 +3,23 @@
 #   stop:        docker compose down
 #   wipe data:   docker compose down -v
 #
-# EventStoreDB UI:    http://localhost:2113
+# KurrentDB UI:       http://localhost:2113
 # RavenDB Studio:     http://localhost:8080
 name: rosetta
 
 services:
-  eventstore:
-    image: eventstore/eventstore:24.10
+  kurrentdb:
+    image: kurrentplatform/kurrentdb:26.2
     environment:
-      EVENTSTORE_INSECURE: "true"
-      EVENTSTORE_RUN_PROJECTIONS: All                # Rosetta deploys Custom (cp-) JS projections
-      EVENTSTORE_START_STANDARD_PROJECTIONS: "true"  # $by_category feeds the $ce-* streams Projections subscribe to
-      EVENTSTORE_ENABLE_ATOM_PUB_OVER_HTTP: "true"   # stream browser in the UI
+      KURRENTDB_INSECURE: "true"
+      KURRENTDB_RUN_PROJECTIONS: All                # Rosetta deploys Custom (cp-) JS projections
+      KURRENTDB_START_STANDARD_PROJECTIONS: "true"  # $by_category feeds the $ce-* streams Projections subscribe to
+      KURRENTDB_ENABLE_ATOM_PUB_OVER_HTTP: "true"   # read and append events over HTTP (curl); deprecated, still in 26.2
     ports:
       - "2113:2113"
     volumes:
-      - eventstore-data:/var/lib/eventstore
-      - eventstore-logs:/var/log/eventstore
+      - kurrentdb-data:/var/lib/kurrentdb
+      - kurrentdb-logs:/var/log/kurrentdb
 
   ravendb:
     image: ravendb/ravendb:7.2-latest
@@ -38,6 +38,6 @@ services:
       - ravendb-data:/var/lib/ravendb/data
 
 volumes:
-  eventstore-data:
-  eventstore-logs:
+  kurrentdb-data:
+  kurrentdb-logs:
   ravendb-data:

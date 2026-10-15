@@ -1,13 +1,13 @@
 # 🚀 Rosetta Framework
 
-**Domain-Driven Design, Event Sourcing, and Projections for .NET & F# — with EventStoreDB, RavenDB, MongoDB, and modern HostBuilder integration.**
+**Domain-Driven Design, Event Sourcing, and Projections for .NET & F# — with KurrentDB (formerly EventStoreDB), RavenDB, MongoDB, and modern HostBuilder integration.**
 
 ![.NET](https://img.shields.io/badge/.NET-10-blueviolet)
 ![F#](https://img.shields.io/badge/F%23-functional-blue)
 ![Event Sourcing](https://img.shields.io/badge/Event%20Sourcing-Enabled-brightgreen)
 ![RavenDB](https://img.shields.io/badge/RavenDB-Integrated-red)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Integrated-red)
-![EventStoreDB](https://img.shields.io/badge/EventStoreDB-Integrated-orange)
+![KurrentDB](https://img.shields.io/badge/KurrentDB-Integrated-orange)
 
 ---
 
@@ -20,9 +20,9 @@ Leverage the power of **F# Discriminated Unions** inside Rosetta to create error
 It provides:
 
 - 🧩 **Aggregate Roots** and **Domain Events** (DDD)
-- ⚡ **Event Sourcing** with EventStoreDB
+- ⚡ **Event Sourcing** with KurrentDB
 - 🗄️ **State-based Aggregates** (no Event Sourcing) persisted in RavenDB or MongoDB — or mix both styles in one service
-- 📊 **Projections** from EventStoreDB with persistence using RavenDB and MongoDB (NoSQL)
+- 📊 **Projections** from KurrentDB with persistence using RavenDB and MongoDB (NoSQL)
 - 📊 **Custom (Cross-Aggregate) Projection Definitions**
 - 🏗️ **HostBuilder Extensions** for seamless DI and service registration
 - 🛠️ **CQRS**-friendly patterns and handler abstractions
@@ -51,7 +51,7 @@ type IAggregateRepository =
             and 'TEvents :> IAggregateEvents> : 
         id: string * [<Optional; DefaultParameterValue(Int64.MaxValue)>] version: int64 -> Task<Option<'TAggregate>>
 
-type IEventSourcedAggregateRepository = inherit IAggregateRepository // e.g. EventStoreDB
+type IEventSourcedAggregateRepository = inherit IAggregateRepository // e.g. KurrentDB
 type IStateBasedAggregateRepository = inherit IAggregateRepository   // e.g. RavenDB, MongoDB
 
 //Implementing the db for Projections
@@ -71,7 +71,7 @@ type IProjectionsStore =
 ## 📦 Features
 
 - **Aggregate & Event Abstractions**: Write expressive, testable domain logic.
-- **EventStoreDB Integration**: Reliable, scalable event storage with optimistic concurrency.
+- **KurrentDB Integration**: Reliable, scalable event storage with optimistic concurrency.
 - **State-based Aggregates**: Persist the AggregateState itself in RavenDB or MongoDB when Event Sourcing isn't needed.
 - **RavenDB/MongoDB Projections**: Fast, flexible read models.
 - **Plug-and-Play HostBuilder Extensions**: Register everything with a single line.
@@ -86,7 +86,7 @@ type IProjectionsStore =
 ```mermaid
 graph TD
     A[Client/API] -->|Command| B[Aggregate Handler]
-    B -->|Event| C[EventStoreDB]
+    B -->|Event| C[KurrentDB]
     B -->|AggregateState| G[RavenDB / MongoDB]
     C -->|Event| D[Projection Handler/s]
     D -->|Read Model| E[RavenDB / MongoDB]
@@ -102,10 +102,10 @@ graph TD
 Rosetta targets **.NET 10**.
 
 ```shell
-# Aggregates (registers the EventStoreDB, RavenDB and MongoDB repositories)
+# Aggregates (registers the KurrentDB, RavenDB and MongoDB repositories)
 dotnet add package SI.Rosetta.Aggregates.HostBuilder
 
-# Projections (EventStoreDB subscriptions into RavenDB or MongoDB)
+# Projections (KurrentDB subscriptions into RavenDB or MongoDB)
 dotnet add package SI.Rosetta.Projections.HostBuilder
 
 # BDD Test Kits (in your test projects)
@@ -142,6 +142,8 @@ Whether you're using Aggregates, Projections, or both - the persistence undernea
 ```
 
 `CertificatePath`/`CertificatePassword` and the MongoDB credentials are optional.
+
+The `EventStoreDB` section keeps its name for compatibility; it configures KurrentDB. Rosetta uses `KurrentDB.Client` and is tested against KurrentDB 26.2, and the client also connects to EventStoreDB 24.10. Both `esdb://` and `kurrentdb://` connection strings work. A single KurrentDB node is free to run in production from 26.2; clusters need a license.
 
 ### 3. Register Aggregates & Projections
 
@@ -184,7 +186,7 @@ Host.CreateDefaultBuilder(args)
     .Run();
 ```
 
-> In C#, refer to the store marker types through an alias: unqualified `EventStore` and `MongoDB` resolve to the `EventStore.Client` and `MongoDB.Driver` root namespaces (CS0118).
+> In C#, refer to the store marker types through an alias: unqualified `EventStore` and `MongoDB` resolve to root namespaces of the client libraries (CS0118). `KurrentDB.Client` still has internal types in an `EventStore.Client` namespace, and `MongoDB.Driver` uses `MongoDB`.
 
 | Registration | Use when | Stores |
 |---|---|---|
@@ -201,7 +203,7 @@ Aggregate Handlers and Projection Handlers are discovered in the given assembly 
 
 ### Domain Messages (Published Language)
 
-Every Discriminated Union case wraps exactly **one record**, and record type names must be unique - the record type name (e.g. `PersonRegistered`) is the event type stored in EventStoreDB.
+Every Discriminated Union case wraps exactly **one record**, and record type names must be unique - the record type name (e.g. `PersonRegistered`) is the event type stored in KurrentDB.
 
 ```fsharp
 open SI.Rosetta.Common
@@ -256,7 +258,7 @@ type PersonAggregateState() =
             this.Name <- ev.NewName
 ```
 
-Each applied event increments `Version`, which is used for optimistic concurrency (EventStoreDB) and idempotency checks.
+Each applied event increments `Version`, which is used for optimistic concurrency (KurrentDB) and idempotency checks.
 
 ### Domain Model
 
@@ -306,7 +308,7 @@ type PersonAggregateHandler(repo: IEventSourcedAggregateRepository) =
 
 - `IdempotentlyUpdateAggregate` raises `DomainException.Named("PersonDoesNotExist")` when the Aggregate doesn't exist.
 - The Aggregate is stored only when its `Version` changed.
-- With EventStoreDB the stream name is the Aggregate `Id` - use ids like `People-1` so that the `$ce-People` category stream can feed Projections.
+- With KurrentDB the stream name is the Aggregate `Id` - use ids like `People-1` so that the `$ce-People` category stream can feed Projections.
 
 ### Usage
 
@@ -373,8 +375,8 @@ and PersonProjectionHandler(store: INoSqlStore) =
 ### Projections at runtime
 
 - Projections run in a `BackgroundService`. The application finishes starting right away, and stopping it (Ctrl+C) cancels every subscription immediately.
-- When a subscription drops (EventStoreDB is unavailable, or a Handler throws because, say, the read store is down), it resubscribes from its last checkpoint **up to 5 times**, waiting **1, 2, 4, 8 and 16 s**. Only progress resets the count: a handled event, or catching up with the stream. A Handler that keeps failing on the same event therefore doesn't retry forever.
-- If a Projection still fails, **the whole application stops**: Rosetta logs it as Critical, sets `Environment.ExitCode` to 1 and stops the host. The same happens when the Projections can't start, e.g. when EventStoreDB is down at startup.
+- When a subscription drops (KurrentDB is unavailable, or a Handler throws because, say, the read store is down), it resubscribes from its last checkpoint **up to 5 times**, waiting **1, 2, 4, 8 and 16 s**. Only progress resets the count: a handled event, or catching up with the stream. A Handler that keeps failing on the same event therefore doesn't retry forever.
+- If a Projection still fails, **the whole application stops**: Rosetta logs it as Critical, sets `Environment.ExitCode` to 1 and stops the host. The same happens when the Projections can't start, e.g. when KurrentDB is down at startup.
 - A C# `void Main` exits with `Environment.ExitCode` on its own. An F# `main` returns its exit code explicitly, so return `Environment.ExitCode`, or the process exits with 0 and restart policies won't notice the failure:
 
 ```fsharp
@@ -386,7 +388,7 @@ Environment.ExitCode
 
 ## 📊 Example: Cross-Aggregate Custom Projections
 
-Custom Projections combine events from several Aggregates into one stream. Rosetta generates and deploys the EventStoreDB JavaScript projection for you on startup.
+Custom Projections combine events from several Aggregates into one stream. Rosetta generates and deploys the KurrentDB JavaScript projection for you on startup.
 
 ```fsharp
 [<AutoOpen>]
@@ -447,11 +449,11 @@ Conventions the generator relies on:
 
 How the JavaScript projections are deployed on startup:
 
-- A projection is **created** when no EventStoreDB projection with its name (`{StreamName without cp-}CustomProjection`) exists.
-- An existing projection is **updated only when needed**. Rosetta reads its stored definition over the EventStoreDB HTTP API, using the address, credentials and TLS settings of `EventStoreDB:ConnectionString`. It re-submits the definition when the query changed, when emit is disabled, or when the projection is Faulted (re-submitting restarts it). Otherwise the projection is left alone.
+- A projection is **created** when no KurrentDB projection with its name (`{StreamName without cp-}CustomProjection`) exists. It's created on the V1 projections engine: V2 is still experimental in KurrentDB, and the engine can only be chosen at creation.
+- An existing projection is **updated only when needed**. Rosetta reads its stored definition over the KurrentDB HTTP API, using the address, credentials and TLS settings of `EventStoreDB:ConnectionString`. It re-submits the definition when the query changed, when emit is disabled, or when the projection is Faulted (re-submitting restarts it). Otherwise the projection is left alone.
 - If the stored definition can't be read, the definition is re-submitted anyway and a warning is logged.
 - **Renaming** the stream creates a new projection. The old one is neither removed nor stopped, and keeps linking events into the old stream.
-- A **changed definition** (e.g. a new event case) applies from the projection's last persisted checkpoint, not from the start of history. Older events of the new type are only partly linked, so reset the projection in EventStoreDB, and rebuild the Read Model, if they matter.
+- A **changed definition** (e.g. a new event case) applies from the projection's last persisted checkpoint, not from the start of history. Older events of the new type are only partly linked, so reset the projection in KurrentDB, and rebuild the Read Model, if they matter.
 
 ---
 
@@ -535,10 +537,10 @@ dotnet test SI.Rosetta.sln
 
 ## 🐳 Running the samples
 
-`docker-compose.yml` starts the infrastructure the samples need, unsecured and for local development only: EventStoreDB (with projections enabled) and RavenDB.
+`docker-compose.yml` starts the infrastructure the samples need, unsecured and for local development only: KurrentDB (with projections enabled) and RavenDB.
 
 ```shell
-docker compose up -d     # EventStoreDB UI: http://localhost:2113, RavenDB Studio: http://localhost:8080
+docker compose up -d     # KurrentDB UI: http://localhost:2113, RavenDB Studio: http://localhost:8080
 ```
 
 Both samples read `config/appsettings.json` from their project folder. It's gitignored, so create it in `Test.Aggregates/config/` and `Test.Projections/config/`:
@@ -552,10 +554,34 @@ Both samples read `config/appsettings.json` from their project folder. It's giti
 
 ```shell
 dotnet run --project Test.Projections   # keeps running: projects $ce-People and the cp-TotalPeopleAndOrganizations Custom Projection
-dotnet run --project Test.Aggregates    # 2nd terminal: registers and renames a Person (EventStoreDB) and registers an Organization (RavenDB), then exits
+dotnet run --project Test.Aggregates    # 2nd terminal: registers and renames a Person (KurrentDB) and registers an Organization (RavenDB), then exits
 ```
 
 The results show up in RavenDB Studio, database `TEST.ROSETTA`: the `People`, `TotalPeoples` and `Checkpoints` collections come from the Projections, and `Organizations` holds the state-based Aggregate (its Version is in the document's metadata). `docker compose down` stops the containers, and `docker compose down -v` also deletes their data.
+
+---
+
+## ⬆️ Upgrading from EventStoreDB 24.10 to KurrentDB
+
+KurrentDB 26.x upgrades a 24.10 database in place. Back it up first.
+
+1. **Deploy the Rosetta version that uses `KurrentDB.Client` first.** It works against both 24.10 and 26.2, so the services don't have to change at the same time as the server.
+2. **Rename the server settings.** `EVENTSTORE_*` environment variables become `KURRENTDB_*`, and `eventstore.conf` becomes `kurrentdb.conf`. The data and log paths move from `/var/lib/eventstore` and `/var/log/eventstore` to `/var/lib/kurrentdb` and `/var/log/kurrentdb`.
+3. **In Docker, give the data to the new user.** The EventStoreDB image runs as uid 1000, but the KurrentDB image (`kurrentplatform/kurrentdb`) runs as uid 1001. If the data directory isn't writable, KurrentDB doesn't fail. It logs `Access to path /var/lib/kurrentdb denied`, starts an **empty** database inside the container and still reports healthy. Fix the ownership before the first start, then check that your streams are there before the services connect:
+
+   ```shell
+   docker run --rm -v <data-volume>:/data -v <logs-volume>:/logs alpine chown -R 1001:1001 /data /logs
+   ```
+
+System projections such as `$by_category`, existing Custom Projections and the Projections' checkpoints carry over unchanged. Rosetta doesn't need AtomPub (`ENABLE_ATOM_PUB_OVER_HTTP`): it only reads projection definitions over the HTTP projections API, which is always on.
+
+To keep the data of the samples' older `eventstore` container, copy its volume before the first `docker compose up`:
+
+```shell
+docker compose create kurrentdb
+docker run --rm -v rosetta_eventstore-data:/from:ro -v rosetta_kurrentdb-data:/to alpine sh -c "cp -a /from/. /to/ && chown -R 1001:1001 /to"
+docker compose up -d --remove-orphans
+```
 
 ---
 
@@ -584,7 +610,7 @@ The results show up in RavenDB Studio, database `TEST.ROSETTA`: the `People`, `T
 - [Domain-Driven Design](https://dddcommunity.org/)
 - [RavenDB Docs](https://ravendb.net/docs/)
 - [MongoDB Docs](https://www.mongodb.com/docs/)
-- [EventStoreDB Docs](https://developers.eventstore.com/)
+- [KurrentDB Docs](https://docs.kurrent.io/)
 
 ---
 

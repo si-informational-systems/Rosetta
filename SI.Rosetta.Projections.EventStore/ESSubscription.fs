@@ -4,7 +4,7 @@ open System
 open System.Runtime.ExceptionServices
 open System.Threading
 open System.Threading.Tasks
-open EventStore.Client
+open KurrentDB.Client
 open Microsoft.Extensions.Logging
 open SI.Rosetta.Projections
 open SI.Rosetta.Common
@@ -12,7 +12,7 @@ open FSharp.Control
 open SI.Rosetta.Serialization
 
 type ESSubscription<'TEvent when 'TEvent :> IAggregateEvents>
-    (logger: ILogger<ESSubscription<'TEvent>>, client: EventStoreClient) =
+    (logger: ILogger<ESSubscription<'TEvent>>, client: KurrentDBClient) =
     let mutable name = String.Empty
     let mutable streamName = String.Empty
     let mutable currentCheckpoint = 0UL

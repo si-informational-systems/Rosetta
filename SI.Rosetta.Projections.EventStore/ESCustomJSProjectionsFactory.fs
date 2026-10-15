@@ -7,6 +7,7 @@ open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.Logging
 open FSharp.Control
 open System.Reflection
+open KurrentDB.Client
 open SI.Rosetta.Persistence.EventStore
 
 type CustomProjectionAction =
@@ -17,7 +18,7 @@ type CustomProjectionAction =
     | Unchanged
 
 module CustomProjectionSync =
-    /// What a Custom Projection needs on startup, from its EventStoreDB status (None when it doesn't exist) and stored definition
+    /// What a Custom Projection needs on startup, from its KurrentDB status (None when it doesn't exist) and stored definition
     let Decide (query: string) (status: string option) (stored: Result<StoredProjectionDefinition, string>) =
         match status, stored with
         | None, _ -> Create
@@ -69,7 +70,8 @@ type ESCustomJSProjectionsFactory(conf: IConfiguration, logger: ILogger<ESCustom
 
                     match CustomProjectionSync.Decide query status stored with
                     | Create ->
-                        do! ProjectionManagementClient.CreateContinuousAsync(name, query).ConfigureAwait(false)
+                        // V1 explicitly: the V2 engine is still experimental, and it's chosen only at creation
+                        do! ProjectionManagementClient.CreateContinuousAsync(name, query, engineVersion = ProjectionEngineVersion.V1).ConfigureAwait(false)
                         // Continuous projections created over gRPC have emit disabled, which linkTo needs
                         do! ProjectionManagementClient.UpdateAsync(name, query, emitEnabled = true).ConfigureAwait(false)
                         logger.LogInformation("Custom projection {Name} CREATED.", name)

@@ -8,7 +8,7 @@ open System.Net.Security
 open System.Security.Cryptography.X509Certificates
 open System.Text
 open System.Threading.Tasks
-open EventStore.Client
+open KurrentDB.Client
 open Microsoft.Extensions.Configuration
 open Newtonsoft.Json.Linq
 
@@ -17,10 +17,10 @@ type StoredProjectionDefinition = {
     EmitEnabled: bool
 }
 
-/// Reads a projection's stored definition over the EventStoreDB HTTP API, as the gRPC client can't return it.
+/// Reads a projection's stored definition over the KurrentDB HTTP API, as the gRPC client can't return it.
 /// The address, credentials and TLS options come from the same EventStoreDB:ConnectionString.
 type ESProjectionsHttpApi(conf: IConfiguration) =
-    let Settings = EventStoreClientSettings.Create(conf.["EventStoreDB:ConnectionString"])
+    let Settings = KurrentDBClientSettings.Create(conf.["EventStoreDB:ConnectionString"])
     let Connectivity = Settings.ConnectivitySettings
     let RequestTimeout = TimeSpan.FromSeconds(10.0)
 
@@ -72,7 +72,7 @@ type ESProjectionsHttpApi(conf: IConfiguration) =
     member this.TryGetDefinitionAsync(name: string) : Task<Result<StoredProjectionDefinition, string>> =
         task {
             use client = CreateClient()
-            let mutable result = Error "no EventStoreDB address in the connection string"
+            let mutable result = Error "no KurrentDB address in the connection string"
             let mutable remaining = BaseAddresses
             while not remaining.IsEmpty do
                 let address = remaining.Head

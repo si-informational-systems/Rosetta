@@ -2,13 +2,13 @@ namespace SI.Rosetta.Aggregates.EventStore
 
 open System
 open System.Collections.Generic
-open EventStore.Client
+open KurrentDB.Client
 open SI.Rosetta.Aggregates
 open FSharp.Control
 open SI.Rosetta.Common
 open SI.Rosetta.Serialization
 
-type EventStoreAggregateRepository(client: EventStoreClient) =
+type EventStoreAggregateRepository(client: KurrentDBClient) =
     member private this.ToEventData (event: IAggregateEvents) (headers: IDictionary<string, obj>) =
         let serializedEvent = EventStoreSerialization.Serialize(event, headers)
         EventData(Uuid.NewUuid(), serializedEvent.EventClrName, serializedEvent.Data, ReadOnlyMemory<byte> serializedEvent.Metadata)
@@ -24,14 +24,14 @@ type EventStoreAggregateRepository(client: EventStoreClient) =
 
             let newEvents = aggregate.Changes |> Seq.toList
             let originalVersion = aggregate.Version - int64 newEvents.Length
-            let expectedRevision = 
-                if originalVersion = 0L then StreamRevision.None 
-                else StreamRevision.FromInt64(originalVersion - 1L)
-            
+            let expectedState =
+                if originalVersion = 0L then StreamState.NoStream
+                else StreamState.StreamRevision(uint64 (originalVersion - 1L))
+
             let eventData = newEvents |> List.map (fun e -> this.ToEventData e commitHeaders)
-            
-            let! result = 
-                client.AppendToStreamAsync(aggregate.Id, expectedRevision, eventData).ConfigureAwait(false)
+
+            let! result =
+                client.AppendToStreamAsync(aggregate.Id, expectedState, eventData).ConfigureAwait(false)
             aggregate.Changes.Clear()
         }
 
