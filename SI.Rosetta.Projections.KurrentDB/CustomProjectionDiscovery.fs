@@ -1,4 +1,4 @@
-﻿namespace SI.Rosetta.Projections.EventStore
+﻿namespace SI.Rosetta.Projections.KurrentDB
 
 open System
 open System.Reflection
@@ -17,7 +17,7 @@ module CustomProjectionDiscovery =
             raise (InvalidOperationException(sprintf "Type %s must have CustomProjectionStream attribute" projectionType.Name))
         let streamName = (attr.[0] :?> CustomProjectionStream).Name
         if not (streamName.StartsWith("cp-")) then
-            raise (InvalidOperationException(sprintf "EventStore Custom Projection Stream name must start with 'cp-'. Invalid Stream name: %s" streamName))
+            raise (InvalidOperationException(sprintf "KurrentDB Custom Projection Stream name must start with 'cp-'. Invalid Stream name: %s" streamName))
         streamName
 
     let private GetProjectionName (projectionType: Type) =
@@ -82,14 +82,14 @@ module CustomProjectionDiscovery =
         
         sourceAggregateStreams
             
-    let DiscoverCustomProjections (assembly: Assembly) : EventStoreProjectionParameters array =
+    let DiscoverCustomProjections (assembly: Assembly) : KurrentDBProjectionParameters array =
         let customProjectionDUTypes = GetCustomProjectionEventsDUTypes assembly
         let result = 
             customProjectionDUTypes
             |> Array.map (fun projType ->
                 let eventTypes = GetProjectionCaseTypes projType
         
-                let param : EventStoreProjectionParameters = { 
+                let param : KurrentDBProjectionParameters = { 
                     ProjectionName = GetProjectionName projType
                     DestinationStreamName = GetStreamName projType
                     AggregateEventsStreamNames = DiscoverSourceStreams(assembly, eventTypes)

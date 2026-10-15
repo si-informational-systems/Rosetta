@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="EventStoreFactory.fs" />
+    <Compile Include="KurrentDBFactory.fs" />
   </ItemGroup>
 
 </Project>

@@ -1,6 +1,6 @@
 # 🚀 Rosetta Framework
 
-**Domain-Driven Design, Event Sourcing, and Projections for .NET & F# — with KurrentDB (formerly EventStoreDB), RavenDB, MongoDB, and modern HostBuilder integration.**
+**Domain-Driven Design, Event Sourcing, and Projections for .NET & F# — with KurrentDB, RavenDB, MongoDB, and modern HostBuilder integration.**
 
 ![.NET](https://img.shields.io/badge/.NET-10-blueviolet)
 ![F#](https://img.shields.io/badge/F%23-functional-blue)
@@ -127,8 +127,8 @@ Whether you're using Aggregates, Projections, or both - the persistence undernea
     "CertificatePassword": "your_password",
     "DatabaseName": "your_db_name"
   },
-  "EventStoreDB": {
-    "ConnectionString": "esdb://localhost:2113?Tls=false"
+  "KurrentDB": {
+    "ConnectionString": "kurrentdb://localhost:2113?tls=false"
   },
   "MongoDB": {
     "Host": "localhost",
@@ -143,7 +143,7 @@ Whether you're using Aggregates, Projections, or both - the persistence undernea
 
 `CertificatePath`/`CertificatePassword` and the MongoDB credentials are optional.
 
-The `EventStoreDB` section keeps its name for compatibility; it configures KurrentDB. Rosetta uses `KurrentDB.Client` and is tested against KurrentDB 26.2, and the client also connects to EventStoreDB 24.10. Both `esdb://` and `kurrentdb://` connection strings work. A single KurrentDB node is free to run in production from 26.2; clusters need a license.
+Rosetta uses `KurrentDB.Client` and is tested against KurrentDB 26.2. A single KurrentDB node is free to run in production from 26.2; clusters need a license.
 
 ### 3. Register Aggregates & Projections
 
@@ -157,7 +157,7 @@ open Microsoft.Extensions.Hosting
 open SI.Rosetta.Aggregates.HostBuilder
 
 Host.CreateDefaultBuilder(args)
-|> fun builder -> UseAggregatesWith<EventStore, RavenDB> builder typeof<PersonAggregateHandler>.Assembly
+|> fun builder -> UseAggregatesWith<KurrentDB, RavenDB> builder typeof<PersonAggregateHandler>.Assembly
 |> fun builder -> builder.Build().Run()
 ```
 
@@ -167,11 +167,11 @@ open Microsoft.Extensions.Hosting
 open SI.Rosetta.Projections.HostBuilder
 
 Host.CreateDefaultBuilder(args)
-|> fun builder -> UseProjectionsWith<EventStore, MongoDB> builder typeof<PersonProjection>.Assembly
+|> fun builder -> UseProjectionsWith<KurrentDB, MongoDB> builder typeof<PersonProjection>.Assembly
 |> fun builder -> builder.Build().Run()
 ```
 
-> Both namespaces define the `EventStore`/`RavenDB`/`MongoDB` marker types. If one host registers both Aggregates and Projections, qualify them (e.g. `SI.Rosetta.Projections.HostBuilder.RavenDB`).
+> Both namespaces define the `KurrentDB`/`RavenDB`/`MongoDB` marker types. If one host registers both Aggregates and Projections, qualify them (e.g. `SI.Rosetta.Projections.HostBuilder.RavenDB`).
 
 **C#**
 
@@ -181,19 +181,19 @@ using SI.Rosetta.Aggregates.HostBuilder;            // extension methods
 using Stores = SI.Rosetta.Aggregates.HostBuilder;   // store marker types
 
 Host.CreateDefaultBuilder(args)
-    .UseAggregatesWith<Stores.EventStore, Stores.MongoDB>(typeof(PersonAggregateHandler).Assembly)
+    .UseAggregatesWith<Stores.KurrentDB, Stores.MongoDB>(typeof(PersonAggregateHandler).Assembly)
     .Build()
     .Run();
 ```
 
-> In C#, refer to the store marker types through an alias: unqualified `EventStore` and `MongoDB` resolve to root namespaces of the client libraries (CS0118). `KurrentDB.Client` still has internal types in an `EventStore.Client` namespace, and `MongoDB.Driver` uses `MongoDB`.
+> In C#, refer to the store marker types through an alias: unqualified `KurrentDB` and `MongoDB` resolve to the `KurrentDB.Client` and `MongoDB.Driver` root namespaces (CS0118).
 
 | Registration | Use when | Stores |
 |---|---|---|
-| `UseAggregatesWithEventSourcing<TEventSourced>` | every Aggregate is Event-Sourced | `EventStore` |
+| `UseAggregatesWithEventSourcing<TEventSourced>` | every Aggregate is Event-Sourced | `KurrentDB` |
 | `UseAggregatesWithoutEventSourcing<TStateBased>` | every Aggregate persists its state | `RavenDB`, `MongoDB` |
 | `UseAggregatesWith<TEventSourced, TStateBased>` | a mix of both | both of the above |
-| `UseProjectionsWith<TEventRepository, TProjectionsStore>` | Projections | `EventStore` → `RavenDB`, `MongoDB` |
+| `UseProjectionsWith<TEventRepository, TProjectionsStore>` | Projections | `KurrentDB` → `RavenDB`, `MongoDB` |
 
 Aggregate Handlers and Projection Handlers are discovered in the given assembly and registered automatically.
 
@@ -450,7 +450,7 @@ Conventions the generator relies on:
 How the JavaScript projections are deployed on startup:
 
 - A projection is **created** when no KurrentDB projection with its name (`{StreamName without cp-}CustomProjection`) exists. It's created on the V1 projections engine: V2 is still experimental in KurrentDB, and the engine can only be chosen at creation.
-- An existing projection is **updated only when needed**. Rosetta reads its stored definition over the KurrentDB HTTP API, using the address, credentials and TLS settings of `EventStoreDB:ConnectionString`. It re-submits the definition when the query changed, when emit is disabled, or when the projection is Faulted (re-submitting restarts it). Otherwise the projection is left alone.
+- An existing projection is **updated only when needed**. Rosetta reads its stored definition over the KurrentDB HTTP API, using the address, credentials and TLS settings of `KurrentDB:ConnectionString`. It re-submits the definition when the query changed, when emit is disabled, or when the projection is Faulted (re-submitting restarts it). Otherwise the projection is left alone.
 - If the stored definition can't be read, the definition is re-submitted anyway and a warning is logged.
 - **Renaming** the stream creates a new projection. The old one is neither removed nor stopped, and keeps linking events into the old stream.
 - A **changed definition** (e.g. a new event case) applies from the projection's last persisted checkpoint, not from the start of history. Older events of the new type are only partly linked, so reset the projection in KurrentDB, and rebuild the Read Model, if they matter.
@@ -548,7 +548,7 @@ Both samples read `config/appsettings.json` from their project folder. It's giti
 ```json
 {
   "RavenDB": { "Urls": "http://127.0.0.1:8080/", "DatabaseName": "TEST.ROSETTA" },
-  "EventStoreDB": { "ConnectionString": "esdb://localhost:2113?Tls=false" }
+  "KurrentDB": { "ConnectionString": "kurrentdb://localhost:2113?tls=false" }
 }
 ```
 
@@ -565,8 +565,12 @@ The results show up in RavenDB Studio, database `TEST.ROSETTA`: the `People`, `T
 
 KurrentDB 26.x upgrades a 24.10 database in place. Back it up first.
 
-1. **Deploy the Rosetta version that uses `KurrentDB.Client` first.** It works against both 24.10 and 26.2, so the services don't have to change at the same time as the server.
-2. **Rename the server settings.** `EVENTSTORE_*` environment variables become `KURRENTDB_*`, and `eventstore.conf` becomes `kurrentdb.conf`. The data and log paths move from `/var/lib/eventstore` and `/var/log/eventstore` to `/var/lib/kurrentdb` and `/var/log/kurrentdb`.
+1. **Move the services to the Rosetta version that uses `KurrentDB.Client` first.** It works against both 24.10 and 26.2, so the services don't have to change at the same time as the server. Rosetta's own names changed with it:
+   - the packages `SI.Rosetta.Persistence.EventStore`, `SI.Rosetta.Aggregates.EventStore` and `SI.Rosetta.Projections.EventStore` are now `….KurrentDB` (the HostBuilder packages bring them in);
+   - the configuration section `EventStoreDB` is now `KurrentDB`. A service with only the old section fails at startup with `KurrentDB:ConnectionString is missing from the configuration`;
+   - the store marker type `EventStore` is now `KurrentDB`, and the `EventStore*`/`ES*` types are now `KurrentDB*`;
+   - `esdb://` connection strings still work, and `kurrentdb://` is the new scheme.
+2. **Rename the server settings.** `EVENTSTORE_*` environment variables become `KURRENTDB_*`, and `eventstore.conf` becomes `kurrentdb.conf`. The data and log paths move from `/var/lib/eventstore` and `/var/log/eventstore` to `/var/lib/kurrentdb` and `/var/log/kurrentdb`. KurrentDB sends anonymous usage statistics to Kurrent unless `KURRENTDB_TELEMETRY_OPTOUT` is `true`.
 3. **In Docker, give the data to the new user.** The EventStoreDB image runs as uid 1000, but the KurrentDB image (`kurrentplatform/kurrentdb`) runs as uid 1001. If the data directory isn't writable, KurrentDB doesn't fail. It logs `Access to path /var/lib/kurrentdb denied`, starts an **empty** database inside the container and still reports healthy. Fix the ownership before the first start, then check that your streams are there before the services connect:
 
    ```shell

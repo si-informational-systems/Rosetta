@@ -2,5 +2,5 @@
 
 type EventRepository() = class end
 
-type EventStore() = 
+type KurrentDB() = 
     inherit EventRepository()

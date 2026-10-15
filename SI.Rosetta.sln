@@ -6,13 +6,13 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Aggregates", "SI
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Aggregates", "Aggregates", "{04929264-B7C1-4366-9DFD-A194F17622EA}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Aggregates.EventStore", "SI.Rosetta.Aggregates.EventStore\SI.Rosetta.Aggregates.EventStore.fsproj", "{EB85F532-E1F9-42BF-A76E-D15C7CC65AD0}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Aggregates.KurrentDB", "SI.Rosetta.Aggregates.KurrentDB\SI.Rosetta.Aggregates.KurrentDB.fsproj", "{EB85F532-E1F9-42BF-A76E-D15C7CC65AD0}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Projections", "Projections", "{D7AE495A-4F56-47E4-91FD-2866D8FB6EC7}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Projections", "SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj", "{8FC7B84D-B049-4FFB-BC9C-C83C1F7D5910}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Projections.EventStore", "SI.Rosetta.Projections.EventStore\SI.Rosetta.Projections.EventStore.fsproj", "{716C54B3-633E-451A-82D4-E86CC0E4A6AF}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Projections.KurrentDB", "SI.Rosetta.Projections.KurrentDB\SI.Rosetta.Projections.KurrentDB.fsproj", "{716C54B3-633E-451A-82D4-E86CC0E4A6AF}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Projections.RavenDB", "SI.Rosetta.Projections.RavenDB\SI.Rosetta.Projections.RavenDB.fsproj", "{5AC71CF1-2804-4DAD-BF24-C5883B6E4AF6}"
 EndProject
@@ -54,7 +54,7 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Aggregates.Mongo
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Persistence.RavenDB", "SI.Rosetta.Persistence.RavenDB\SI.Rosetta.Persistence.RavenDB.fsproj", "{757D3858-F6BA-4D81-93B4-BFD85FEE92ED}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Persistence.EventStore", "SI.Rosetta.Persistence.EventStore\SI.Rosetta.Persistence.EventStore.fsproj", "{45BC370A-83A4-488B-8344-CD30252EB77A}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Persistence.KurrentDB", "SI.Rosetta.Persistence.KurrentDB\SI.Rosetta.Persistence.KurrentDB.fsproj", "{45BC370A-83A4-488B-8344-CD30252EB77A}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SI.Rosetta.Persistence.MongoDB", "SI.Rosetta.Persistence.MongoDB\SI.Rosetta.Persistence.MongoDB.fsproj", "{027A2115-5245-4D11-A0D0-884878DC9DD9}"
 EndProject

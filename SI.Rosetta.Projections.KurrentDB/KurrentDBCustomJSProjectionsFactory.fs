@@ -1,4 +1,4 @@
-namespace SI.Rosetta.Projections.EventStore
+namespace SI.Rosetta.Projections.KurrentDB
 
 open System
 open System.Collections.Generic
@@ -8,7 +8,7 @@ open Microsoft.Extensions.Logging
 open FSharp.Control
 open System.Reflection
 open KurrentDB.Client
-open SI.Rosetta.Persistence.EventStore
+open SI.Rosetta.Persistence.KurrentDB
 
 type CustomProjectionAction =
     | Create
@@ -30,24 +30,24 @@ module CustomProjectionSync =
         | Some _, Ok definition when not definition.EmitEnabled -> Update "emit was disabled"
         | Some _, Ok _ -> Unchanged
 
-type IESCustomJSProjectionsFactory =
+type IKurrentDBCustomJSProjectionsFactory =
     abstract member CreateCustomProjections: Assembly -> Task
 
-type ESCustomJSProjectionsFactory(conf: IConfiguration, logger: ILogger<ESCustomJSProjectionsFactory>) =
-    let ProjectionManagementClient = EventStoreFactory.InitializeProjectionManagementClient conf
-    let HttpApi = ESProjectionsHttpApi(conf)
+type KurrentDBCustomJSProjectionsFactory(conf: IConfiguration, logger: ILogger<KurrentDBCustomJSProjectionsFactory>) =
+    let ProjectionManagementClient = KurrentDBFactory.InitializeProjectionManagementClient conf
+    let HttpApi = KurrentDBProjectionsHttpApi(conf)
 
     member private this.BuildProjectionDefinitions (assembly: Assembly) =
         let projections = CustomProjectionDiscovery.DiscoverCustomProjections assembly
         let projectDefinitions = Dictionary<string, string>()
 
         for parameters in projections do
-            let projectionDef = EventStoreProjectionBuilder.BuildProjectionDefinition parameters
+            let projectionDef = KurrentDBProjectionBuilder.BuildProjectionDefinition parameters
             projectDefinitions.Add(projectionDef.Name, projectionDef.Source)
 
         projectDefinitions
 
-    interface IESCustomJSProjectionsFactory with
+    interface IKurrentDBCustomJSProjectionsFactory with
         member this.CreateCustomProjections(assembly: Assembly) =
             task {
                 let projectDefinitions = this.BuildProjectionDefinitions assembly

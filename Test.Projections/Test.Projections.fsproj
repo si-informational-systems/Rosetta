@@ -30,7 +30,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SI.Rosetta.Aggregates.HostBuilder\SI.Rosetta.Aggregates.HostBuilder.fsproj" />
-    <ProjectReference Include="..\SI.Rosetta.Projections.EventStore\SI.Rosetta.Projections.EventStore.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Projections.KurrentDB\SI.Rosetta.Projections.KurrentDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections.HostBuilder\SI.Rosetta.Projections.HostBuilder.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections.RavenDB\SI.Rosetta.Projections.RavenDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />

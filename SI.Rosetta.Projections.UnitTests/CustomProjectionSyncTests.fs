@@ -1,7 +1,7 @@
 ﻿namespace SI.Rosetta.Projections.UnitTests
 
 open Xunit
-open SI.Rosetta.Projections.EventStore
+open SI.Rosetta.Projections.KurrentDB
 
 type CustomProjectionSyncTests() =
     let Query = "fromStreams('$ce-People').when({PersonRegistered: function(s,e){linkTo('cp-People', e);return s;}})"

@@ -7,13 +7,13 @@ open System
 open System.Reflection
 open System.Runtime.CompilerServices
 open SI.Rosetta.Aggregates
-open SI.Rosetta.Aggregates.EventStore
+open SI.Rosetta.Aggregates.KurrentDB
 open SI.Rosetta.Aggregates.RavenDB
 open SI.Rosetta.Aggregates.MongoDB
 open Raven.Client.Documents
 open MongoDB.Driver
 open SI.Rosetta.Persistence.RavenDB
-open SI.Rosetta.Persistence.EventStore
+open SI.Rosetta.Persistence.KurrentDB
 open SI.Rosetta.Persistence.MongoDB
 
 [<AutoOpen>]
@@ -22,12 +22,12 @@ module HostBuilderExtensionsCommon =
     let HostBuilderStateBasedExtensionInUse : string = "SI.Rosetta.Aggregates.UseStateBasedAggregates"
 
 [<AutoOpen>]
-module HostBuilderEventStoreExtensionCommmon =
+module HostBuilderKurrentDBExtensionCommmon =
 
-    let InitializeEventStore (config: IConfiguration) =
-        let client = EventStoreFactory.InitializeEventStore config
-        let esRepo = new EventStoreAggregateRepository(client)
-        esRepo
+    let InitializeKurrentDB (config: IConfiguration) =
+        let client = KurrentDBFactory.InitializeKurrentDB config
+        let kurrentDBRepo = new KurrentDBAggregateRepository(client)
+        kurrentDBRepo
 
 [<AutoOpen>]
 module HostBuilderRavenDBExtensionCommmon =
@@ -83,9 +83,9 @@ module HostBuilderExtensions =
             ctx.Properties.Add(HostBuilderEventSourcedExtensionInUse, null)
             
             match typeof<'AggregateRepository> with 
-            | t when t = typeof<EventStore> ->
-                let esAggRep = InitializeEventStore (ctx.Configuration)
-                services.AddSingleton(typeof<IEventSourcedAggregateRepository>, esAggRep) |> ignore
+            | t when t = typeof<KurrentDB> ->
+                let kurrentDBAggRep = InitializeKurrentDB (ctx.Configuration)
+                services.AddSingleton(typeof<IEventSourcedAggregateRepository>, kurrentDBAggRep) |> ignore
                 ()
             | _ -> raise (Exception("Only types extending `EventSourcedAggregateRepository` can be used as an Aggregate Repository generic option!"))
 

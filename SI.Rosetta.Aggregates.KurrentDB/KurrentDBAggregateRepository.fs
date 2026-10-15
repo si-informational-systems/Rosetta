@@ -1,4 +1,4 @@
-namespace SI.Rosetta.Aggregates.EventStore
+namespace SI.Rosetta.Aggregates.KurrentDB
 
 open System
 open System.Collections.Generic
@@ -8,9 +8,9 @@ open FSharp.Control
 open SI.Rosetta.Common
 open SI.Rosetta.Serialization
 
-type EventStoreAggregateRepository(client: KurrentDBClient) =
+type KurrentDBAggregateRepository(client: KurrentDBClient) =
     member private this.ToEventData (event: IAggregateEvents) (headers: IDictionary<string, obj>) =
-        let serializedEvent = EventStoreSerialization.Serialize(event, headers)
+        let serializedEvent = KurrentDBSerialization.Serialize(event, headers)
         EventData(Uuid.NewUuid(), serializedEvent.EventClrName, serializedEvent.Data, ReadOnlyMemory<byte> serializedEvent.Metadata)
 
     member private this.SaveAggregate<'TAggregate, 'TAggregateState
@@ -19,7 +19,7 @@ type EventStoreAggregateRepository(client: KurrentDBClient) =
         task {
             let commitHeaders = 
                 let dict = Dictionary<string, obj>()
-                dict.Add(EventStoreSerialization.AggregateClrTypeNameHeader, aggregate.GetType().AssemblyQualifiedName :> obj)
+                dict.Add(KurrentDBSerialization.AggregateClrTypeNameHeader, aggregate.GetType().AssemblyQualifiedName :> obj)
                 dict
 
             let newEvents = aggregate.Changes |> Seq.toList
@@ -74,7 +74,7 @@ type EventStoreAggregateRepository(client: KurrentDBClient) =
                     do! events
                         |> AsyncSeq.takeWhile (fun _ -> state.Version <> version)
                         |> AsyncSeq.iter (fun resolvedEvent ->
-                            let deserializedEvent = EventStoreSerialization.Deserialize<'TEvents>(resolvedEvent)
+                            let deserializedEvent = KurrentDBSerialization.Deserialize<'TEvents>(resolvedEvent)
                             state.Mutate deserializedEvent
                             )
                     

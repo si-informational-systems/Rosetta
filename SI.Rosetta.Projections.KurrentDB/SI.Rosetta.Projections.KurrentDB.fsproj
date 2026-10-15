@@ -19,20 +19,20 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SI.Rosetta.Persistence.EventStore\SI.Rosetta.Persistence.EventStore.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Persistence.KurrentDB\SI.Rosetta.Persistence.KurrentDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Serialization\SI.Rosetta.Serialization.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="EventStoreProjection.fs" />
-    <Compile Include="EventStoreProjectionParameters.fs" />
-    <Compile Include="EventStoreProjectionBuilder.fs" />
+    <Compile Include="KurrentDBProjection.fs" />
+    <Compile Include="KurrentDBProjectionParameters.fs" />
+    <Compile Include="KurrentDBProjectionBuilder.fs" />
     <Compile Include="CustomProjectionDiscovery.fs" />
-    <Compile Include="ESProjectionsHttpApi.fs" />
-    <Compile Include="ESCustomJSProjectionsFactory.fs" />
-    <Compile Include="ESSubscription.fs" />
-    <Compile Include="ESSubscriptionFactory.fs" />
+    <Compile Include="KurrentDBProjectionsHttpApi.fs" />
+    <Compile Include="KurrentDBCustomJSProjectionsFactory.fs" />
+    <Compile Include="KurrentDBSubscription.fs" />
+    <Compile Include="KurrentDBSubscriptionFactory.fs" />
   </ItemGroup>
 
 </Project>

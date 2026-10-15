@@ -2,7 +2,7 @@
 
 type EventSourcedAggregateRepository() = class end 
 
-type EventStore() =
+type KurrentDB() =
     inherit EventSourcedAggregateRepository()
 
 type StateBasedAggregateRepository() = class end 

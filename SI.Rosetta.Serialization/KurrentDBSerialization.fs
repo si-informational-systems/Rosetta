@@ -2,7 +2,7 @@
 
 open SI.Rosetta.Common
 
-module EventStoreSerialization =
+module KurrentDBSerialization =
     open Newtonsoft.Json
     open Newtonsoft.Json.Linq
     open Newtonsoft.Json.Converters
@@ -21,13 +21,13 @@ module EventStoreSerialization =
         settings.Converters.Add(new StringEnumConverter())
         settings
 
-    type EventStoreSerializedEvent = {
+    type KurrentDBSerializedEvent = {
         EventClrName: string
         Data: byte[]
         Metadata: byte[]
     }
 
-    let Serialize(event: IAggregateEvents, headers: IDictionary<string, obj>) : EventStoreSerializedEvent =
+    let Serialize(event: IAggregateEvents, headers: IDictionary<string, obj>) : KurrentDBSerializedEvent =
         let serializedDU = JsonConvert.SerializeObject(event, JsonSettings)
         let jObject = JObject.Parse serializedDU
         let actualEventData = jObject.["Fields"].[0]
@@ -45,7 +45,7 @@ module EventStoreSerialization =
             dict
         let metadata = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(eventHeaders, JsonSettings))
         
-        let serialized: EventStoreSerializedEvent = {
+        let serialized: KurrentDBSerializedEvent = {
             EventClrName = fieldType.Name
             Data = data
             Metadata = metadata

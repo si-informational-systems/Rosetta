@@ -1,4 +1,4 @@
-﻿namespace SI.Rosetta.Projections.EventStore
+﻿namespace SI.Rosetta.Projections.KurrentDB
 
 open System
 open System.Net
@@ -8,9 +8,9 @@ open System.Net.Security
 open System.Security.Cryptography.X509Certificates
 open System.Text
 open System.Threading.Tasks
-open KurrentDB.Client
 open Microsoft.Extensions.Configuration
 open Newtonsoft.Json.Linq
+open SI.Rosetta.Persistence.KurrentDB
 
 type StoredProjectionDefinition = {
     Query: string
@@ -18,9 +18,9 @@ type StoredProjectionDefinition = {
 }
 
 /// Reads a projection's stored definition over the KurrentDB HTTP API, as the gRPC client can't return it.
-/// The address, credentials and TLS options come from the same EventStoreDB:ConnectionString.
-type ESProjectionsHttpApi(conf: IConfiguration) =
-    let Settings = KurrentDBClientSettings.Create(conf.["EventStoreDB:ConnectionString"])
+/// The address, credentials and TLS options come from the same KurrentDB:ConnectionString.
+type KurrentDBProjectionsHttpApi(conf: IConfiguration) =
+    let Settings = KurrentDBFactory.CreateSettings conf
     let Connectivity = Settings.ConnectivitySettings
     let RequestTimeout = TimeSpan.FromSeconds(10.0)
 

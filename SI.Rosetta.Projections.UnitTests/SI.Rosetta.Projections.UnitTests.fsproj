@@ -31,7 +31,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SI.Rosetta.Projections.TestKit\SI.Rosetta.Projections.TestKit.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />
-    <ProjectReference Include="..\SI.Rosetta.Projections.EventStore\SI.Rosetta.Projections.EventStore.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Projections.KurrentDB\SI.Rosetta.Projections.KurrentDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Common\SI.Rosetta.Common.fsproj" />
   </ItemGroup>
 

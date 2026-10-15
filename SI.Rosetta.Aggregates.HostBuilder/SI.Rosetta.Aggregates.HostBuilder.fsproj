@@ -16,11 +16,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SI.Rosetta.Aggregates.EventStore\SI.Rosetta.Aggregates.EventStore.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Aggregates.KurrentDB\SI.Rosetta.Aggregates.KurrentDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Aggregates.MongoDB\SI.Rosetta.Aggregates.MongoDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Aggregates.RavenDB\SI.Rosetta.Aggregates.RavenDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Aggregates\SI.Rosetta.Aggregates.fsproj" />
-    <ProjectReference Include="..\SI.Rosetta.Persistence.EventStore\SI.Rosetta.Persistence.EventStore.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Persistence.KurrentDB\SI.Rosetta.Persistence.KurrentDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Persistence.MongoDB\SI.Rosetta.Persistence.MongoDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Persistence.RavenDB\SI.Rosetta.Persistence.RavenDB.fsproj" />
   </ItemGroup>

@@ -19,7 +19,7 @@ let main args =
                     .AddJsonFile("config/appsettings.json", optional = false)
                     .AddCommandLine(args)
                 |> ignore)
-        |> fun builder -> UseAggregatesWith<EventStore, RavenDB> builder typeof<PersonAggregateHandler>.Assembly
+        |> fun builder -> UseAggregatesWith<KurrentDB, RavenDB> builder typeof<PersonAggregateHandler>.Assembly
         // UseAggregatesWith is used when a combination of both EventSourced and NonEventSourced persistence is used
         // UseAggregatesWithEventSourcing is used when only EventSourced persistence is used
         // UseAggregatesWithoutEventSourcing is used when only NonEventSourced persistence is used

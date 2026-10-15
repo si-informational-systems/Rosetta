@@ -1,12 +1,12 @@
-namespace SI.Rosetta.Projections.EventStore
+namespace SI.Rosetta.Projections.KurrentDB
 
 open System
 open System.Text
 
-module EventStoreProjectionBuilder =
+module KurrentDBProjectionBuilder =
     let private IsNotFirstElement i = i > 0
 
-    let private CreateSourceStreams (parameters: EventStoreProjectionParameters) =
+    let private CreateSourceStreams (parameters: KurrentDBProjectionParameters) =
         let sb = StringBuilder()
         parameters.AggregateEventsStreamNames
         |> List.iteri (fun i name ->
@@ -15,7 +15,7 @@ module EventStoreProjectionBuilder =
             sb.Append(sprintf "'%s'" name) |> ignore)
         sb.ToString()
 
-    let private CreateBody (parameters: EventStoreProjectionParameters) =
+    let private CreateBody (parameters: KurrentDBProjectionParameters) =
         let sb = StringBuilder()
         parameters.EventsToInclude
         |> Array.iteri (fun i eventType ->
@@ -25,12 +25,12 @@ module EventStoreProjectionBuilder =
                 eventType.Name parameters.DestinationStreamName) |> ignore)
         sb.ToString()
 
-    let BuildProjectionDefinition (parameters: EventStoreProjectionParameters): EventStoreProjection =
+    let BuildProjectionDefinition (parameters: KurrentDBProjectionParameters): KurrentDBProjection =
         let body = 
             sprintf "fromStreams(%s).when({%s})" 
                 (CreateSourceStreams parameters)
                 (CreateBody parameters)
-        let result : EventStoreProjection = { 
+        let result : KurrentDBProjection = { 
             Name = parameters.ProjectionName 
             Source = body 
         } 

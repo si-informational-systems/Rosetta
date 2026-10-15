@@ -15,6 +15,7 @@ services:
       KURRENTDB_RUN_PROJECTIONS: All                # Rosetta deploys Custom (cp-) JS projections
       KURRENTDB_START_STANDARD_PROJECTIONS: "true"  # $by_category feeds the $ce-* streams Projections subscribe to
       KURRENTDB_ENABLE_ATOM_PUB_OVER_HTTP: "true"   # read and append events over HTTP (curl); deprecated, still in 26.2
+      KURRENTDB_TELEMETRY_OPTOUT: "true"            # don't send anonymous usage statistics to Kurrent
     ports:
       - "2113:2113"
     volumes:

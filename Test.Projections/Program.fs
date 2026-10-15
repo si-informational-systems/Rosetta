@@ -20,7 +20,7 @@ let main args =
                     .AddEnvironmentVariables("SI_")
                     .AddCommandLine(args)
                 |> ignore)
-        |> fun builder -> UseProjectionsWith<EventStore, RavenDB> builder (Assembly.GetAssembly(typeof<PersonProjection>))
+        |> fun builder -> UseProjectionsWith<KurrentDB, RavenDB> builder (Assembly.GetAssembly(typeof<PersonProjection>))
         |> fun builder -> builder.Build()
 
     host.Run()

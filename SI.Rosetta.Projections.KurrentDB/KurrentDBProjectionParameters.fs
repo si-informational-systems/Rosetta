@@ -1,8 +1,8 @@
-﻿namespace SI.Rosetta.Projections.EventStore
+﻿namespace SI.Rosetta.Projections.KurrentDB
 
 open System
 
-type EventStoreProjectionParameters = {
+type KurrentDBProjectionParameters = {
     ProjectionName: string
     DestinationStreamName: string
     AggregateEventsStreamNames: string list

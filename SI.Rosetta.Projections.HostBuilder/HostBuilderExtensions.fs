@@ -10,7 +10,7 @@ open Microsoft.Extensions.Logging
 open MongoDB.Driver
 open Raven.Client.Documents
 open SI.Rosetta.Projections
-open SI.Rosetta.Projections.EventStore
+open SI.Rosetta.Projections.KurrentDB
 open SI.Rosetta.Persistence.RavenDB
 open SI.Rosetta.Persistence.MongoDB
 open SI.Rosetta.Projections.RavenDB
@@ -74,15 +74,15 @@ module HostBuilderExtensions =
 
             match typeof<'EventRepository> with
             //EVENT STORE
-            | t when t = typeof<EventStore> ->
+            | t when t = typeof<KurrentDB> ->
                 services
-                    .AddTransient<ISubscriptionFactory, ESSubscriptionFactory>()
-                    .AddTransient<IESCustomJSProjectionsFactory, ESCustomJSProjectionsFactory>() |> ignore
+                    .AddTransient<ISubscriptionFactory, KurrentDBSubscriptionFactory>()
+                    .AddTransient<IKurrentDBCustomJSProjectionsFactory, KurrentDBCustomJSProjectionsFactory>() |> ignore
                 services.AddHostedService(fun sp -> 
-                    new EventStoreProjectionsHostedServiceInstance(
-                        sp.GetRequiredService<ILogger<EventStoreProjectionsHostedServiceInstance>>(),
+                    new KurrentDBProjectionsHostedServiceInstance(
+                        sp.GetRequiredService<ILogger<KurrentDBProjectionsHostedServiceInstance>>(),
                         sp.GetRequiredService<IProjectionsFactory>(),
-                        sp.GetRequiredService<IESCustomJSProjectionsFactory>(),
+                        sp.GetRequiredService<IKurrentDBCustomJSProjectionsFactory>(),
                         sp.GetRequiredService<IHostApplicationLifetime>(),
                         projectionsAssembly
                     )) |> ignore

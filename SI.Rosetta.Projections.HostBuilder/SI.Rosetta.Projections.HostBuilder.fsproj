@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="HostedServiceInstances\EventStoreProjectionsHostedServiceInstance.fs" />
+    <Compile Include="HostedServiceInstances\KurrentDBProjectionsHostedServiceInstance.fs" />
     <Compile Include="ProjectionStores\ProjectionStores.fs" />
     <Compile Include="EventRepositories\EventRepositories.fs" />
     <Compile Include="ProjectionsExtractor.fs" />
@@ -18,10 +18,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SI.Rosetta.Persistence.EventStore\SI.Rosetta.Persistence.EventStore.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Persistence.KurrentDB\SI.Rosetta.Persistence.KurrentDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Persistence.MongoDB\SI.Rosetta.Persistence.MongoDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Persistence.RavenDB\SI.Rosetta.Persistence.RavenDB.fsproj" />
-    <ProjectReference Include="..\SI.Rosetta.Projections.EventStore\SI.Rosetta.Projections.EventStore.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Projections.KurrentDB\SI.Rosetta.Projections.KurrentDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections.MongoDB\SI.Rosetta.Projections.MongoDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections.RavenDB\SI.Rosetta.Projections.RavenDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />

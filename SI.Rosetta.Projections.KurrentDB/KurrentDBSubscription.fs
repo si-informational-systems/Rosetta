@@ -1,4 +1,4 @@
-﻿namespace SI.Rosetta.Projections.EventStore
+﻿namespace SI.Rosetta.Projections.KurrentDB
 
 open System
 open System.Runtime.ExceptionServices
@@ -11,8 +11,8 @@ open SI.Rosetta.Common
 open FSharp.Control
 open SI.Rosetta.Serialization
 
-type ESSubscription<'TEvent when 'TEvent :> IAggregateEvents>
-    (logger: ILogger<ESSubscription<'TEvent>>, client: KurrentDBClient) =
+type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
+    (logger: ILogger<KurrentDBSubscription<'TEvent>>, client: KurrentDBClient) =
     let mutable name = String.Empty
     let mutable streamName = String.Empty
     let mutable currentCheckpoint = 0UL
@@ -40,7 +40,7 @@ type ESSubscription<'TEvent when 'TEvent :> IAggregateEvents>
         task {
             let oneBasedCheckPoint = event.OriginalEventNumber.ToUInt64() + 1UL
             if isNotDeleted event then
-                let ev = EventStoreSerialization.Deserialize event
+                let ev = KurrentDBSerialization.Deserialize event
                 do! eventReceived(ev, oneBasedCheckPoint).ConfigureAwait(false)
             
             currentCheckpoint <- oneBasedCheckPoint

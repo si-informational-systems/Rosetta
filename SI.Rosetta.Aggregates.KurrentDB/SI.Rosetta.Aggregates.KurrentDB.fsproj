@@ -15,12 +15,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="EventStoreAggregateRepository.fs" />
+    <Compile Include="KurrentDBAggregateRepository.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SI.Rosetta.Aggregates\SI.Rosetta.Aggregates.fsproj" />
-    <ProjectReference Include="..\SI.Rosetta.Persistence.EventStore\SI.Rosetta.Persistence.EventStore.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Persistence.KurrentDB\SI.Rosetta.Persistence.KurrentDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Serialization\SI.Rosetta.Serialization.fsproj" />
   </ItemGroup>
 

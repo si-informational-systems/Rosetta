@@ -7,12 +7,12 @@ open System.Reflection
 open System.Threading
 open System.Threading.Tasks
 open SI.Rosetta.Projections
-open SI.Rosetta.Projections.EventStore
+open SI.Rosetta.Projections.KurrentDB
 
-type EventStoreProjectionsHostedServiceInstance(
-    logger: ILogger<EventStoreProjectionsHostedServiceInstance>,
+type KurrentDBProjectionsHostedServiceInstance(
+    logger: ILogger<KurrentDBProjectionsHostedServiceInstance>,
     projectionsFactory: IProjectionsFactory,
-    jsProjectionsFactory: IESCustomJSProjectionsFactory,
+    jsProjectionsFactory: IKurrentDBCustomJSProjectionsFactory,
     lifetime: IHostApplicationLifetime,
     assemblyContainingProjections: Assembly) =
     inherit BackgroundService()
