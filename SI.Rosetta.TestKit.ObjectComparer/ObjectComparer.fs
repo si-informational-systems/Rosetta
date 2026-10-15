@@ -3,8 +3,16 @@
 open System
 open System.Collections
 open System.Reflection
+open Microsoft.FSharp.Reflection
 
 module ObjectComparer =
+
+    /// Strings, primitives, enums and the other structs (decimal, Guid, DateTime, ...) are compared with Equals:
+    /// their public members don't show the value (a Guid has none that do, a decimal only its Scale).
+    /// F# struct records and unions are still compared member by member, for a more precise path
+    let private IsComparedByValue (t: Type) =
+        t = typeof<string>
+        || (t.IsValueType && not (FSharpType.IsRecord(t, true)) && not (FSharpType.IsUnion(t, true)))
 
     /// Performs a deep comparison between two objects of the same type.
     /// Returns an empty string if objects are equal, otherwise returns a string containing all differences.
@@ -29,28 +37,10 @@ module ObjectComparer =
                 // This prevents infinite recursion with circular references
                 if visited.Add(a, b) then
                     let aType = a.GetType()
-                    
-                    // Special handling for pointer types (IntPtr and UIntPtr)
-                    if aType = typeof<IntPtr> then
-                        let pointerA = (a :?> IntPtr).ToInt64()
-                        let pointerB = (b :?> IntPtr).ToInt64()
-                        if pointerA <> pointerB then
-                            yield sprintf "%s: IntPtr values differ (%A vs %A)" path pointerA pointerB
-                    elif aType = typeof<UIntPtr> then
-                        let pointerA = (a :?> UIntPtr).ToUInt64()
-                        let pointerB = (b :?> UIntPtr).ToUInt64()
-                        if pointerA <> pointerB then
-                            yield sprintf "%s: UIntPtr values differ (%A vs %A)" path pointerA pointerB
-                    
-                    // Handle primitive types, strings, and DateTime specifically
-                    elif aType.IsPrimitive || aType = typeof<string> then
+
+                    if IsComparedByValue aType then
                         if not (a.Equals(b)) then
                             yield sprintf "%s: Values differ (%A vs %A)" path a b
-                    elif aType = typeof<DateTime> then
-                        let dtA = a :?> DateTime
-                        let dtB = b :?> DateTime
-                        if dtA <> dtB then
-                            yield sprintf "%s: DateTime values differ (%A vs %A)" path dtA dtB
                     else
                         // Handle collections (except strings which are also IEnumerable)
                         if aType <> typeof<string> && typeof<IEnumerable>.IsAssignableFrom(aType) then

@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      # Satisfies global.json (10.0.100, rollForward: latestFeature)
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        run: dotnet build SI.Rosetta.sln
+
+      # Unit tests, then the integration tests, which start KurrentDB, RavenDB and MongoDB in Docker (Testcontainers)
+      - name: Test
+        run: dotnet test SI.Rosetta.sln --no-build

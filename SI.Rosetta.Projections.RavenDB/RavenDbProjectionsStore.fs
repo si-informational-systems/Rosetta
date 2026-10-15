@@ -85,11 +85,12 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                     return result
                 })
 
+        // Delete by the Id's string: given an obj, session.Delete binds to Delete<T>(entity), which only takes loaded entities
         member this.DeleteAsync<'T when 'T : not struct>(id: obj) =
             DefensivelyStore 0 (fun () ->
                 task {
                     use session = store.OpenAsyncSession()
-                    session.Delete(id)
+                    session.Delete(id.ToString())
                     do! session.SaveChangesAsync().ConfigureAwait(false)
                 })
 
@@ -98,7 +99,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                 task {
                     use session = store.OpenAsyncSession()
                     for id in ids do
-                        session.Delete(id)
+                        session.Delete(id.ToString())
                     do! session.SaveChangesAsync().ConfigureAwait(false)
                 })
 

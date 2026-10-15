@@ -15,11 +15,13 @@ open MongoDB.Driver
 open SI.Rosetta.Persistence.RavenDB
 open SI.Rosetta.Persistence.KurrentDB
 open SI.Rosetta.Persistence.MongoDB
+open SI.Rosetta.Common
 
-[<AutoOpen>]
-module HostBuilderExtensionsCommon =
-    let HostBuilderEventSourcedExtensionInUse : string = "SI.Rosetta.Aggregates.UseEventSourcedAggregates"
-    let HostBuilderStateBasedExtensionInUse : string = "SI.Rosetta.Aggregates.UseStateBasedAggregates"
+/// Registered with the event-sourced aggregates, so they're added only once
+type internal EventSourcedAggregatesAdded() = class end
+
+/// Registered with the state-based aggregates, so they're added only once
+type internal StateBasedAggregatesAdded() = class end
 
 [<AutoOpen>]
 module HostBuilderKurrentDBExtensionCommmon =
@@ -43,16 +45,16 @@ module HostBuilderRavenDBExtensionCommmon =
             if property.PropertyName = "Version" && typeof<IAggregateState>.IsAssignableFrom(memberInfo.DeclaringType) then
                 property.ShouldSerialize <- fun _ -> false
                 property.ShouldDeserialize <- fun _ -> false
-        
+
             property
 
-    let CreateRavenDocumentStore(config: IConfiguration) = 
-        let docStore = 
+    let CreateRavenDocumentStore(config: IConfiguration) =
+        let docStore =
             RavenDocumentStoreFactory.CreateAndInitializeDocumentStore
                 (RavenConfig.FromConfiguration(config))
-                (Some (fun conventions -> 
+                (Some (fun conventions ->
                     // Configure serialization to exclude Version field
-                    conventions.Serialization <- 
+                    conventions.Serialization <-
                         let serialization = Raven.Client.Json.Serialization.NewtonsoftJson.NewtonsoftJsonSerializationConventions()
                         serialization.CustomizeJsonSerializer <- fun serializer ->
                             serializer.ContractResolver <- new AggregateStateContractResolver()
@@ -71,58 +73,92 @@ module HostBuilderMongoDBExtensionCommmon =
                 sp.GetRequiredService<IMongoClient>().GetDatabase(mongoConfig.DatabaseName)) |> ignore
         MongoConventions.Register()
 
+/// The registrations behind every Use…/Add… entry point: they only need the services and the configuration,
+/// so they work with IHostBuilder, IHostApplicationBuilder (Host.CreateApplicationBuilder, WebApplication.CreateBuilder)
+/// or a plain IServiceCollection
+[<AutoOpen>]
+module ServiceCollectionExtensions =
+    let private EnsureAddedOnce<'Marker when 'Marker : (new : unit -> 'Marker) and 'Marker : not struct>
+        (services: IServiceCollection) (kind: string) =
+        if services |> Seq.exists (fun descriptor -> descriptor.ServiceType = typeof<'Marker>) then
+            raise (InvalidOperationException(
+                sprintf "%s aggregates can only be added once: by one of `UseAggregatesWith…` or `AddAggregatesWith…`." kind))
+        services.AddSingleton<'Marker>(new 'Marker()) |> ignore
+
+    let private AddEventSourcedRepository<'AggregateRepository> (services: IServiceCollection) (configuration: IConfiguration) =
+        EnsureAddedOnce<EventSourcedAggregatesAdded> services "Event-sourced"
+
+        match typeof<'AggregateRepository> with
+        | t when t = typeof<KurrentDB> ->
+            let client = KurrentDBFactory.InitializeKurrentDB configuration
+            services.AddSingleton<IEventSourcedAggregateRepository>(fun sp ->
+                KurrentDBAggregateRepository(client, sp.GetServices<IEventUpcaster>()) :> IEventSourcedAggregateRepository) |> ignore
+        | _ -> raise (Exception("Only types extending `EventSourcedAggregateRepository` can be used as an Aggregate Repository generic option!"))
+
+    let private AddStateBasedRepository<'AggregateRepository> (services: IServiceCollection) (configuration: IConfiguration) =
+        EnsureAddedOnce<StateBasedAggregatesAdded> services "State-based"
+
+        match typeof<'AggregateRepository> with
+        | t when t = typeof<RavenDB> ->
+            if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IDocumentStore>)) then
+                services.AddSingleton<IDocumentStore>(CreateRavenDocumentStore(configuration)) |> ignore
+            services.AddSingleton<IStateBasedAggregateRepository, RavenDBAggregateRepository>() |> ignore
+        | t when t = typeof<MongoDB> ->
+            RegisterMongoDatabase(services, configuration)
+            services.AddSingleton<IStateBasedAggregateRepository, MongoDBAggregateRepository>() |> ignore
+        | _ -> raise (Exception("Only types extending `StateBasedAggregateRepository` can be used as an Aggregate Repository generic option!"))
+
+    /// Event-sourced aggregates, with the handlers in aggregatesAssembly
+    let AddAggregatesWithEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository :> EventSourcedAggregateRepository>
+        (services: IServiceCollection) (configuration: IConfiguration) (aggregatesAssembly: Assembly) =
+        AddEventSourcedRepository<'AggregateRepository> services configuration
+        RegisterAggregateHandlers(services, aggregatesAssembly)
+        services
+
+    /// State-based aggregates, with the handlers in aggregatesAssembly
+    let AddAggregatesWithoutEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository :> StateBasedAggregateRepository>
+        (services: IServiceCollection) (configuration: IConfiguration) (aggregatesAssembly: Assembly) =
+        AddStateBasedRepository<'AggregateRepository> services configuration
+        RegisterAggregateHandlers(services, aggregatesAssembly)
+        services
+
+    /// Both event-sourced and state-based aggregates, with the handlers in aggregatesAssembly
+    let AddAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository
+        when 'EventSourcedAggregateRepository : not struct
+        and 'EventSourcedAggregateRepository :> EventSourcedAggregateRepository
+        and 'TStateBasedAggregateRepository : not struct
+        and 'TStateBasedAggregateRepository :> StateBasedAggregateRepository>
+        (services: IServiceCollection) (configuration: IConfiguration) (aggregatesAssembly: Assembly) =
+        AddEventSourcedRepository<'EventSourcedAggregateRepository> services configuration
+        AddStateBasedRepository<'TStateBasedAggregateRepository> services configuration
+        // Once, for both kinds of aggregates
+        RegisterAggregateHandlers(services, aggregatesAssembly)
+        services
+
 [<AutoOpen>]
 module HostBuilderExtensions =
-    let UseAggregatesWithEventSourcing<'AggregateRepository 
-        when 'AggregateRepository : not struct and 'AggregateRepository :> EventSourcedAggregateRepository> 
+    let UseAggregatesWithEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository :> EventSourcedAggregateRepository>
         (hostBuilder: IHostBuilder) (aggregatesAssembly: Assembly) =
         hostBuilder.ConfigureServices(fun ctx services ->
-            if ctx.Properties.ContainsKey(HostBuilderEventSourcedExtensionInUse) then
-                raise (InvalidOperationException("`UseAggregatesWithEventSourcing` can only be used once!"))
-                
-            ctx.Properties.Add(HostBuilderEventSourcedExtensionInUse, null)
-            
-            match typeof<'AggregateRepository> with 
-            | t when t = typeof<KurrentDB> ->
-                let kurrentDBAggRep = InitializeKurrentDB (ctx.Configuration)
-                services.AddSingleton(typeof<IEventSourcedAggregateRepository>, kurrentDBAggRep) |> ignore
-                ()
-            | _ -> raise (Exception("Only types extending `EventSourcedAggregateRepository` can be used as an Aggregate Repository generic option!"))
+            AddAggregatesWithEventSourcing<'AggregateRepository> services ctx.Configuration aggregatesAssembly |> ignore)
 
-            RegisterAggregateHandlers(services, aggregatesAssembly)
-        )
-
-    let UseAggregatesWithoutEventSourcing<'AggregateRepository 
-        when 'AggregateRepository : not struct and 'AggregateRepository :> StateBasedAggregateRepository> 
+    let UseAggregatesWithoutEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository :> StateBasedAggregateRepository>
         (hostBuilder: IHostBuilder) (aggregatesAssembly: Assembly) =
         hostBuilder.ConfigureServices(fun ctx services ->
-            if ctx.Properties.ContainsKey(HostBuilderStateBasedExtensionInUse) then
-                raise (InvalidOperationException("`UseAggregatesWithoutEventSourcing` can only be used once!"))
-                
-            ctx.Properties.Add(HostBuilderStateBasedExtensionInUse, null)
-            
-            match typeof<'AggregateRepository> with 
-            | t when t = typeof<RavenDB> ->
-                if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IDocumentStore>)) then
-                    services.AddSingleton<IDocumentStore>(CreateRavenDocumentStore(ctx.Configuration)) |> ignore
-                services.AddSingleton<IStateBasedAggregateRepository, RavenDBAggregateRepository>() |> ignore
-            | t when t = typeof<MongoDB> ->
-                RegisterMongoDatabase(services, ctx.Configuration)
-                services.AddSingleton<IStateBasedAggregateRepository, MongoDBAggregateRepository>() |> ignore
-            | _ -> raise (Exception("Only types extending `StateBasedAggregateRepository` can be used as an Aggregate Repository generic option!"))
+            AddAggregatesWithoutEventSourcing<'AggregateRepository> services ctx.Configuration aggregatesAssembly |> ignore)
 
-            RegisterAggregateHandlers(services, aggregatesAssembly)
-        )
-
-    let UseAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository 
-        when 'EventSourcedAggregateRepository : not struct 
+    let UseAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository
+        when 'EventSourcedAggregateRepository : not struct
         and 'EventSourcedAggregateRepository :> EventSourcedAggregateRepository
-        and 'TStateBasedAggregateRepository : not struct 
-        and 'TStateBasedAggregateRepository :> StateBasedAggregateRepository> 
+        and 'TStateBasedAggregateRepository : not struct
+        and 'TStateBasedAggregateRepository :> StateBasedAggregateRepository>
         (hostBuilder: IHostBuilder) (aggregatesAssembly: Assembly) =
-        UseAggregatesWithEventSourcing<'EventSourcedAggregateRepository> hostBuilder aggregatesAssembly |> ignore
-        UseAggregatesWithoutEventSourcing<'TStateBasedAggregateRepository> hostBuilder aggregatesAssembly |> ignore
-        hostBuilder
+        hostBuilder.ConfigureServices(fun ctx services ->
+            AddAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository> services ctx.Configuration aggregatesAssembly |> ignore)
 
 // C#-friendly (tupled) extension methods delegating to the F# functions above
 [<Extension>]
@@ -140,12 +176,63 @@ module CSharp_HostBuilderExtensions =
         HostBuilderExtensions.UseAggregatesWithoutEventSourcing<'AggregateRepository> hostBuilder aggregatesAssembly
 
     [<Extension>]
-    let UseAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository 
-        when 'EventSourcedAggregateRepository : not struct 
+    let UseAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository
+        when 'EventSourcedAggregateRepository : not struct
         and 'EventSourcedAggregateRepository :> EventSourcedAggregateRepository
-        and 'TStateBasedAggregateRepository : not struct 
-        and 'TStateBasedAggregateRepository :> StateBasedAggregateRepository> 
+        and 'TStateBasedAggregateRepository : not struct
+        and 'TStateBasedAggregateRepository :> StateBasedAggregateRepository>
         (hostBuilder: IHostBuilder, aggregatesAssembly: Assembly) =
-        UseAggregatesWithEventSourcing<'EventSourcedAggregateRepository>(hostBuilder, aggregatesAssembly) |> ignore
-        UseAggregatesWithoutEventSourcing<'TStateBasedAggregateRepository>(hostBuilder, aggregatesAssembly) |> ignore
-        hostBuilder
+        HostBuilderExtensions.UseAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository> hostBuilder aggregatesAssembly
+
+/// Extension methods for IHostApplicationBuilder (Host.CreateApplicationBuilder, WebApplication.CreateBuilder)
+/// and IServiceCollection, from C# or F#, delegating to the F# functions above
+[<Extension; AbstractClass; Sealed>]
+type AggregatesExtensions =
+    [<Extension>]
+    static member UseAggregatesWithEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository :> EventSourcedAggregateRepository>
+        (builder: IHostApplicationBuilder, aggregatesAssembly: Assembly) =
+        ServiceCollectionExtensions.AddAggregatesWithEventSourcing<'AggregateRepository>
+            builder.Services builder.Configuration aggregatesAssembly |> ignore
+        builder
+
+    [<Extension>]
+    static member UseAggregatesWithoutEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository :> StateBasedAggregateRepository>
+        (builder: IHostApplicationBuilder, aggregatesAssembly: Assembly) =
+        ServiceCollectionExtensions.AddAggregatesWithoutEventSourcing<'AggregateRepository>
+            builder.Services builder.Configuration aggregatesAssembly |> ignore
+        builder
+
+    [<Extension>]
+    static member UseAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository
+        when 'EventSourcedAggregateRepository : not struct
+        and 'EventSourcedAggregateRepository :> EventSourcedAggregateRepository
+        and 'TStateBasedAggregateRepository : not struct
+        and 'TStateBasedAggregateRepository :> StateBasedAggregateRepository>
+        (builder: IHostApplicationBuilder, aggregatesAssembly: Assembly) =
+        ServiceCollectionExtensions.AddAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository>
+            builder.Services builder.Configuration aggregatesAssembly |> ignore
+        builder
+
+    [<Extension>]
+    static member AddAggregatesWithEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository :> EventSourcedAggregateRepository>
+        (services: IServiceCollection, configuration: IConfiguration, aggregatesAssembly: Assembly) =
+        ServiceCollectionExtensions.AddAggregatesWithEventSourcing<'AggregateRepository> services configuration aggregatesAssembly
+
+    [<Extension>]
+    static member AddAggregatesWithoutEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository :> StateBasedAggregateRepository>
+        (services: IServiceCollection, configuration: IConfiguration, aggregatesAssembly: Assembly) =
+        ServiceCollectionExtensions.AddAggregatesWithoutEventSourcing<'AggregateRepository> services configuration aggregatesAssembly
+
+    [<Extension>]
+    static member AddAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository
+        when 'EventSourcedAggregateRepository : not struct
+        and 'EventSourcedAggregateRepository :> EventSourcedAggregateRepository
+        and 'TStateBasedAggregateRepository : not struct
+        and 'TStateBasedAggregateRepository :> StateBasedAggregateRepository>
+        (services: IServiceCollection, configuration: IConfiguration, aggregatesAssembly: Assembly) =
+        ServiceCollectionExtensions.AddAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository>
+            services configuration aggregatesAssembly

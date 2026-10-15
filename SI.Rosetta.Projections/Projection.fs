@@ -12,7 +12,8 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
     member val Handlers = Unchecked.defaultof<IEnumerable<IProjectionHandler<'TEvent>>> with get, set
     member val CheckpointStore = Unchecked.defaultof<ICheckpointStore> with get, set
     member val Checkpoint = Unchecked.defaultof<Checkpoint> with get, set
-    
+    member val SkipUnknownEvents = false with get, set
+
     member this.CreateProjectionException (ev: obj) (checkpoint: uint64) (ae: AggregateException) =
         let msg = sprintf "PROJECTION FAILURE: Projection %s on Stream %s FAILED on Checkpoint %d during %s" 
                     this.Name this.SubscriptionStreamName checkpoint (ev.GetType().FullName)
@@ -26,14 +27,22 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
     member this.StartHandlingTasks (e: 'TEvent) (c: uint64) =
         let tasks = List<Task>()
         for d in this.Handlers do
-            tasks.Add(d.Handle(e, c))
+            // A handler that throws before returning its Task fails like one whose Task faults
+            tasks.Add(try d.Handle(e, c) with ex -> Task.FromException ex)
         tasks.ToArray()
-        
+
+    /// Runs every handler on the event in parallel, then stores the checkpoint.
+    /// Throws a ProjectionException holding every handler's failure when any fails
     member this.HandleEvent(ev: 'TEvent, c: uint64) =
         task {
             this.Checkpoint.Value <- c
-            Task.WaitAll(this.StartHandlingTasks ev c)
-            do! this.CheckpointStore.StoreAsync this.Checkpoint
+            let handling = Task.WhenAll(this.StartHandlingTasks ev c)
+            try
+                do! handling.ConfigureAwait(false)
+            with _ when handling.IsFaulted ->
+                // Awaiting rethrows only the first failure: handling.Exception has them all
+                raise (this.CreateProjectionException ev c handling.Exception)
+            do! this.CheckpointStore.StoreAsync(this.Checkpoint).ConfigureAwait(false)
         }
         
     interface IProjectionInstance<'TEvent> with
@@ -65,16 +74,7 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
                 do! this.Subscription.StartAsync(this.Checkpoint.Value, cancellationToken)
             }
         
-    member private this.TryHandleEvent(ev: 'TEvent, checkpoint: uint64) =
+    member this.ProjectAsync(ev: 'TEvent, checkpoint: uint64) =
         task {
-            try
-                do! this.HandleEvent(ev, checkpoint)
-            with
-            | :? AggregateException as ex ->
-                raise (this.CreateProjectionException ev checkpoint ex)
-        }
-
-    member this.ProjectAsync(ev: 'TEvent, checkpoint: uint64) = 
-        task {
-            do! this.TryHandleEvent(ev, checkpoint)
+            do! this.HandleEvent(ev, checkpoint).ConfigureAwait(false)
         }

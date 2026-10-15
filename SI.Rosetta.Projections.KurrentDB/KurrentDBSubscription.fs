@@ -12,7 +12,8 @@ open FSharp.Control
 open SI.Rosetta.Serialization
 
 type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
-    (logger: ILogger<KurrentDBSubscription<'TEvent>>, client: KurrentDBClient) =
+    (logger: ILogger<KurrentDBSubscription<'TEvent>>, client: KurrentDBClient, upcasters: IEventUpcaster seq) =
+    let Upcasters = Seq.toArray upcasters
     let mutable name = String.Empty
     let mutable streamName = String.Empty
     let mutable currentCheckpoint = 0UL
@@ -20,6 +21,9 @@ type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
     let mutable hasFailed = false
     let mutable error = String.Empty
     let mutable eventReceived: 'TEvent * uint64 -> Task<unit> = fun (ev, cp) -> Task.FromResult<unit>()
+    let mutable skipUnknownEvents = false
+    // Each skipped event type is logged as a warning the first time only
+    let SkippedEventTypes = Collections.Generic.HashSet<string>()
     let MaxResubscriptionAttempts = 5
     let InitialResubscriptionDelay = TimeSpan.FromSeconds(1.0)
 
@@ -33,16 +37,37 @@ type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
         | :? AggregateException as ae when (ae.InnerException :? ObjectDisposedException) -> true
         | _ -> false
 
+    // Retrying can't make an unknown event known, so the subscription fails at once
+    let rec (|UnknownEvent|_|) (ex: exn) =
+        match ex with
+        | :? UnknownEventException as unknown -> Some unknown
+        | :? AggregateException as ae when not (isNull ae.InnerException) -> (|UnknownEvent|_|) ae.InnerException
+        | _ -> None
+
     let isNotDeleted (event: ResolvedEvent) =
         event.Event <> null
 
-    member private this.HandleEvent<'T when 'T :> IAggregateEvents> (event: ResolvedEvent) =
+    new(logger: ILogger<KurrentDBSubscription<'TEvent>>, client: KurrentDBClient) =
+        KurrentDBSubscription<'TEvent>(logger, client, Seq.empty)
+
+    member private this.LogSkipped (event: ResolvedEvent) =
+        let typeName = event.Event.EventType
+        let level = if SkippedEventTypes.Add typeName then LogLevel.Warning else LogLevel.Debug
+        logger.Log(level, "Projection {Name} SKIPPED event {EventType} (event {EventNumber} of stream {EventStream}): {EventsType} has no case for it.",
+            this.Name, typeName, event.Event.EventNumber.ToUInt64(), event.Event.EventStreamId, typeof<'TEvent>.Name)
+
+    member private this.HandleEvent (event: ResolvedEvent) =
         task {
             let oneBasedCheckPoint = event.OriginalEventNumber.ToUInt64() + 1UL
             if isNotDeleted event then
-                let ev = KurrentDBSerialization.Deserialize event
-                do! eventReceived(ev, oneBasedCheckPoint).ConfigureAwait(false)
-            
+                if skipUnknownEvents then
+                    match KurrentDBSerialization.TryDeserializeWith<'TEvent> Upcasters event with
+                    | Some ev -> do! eventReceived(ev, oneBasedCheckPoint).ConfigureAwait(false)
+                    | None -> this.LogSkipped event
+                else
+                    let ev = KurrentDBSerialization.DeserializeWith<'TEvent> Upcasters event
+                    do! eventReceived(ev, oneBasedCheckPoint).ConfigureAwait(false)
+
             currentCheckpoint <- oneBasedCheckPoint
             if resubscriptionAttempt > 0 then
                 resubscriptionAttempt <- 0
@@ -60,6 +85,10 @@ type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
         member this.EventReceived
             with get() = eventReceived
             and set(value) = eventReceived <- value
+
+        member this.SkipUnknownEvents
+            with get() = skipUnknownEvents
+            and set(value) = skipUnknownEvents <- value
 
         member this.StartAsync(oneBasedCheckpoint, cancellationToken) =
             task {
@@ -98,7 +127,7 @@ type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
                                             | :? StreamMessage.CaughtUp ->
                                                 resubscriptionAttempt <- 0
                                             | :? StreamMessage.Event as evnt ->
-                                                do! this.HandleEvent<'TEvent> evnt.ResolvedEvent |> Async.AwaitTask
+                                                do! this.HandleEvent evnt.ResolvedEvent |> Async.AwaitTask
                                                 checkpoint <- FromStream.After(evnt.ResolvedEvent.OriginalEventNumber)
                                             | _ -> ()
                                             return ()
@@ -117,6 +146,12 @@ type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
                     | Some ex when IsDisposal ex ->
                         logger.LogInformation("Subscription {Name} on stream {StreamName} was CANCELED by the user.", this.Name, this.StreamName)
                         stopped <- true
+                    | Some (UnknownEvent unknown) ->
+                        hasFailed <- true
+                        error <- unknown.Message
+                        logger.LogCritical(unknown, "Projection {Name} on stream {StreamName} STOPPED on an event it has no case for.",
+                            this.Name, this.StreamName)
+                        ExceptionDispatchInfo.Capture(unknown).Throw()
                     | Some ex ->
                         resubscriptionAttempt <- resubscriptionAttempt + 1
                         if resubscriptionAttempt > MaxResubscriptionAttempts then

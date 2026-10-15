@@ -13,6 +13,8 @@
     <Compile Include="TestDomain\OrganizationAggregate.fs" />
     <Compile Include="TestDomain\OrganizationAggregateHandler.fs" />
     <Compile Include="OrganizationTests.fs" />
+    <Compile Include="HostingTests.fs" />
+    <Compile Include="UpcastingTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -20,6 +22,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageReference Include="xunit.v3" Version="4.0.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
@@ -29,6 +32,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\SI.Rosetta.Aggregates.HostBuilder\SI.Rosetta.Aggregates.HostBuilder.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Aggregates.TestKit\SI.Rosetta.Aggregates.TestKit.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Aggregates\SI.Rosetta.Aggregates.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Common\SI.Rosetta.Common.fsproj" />

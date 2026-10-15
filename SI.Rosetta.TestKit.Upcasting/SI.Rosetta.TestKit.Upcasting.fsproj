@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <IncludeReferencedProjects>true</IncludeReferencedProjects>
+    <IsTestProject>false</IsTestProject>
+    <Authors>SI.Informational.Systems</Authors>
+    <Description>Test Kit for SI.Rosetta event upcasters</Description>
+    <PackageId>SI.Rosetta.TestKit.Upcasting</PackageId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="UpcastingTestKitBase.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SI.Rosetta.Common\SI.Rosetta.Common.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.TestKit.ObjectComparer\SI.Rosetta.TestKit.ObjectComparer.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
+    <PackageReference Include="xunit.v3.assert" Version="4.0.2" />
+  </ItemGroup>
+
+</Project>

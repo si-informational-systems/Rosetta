@@ -48,8 +48,9 @@ type ProjectionsFactory(provider: IServiceProvider) =
         subscription.Name <- proj.Name
         subscription.StreamName <- proj.SubscriptionStreamName
         subscription.EventReceived <- proj.ProjectAsync
+        subscription.SkipUnknownEvents <- proj.SkipUnknownEvents
         subscription
-        
+
     member this.CreateHandlers<'TEvent when 'TEvent :> IAggregateEvents>(t: Type) =
         let handlerTypes = 
             t.GetInterfaces()
@@ -71,7 +72,10 @@ type ProjectionsFactory(provider: IServiceProvider) =
     member this.IsActive(t: Type) =
         let attrInfo = t.GetCustomAttribute(typeof<DisabledProjection>)
         attrInfo = null
-        
+
+    member this.SkipsUnknownEvents(t: Type) =
+        not (isNull (t.GetCustomAttribute(typeof<SkipUnknownEvents>)))
+
     interface IProjectionsFactory with
         member this.CreateFromAssemblyAsync(projectionsAssembly: Assembly) =
             task {
@@ -115,7 +119,8 @@ type ProjectionsFactory(provider: IServiceProvider) =
                     this.GetType().GetMethod("SetNameAndStreamName")
                         .MakeGenericMethod(eventsType)
                 setNameAndStreamNameMethod.Invoke(this, [|t; projection|]) |> ignore
-                
+                projectionType.GetProperty("SkipUnknownEvents").SetValue(projection, this.SkipsUnknownEvents t)
+
                 let loadCheckpointMethod = 
                     this.GetType().GetMethod("LoadCheckpoint")
                         .MakeGenericMethod(eventsType)

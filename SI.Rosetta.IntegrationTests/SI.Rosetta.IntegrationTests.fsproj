@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <GenerateProgramFile>false</GenerateProgramFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Databases.fs" />
+    <Compile Include="Domain.fs" />
+    <Compile Include="Eventually.fs" />
+    <Compile Include="RavenDbProjectionsStoreTests.fs" />
+    <Compile Include="MongoDbProjectionsStoreTests.fs" />
+    <Compile Include="MongoConfigTests.fs" />
+    <Compile Include="KurrentDBAggregateRepositoryTests.fs" />
+    <Compile Include="KurrentDBSubscriptionTests.fs" />
+    <Compile Include="HostingTests.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+    <PackageReference Include="Testcontainers.KurrentDb" Version="4.16.0" />
+    <PackageReference Include="Testcontainers.MongoDb" Version="4.16.0" />
+    <PackageReference Include="Testcontainers.RavenDb" Version="4.16.0" />
+    <PackageReference Include="xunit.v3" Version="4.0.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SI.Rosetta.Aggregates.HostBuilder\SI.Rosetta.Aggregates.HostBuilder.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Projections.HostBuilder\SI.Rosetta.Projections.HostBuilder.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Projections.TestKit\SI.Rosetta.Projections.TestKit.fsproj" />
+  </ItemGroup>
+
+</Project>

@@ -2,13 +2,20 @@ namespace SI.Rosetta.Aggregates.KurrentDB
 
 open System
 open System.Collections.Generic
+open System.Runtime.ExceptionServices
 open KurrentDB.Client
 open SI.Rosetta.Aggregates
 open FSharp.Control
 open SI.Rosetta.Common
 open SI.Rosetta.Serialization
 
-type KurrentDBAggregateRepository(client: KurrentDBClient) =
+/// Event-sourced aggregates in KurrentDB. Events are upcast while the aggregate is read; one its events DU has no case for
+/// fails the read with UnknownEventException, as skipping it would rebuild the wrong state
+type KurrentDBAggregateRepository(client: KurrentDBClient, upcasters: IEventUpcaster seq) =
+    let Upcasters = Seq.toArray upcasters
+
+    new(client: KurrentDBClient) = KurrentDBAggregateRepository(client, Seq.empty)
+
     member private this.ToEventData (event: IAggregateEvents) (headers: IDictionary<string, obj>) =
         let serializedEvent = KurrentDBSerialization.Serialize(event, headers)
         EventData(Uuid.NewUuid(), serializedEvent.EventClrName, serializedEvent.Data, ReadOnlyMemory<byte> serializedEvent.Metadata)
@@ -74,7 +81,7 @@ type KurrentDBAggregateRepository(client: KurrentDBClient) =
                     do! events
                         |> AsyncSeq.takeWhile (fun _ -> state.Version <> version)
                         |> AsyncSeq.iter (fun resolvedEvent ->
-                            let deserializedEvent = KurrentDBSerialization.Deserialize<'TEvents>(resolvedEvent)
+                            let deserializedEvent = KurrentDBSerialization.DeserializeWith<'TEvents> Upcasters resolvedEvent
                             state.Mutate deserializedEvent
                             )
                     
@@ -84,7 +91,10 @@ type KurrentDBAggregateRepository(client: KurrentDBClient) =
                 with
                 | :? AggregateException as ex when (ex.InnerException :? StreamNotFoundException) -> 
                     return None
-                | :? StreamNotFoundException -> 
+                | :? StreamNotFoundException ->
+                    return None
+                | :? AggregateException as ex when (ex.InnerException :? UnknownEventException) ->
+                    ExceptionDispatchInfo.Throw ex.InnerException
                     return None
                 | ex -> return raise ex
             }

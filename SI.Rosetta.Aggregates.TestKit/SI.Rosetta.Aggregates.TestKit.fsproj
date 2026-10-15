@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SI.Rosetta.Aggregates\SI.Rosetta.Aggregates.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.TestKit.ObjectComparer\SI.Rosetta.TestKit.ObjectComparer.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.TestKit.Upcasting\SI.Rosetta.TestKit.Upcasting.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

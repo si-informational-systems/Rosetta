@@ -13,6 +13,11 @@
     <Compile Include="TestProjection\OrganizationProjection.fs" />
     <Compile Include="OrganizationProjectionTests.fs" />
     <Compile Include="CustomProjectionSyncTests.fs" />
+    <Compile Include="ObjectComparerTests.fs" />
+    <Compile Include="TestKitProjectionStoreTests.fs" />
+    <Compile Include="ProjectionTests.fs" />
+    <Compile Include="SerializationTests.fs" />
+    <Compile Include="HostingTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -20,6 +25,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageReference Include="xunit.v3" Version="4.0.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
@@ -32,6 +38,7 @@
     <ProjectReference Include="..\SI.Rosetta.Projections.TestKit\SI.Rosetta.Projections.TestKit.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Projections.KurrentDB\SI.Rosetta.Projections.KurrentDB.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Projections.HostBuilder\SI.Rosetta.Projections.HostBuilder.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Common\SI.Rosetta.Common.fsproj" />
   </ItemGroup>
 

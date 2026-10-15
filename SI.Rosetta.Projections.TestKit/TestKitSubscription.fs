@@ -12,6 +12,8 @@ type TestKitSubscription<'TEvent when 'TEvent :> IAggregateEvents>() =
     interface ISubscription<'TEvent> with
         member val Name = "" with get, set
         member val StreamName = "" with get, set
+        // Its events are typed already, so none are unknown
+        member val SkipUnknownEvents = false with get, set
         member this.EventReceived
             with get() = eventReceived
             and set(value) = eventReceived <- value        

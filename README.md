@@ -2,6 +2,7 @@
 
 **Domain-Driven Design, Event Sourcing, and Projections for .NET & F# — with KurrentDB, RavenDB, MongoDB, and modern HostBuilder integration.**
 
+[![CI](https://github.com/si-informational-systems/Rosetta/actions/workflows/ci.yml/badge.svg)](https://github.com/si-informational-systems/Rosetta/actions/workflows/ci.yml)
 ![.NET](https://img.shields.io/badge/.NET-10-blueviolet)
 ![F#](https://img.shields.io/badge/F%23-functional-blue)
 ![Event Sourcing](https://img.shields.io/badge/Event%20Sourcing-Enabled-brightgreen)
@@ -24,9 +25,10 @@ It provides:
 - 🗄️ **State-based Aggregates** (no Event Sourcing) persisted in RavenDB or MongoDB — or mix both styles in one service
 - 📊 **Projections** from KurrentDB with persistence using RavenDB and MongoDB (NoSQL)
 - 📊 **Custom (Cross-Aggregate) Projection Definitions**
-- 🏗️ **HostBuilder Extensions** for seamless DI and service registration
+- 🔁 **Event Upcasting** to keep reading events written by older versions of the domain
+- 🏗️ **Host Extensions** for seamless DI and service registration: `IHostBuilder`, `IHostApplicationBuilder` (`Host.CreateApplicationBuilder`, `WebApplication.CreateBuilder`) or a plain `IServiceCollection`
 - 🛠️ **CQRS**-friendly patterns and handler abstractions
-- 🧪 **TestKit** for BDD Testing
+- 🧪 **TestKits** for BDD Testing of Aggregates, Projections and upcasters
 
 ---
 
@@ -74,7 +76,8 @@ type IProjectionsStore =
 - **KurrentDB Integration**: Reliable, scalable event storage with optimistic concurrency.
 - **State-based Aggregates**: Persist the AggregateState itself in RavenDB or MongoDB when Event Sourcing isn't needed.
 - **RavenDB/MongoDB Projections**: Fast, flexible read models.
-- **Plug-and-Play HostBuilder Extensions**: Register everything with a single line.
+- **Event Evolution**: Upcasters rename events and fields as they're read; an event a DU doesn't know stops a Projection with a clear error, or is skipped with `[<SkipUnknownEvents>]`.
+- **Plug-and-Play Host Extensions**: Register everything with a single line, on any .NET host builder.
 - **CQRS Handlers**: Command and event handler patterns out-of-the-box.
 - **Idempotency & Consistency**: Built-in support for safe, repeatable operations.
 - **Modern F# & C# Support**: Idiomatic, clean code for both languages.
@@ -108,12 +111,12 @@ dotnet add package SI.Rosetta.Aggregates.HostBuilder
 # Projections (KurrentDB subscriptions into RavenDB or MongoDB)
 dotnet add package SI.Rosetta.Projections.HostBuilder
 
-# BDD Test Kits (in your test projects)
+# BDD Test Kits (in your test projects; each brings SI.Rosetta.TestKit.Upcasting for testing upcasters)
 dotnet add package SI.Rosetta.Aggregates.TestKit
 dotnet add package SI.Rosetta.Projections.TestKit
 ```
 
-The HostBuilder packages bring in `SI.Rosetta.Aggregates` / `SI.Rosetta.Projections` and every persistence implementation. Your Published Language project (Commands and Events) only needs `SI.Rosetta.Common`.
+The HostBuilder packages bring in `SI.Rosetta.Aggregates` / `SI.Rosetta.Projections` and every persistence implementation. Your Published Language project (Commands and Events, and their upcasters) only needs `SI.Rosetta.Common`.
 
 ### 2. Configure Infrastructure
 
@@ -141,7 +144,17 @@ Whether you're using Aggregates, Projections, or both - the persistence undernea
 }
 ```
 
-`CertificatePath`/`CertificatePassword` and the MongoDB credentials are optional.
+`CertificatePath`/`CertificatePassword` and the MongoDB credentials are optional. Rosetta escapes the MongoDB username and password, so they may contain `@`, `:`, `/`, `?`, `#` or `%`.
+
+For anything else MongoDB supports (TLS, `mongodb+srv://`, a replica set, several hosts), set the whole connection string instead. It replaces `Host`, `Port`, `Username`, `Password` and `AuthSource`, and when `DatabaseName` isn't set, the database comes from its path:
+
+```json
+{
+  "MongoDB": {
+    "ConnectionString": "mongodb+srv://user:pass@cluster0.example.mongodb.net/your_db_name?retryWrites=true"
+  }
+}
+```
 
 Rosetta uses `KurrentDB.Client` and is tested against KurrentDB 26.2. A single KurrentDB node is free to run in production from 26.2; clusters need a license.
 
@@ -188,6 +201,26 @@ Host.CreateDefaultBuilder(args)
 
 > In C#, refer to the store marker types through an alias: unqualified `KurrentDB` and `MongoDB` resolve to the `KurrentDB.Client` and `MongoDB.Driver` root namespaces (CS0118).
 
+**`Host.CreateApplicationBuilder` and `WebApplication.CreateBuilder`** (`IHostApplicationBuilder`) have the same `Use…` methods:
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+builder.UseAggregatesWith<Stores.KurrentDB, Stores.MongoDB>(typeof(PersonAggregateHandler).Assembly);
+builder.Build().Run();
+```
+
+```fsharp
+let builder = Host.CreateApplicationBuilder(args)
+builder.UseProjectionsWith<KurrentDB, MongoDB>(typeof<PersonProjection>.Assembly) |> ignore
+builder.Build().Run()
+```
+
+And on a plain `IServiceCollection`, the `Add…` methods take the configuration (in F#, also as curried functions: `AddAggregatesWith<…> services configuration assembly`):
+
+```csharp
+services.AddProjectionsWith<KurrentDB, RavenDB>(configuration, typeof(PersonProjection).Assembly);
+```
+
 | Registration | Use when | Stores |
 |---|---|---|
 | `UseAggregatesWithEventSourcing<TEventSourced>` | every Aggregate is Event-Sourced | `KurrentDB` |
@@ -195,7 +228,7 @@ Host.CreateDefaultBuilder(args)
 | `UseAggregatesWith<TEventSourced, TStateBased>` | a mix of both | both of the above |
 | `UseProjectionsWith<TEventRepository, TProjectionsStore>` | Projections | `KurrentDB` → `RavenDB`, `MongoDB` |
 
-Aggregate Handlers and Projection Handlers are discovered in the given assembly and registered automatically.
+Each `Use…` has an `Add…` counterpart for `IServiceCollection`, and each can be used once per service collection. Aggregate Handlers and Projection Handlers are discovered in the given assembly and registered automatically.
 
 ---
 
@@ -375,8 +408,10 @@ and PersonProjectionHandler(store: INoSqlStore) =
 ### Projections at runtime
 
 - Projections run in a `BackgroundService`. The application finishes starting right away, and stopping it (Ctrl+C) cancels every subscription immediately.
+- A Projection's Handlers handle each event in parallel. When any of them fails, the `ProjectionException` holds every Handler's failure, and the checkpoint isn't stored.
 - When a subscription drops (KurrentDB is unavailable, or a Handler throws because, say, the read store is down), it resubscribes from its last checkpoint **up to 5 times**, waiting **1, 2, 4, 8 and 16 s**. Only progress resets the count: a handled event, or catching up with the stream. A Handler that keeps failing on the same event therefore doesn't retry forever.
 - If a Projection still fails, **the whole application stops**: Rosetta logs it as Critical, sets `Environment.ExitCode` to 1 and stops the host. The same happens when the Projections can't start, e.g. when KurrentDB is down at startup.
+- An event the Projection's events DU has no case for stops it **at once**, without resubscribing, since retrying can't help (see [Evolving events](#-evolving-events-upcasting-and-unknown-events)).
 - A C# `void Main` exits with `Environment.ExitCode` on its own. An F# `main` returns its exit code explicitly, so return `Environment.ExitCode`, or the process exits with 0 and restart policies won't notice the failure:
 
 ```fsharp
@@ -457,6 +492,44 @@ How the JavaScript projections are deployed on startup:
 
 ---
 
+## 🔁 Evolving events: upcasting and unknown events
+
+An event is matched to its DU case by the **name of its record type**, so renaming a record, or one of its fields, would leave the events already in KurrentDB unreadable. An **upcaster** rewrites them, as they're read, into the shape the current DU expects:
+
+```fsharp
+open SI.Rosetta.Common   // where IEventUpcaster lives, so a Published Language project can hold its upcasters
+
+/// Older events were PersonCreated, with FullName for Name
+type PersonCreatedUpcaster() =
+    interface IEventUpcaster with
+        member _.Upcast(ev) =
+            match ev.TypeName with
+            | "PersonCreated" ->
+                let data = ev.Data.DeepClone() :?> Newtonsoft.Json.Linq.JObject
+                data.["Name"] <- data.["FullName"]
+                data.Remove("FullName") |> ignore
+                { TypeName = "PersonRegistered"; Data = data }
+            | _ -> ev
+
+services.AddSingleton<IEventUpcaster, PersonCreatedUpcaster>()
+```
+
+- Register them in **every service that reads the events**: the Aggregates service rebuilds Aggregates from their stored events, too. Register them as singletons: one instance serves every Projection and command at once, so keep them stateless.
+- Every event read from KurrentDB, by Aggregates and Projections alike, goes through every registered upcaster, **in registration order**, each getting the previous one's output. So register a chain oldest step first (v1→v2 before v2→v3), or upcast every old shape of an event straight to the current one in a single upcaster, which doesn't depend on order. Only the reading side changes: the stored events stay as they were written.
+- An event whose record type the DU has no case for (even after upcasting) throws an `UnknownEventException` that names the event, its stream and its number.
+- An **Aggregate** always fails on such an event: rebuilding its state without it would be wrong.
+- A **Projection** stops on it, unless it's marked `[<SkipUnknownEvents>]`. Then it logs the event (a warning the first time per event type) and moves past it. Use that for Projections that may see events added to the domain before they handle them:
+
+```fsharp
+[<SkipUnknownEvents>]
+[<HandlesStream(ProjectionStreamNames.PersonStream)>]
+type PersonProjection() =
+    inherit Projection<PersonEvents>()
+    interface IAmHandledBy<PersonProjectionHandler, PersonEvents>
+```
+
+---
+
 ## 🧪 Testing
 
 The TestKits are built for **xUnit v3**. A test project that uses them references `xunit.v3` and is an executable:
@@ -522,6 +595,38 @@ type PersonProjectionTests() =
 
 Override `ConfigureServices` to register additional dependencies - or the other Handlers of a Projection with several `IAmHandledBy<…>`.
 
+### Upcasters
+
+The Aggregates and Projections TestKits take the current events DU only: they test the domain model as it is now. An upcaster turns an older version's events into exactly those events, so it's tested on its own, with `UpcastingTestKitBase` (`SI.Rosetta.TestKit.Upcasting`, which comes with either TestKit). `Given` events are encoded as they're stored and read back through the upcasters registered in `ConfigureServices`, as Rosetta reads events from KurrentDB. `Then` lists the events of the current DU they must be read as.
+
+To write an event as an older version of the domain did, declare its old shape in the test project. The record type name is what's stored, so it must be the old name:
+
+```fsharp
+open SI.Rosetta.TestKit
+
+/// PersonRegistered as the previous version wrote it
+type PersonCreated = { Id: string; FullName: string }
+
+[<RequireQualifiedAccess>]
+type OldPersonEvents =
+    | Created of PersonCreated
+    interface IAggregateEvents
+
+type PersonUpcastingTests() =
+    inherit UpcastingTestKitBase<PersonEvents>()
+
+    override this.ConfigureServices(services) =
+        services.AddSingleton<IEventUpcaster, PersonCreatedUpcaster>() |> ignore
+
+    [<Fact>]
+    member this.``PersonCreated is read as PersonRegistered``() =
+        this.Given(OldPersonEvents.Created { Id = "People-1"; FullName = "John" })
+        this.Then(PersonEvents.Registered { Id = "People-1"; Name = "John" })
+```
+
+- `Given` takes events of any DU, so a test can also check that current events pass the upcasters unchanged.
+- An event that still has no case after the upcasters throws `UnknownEventException`.
+
 ---
 
 ## 🛠️ Building from source
@@ -532,6 +637,8 @@ dotnet test SI.Rosetta.sln
 ```
 
 `global.json` pins the .NET 10 SDK. Every library project produces its NuGet package on build. `SI.Rosetta.Aggregates.Template` is a Visual Studio item template and is excluded from the solution build (see its own README).
+
+`dotnet test` also runs `SI.Rosetta.IntegrationTests`, which start KurrentDB, RavenDB and MongoDB in Docker with [Testcontainers](https://dotnet.testcontainers.org/), so Docker must be running. To run only the unit tests, pass `--project SI.Rosetta.Aggregates.UnitTests` or `--project SI.Rosetta.Projections.UnitTests`. CI (`.github/workflows/ci.yml`) builds and runs every test on each push to `master` and on pull requests.
 
 ---
 
@@ -558,6 +665,25 @@ dotnet run --project Test.Aggregates    # 2nd terminal: registers and renames a 
 ```
 
 The results show up in RavenDB Studio, database `TEST.ROSETTA`: the `People`, `TotalPeoples` and `Checkpoints` collections come from the Projections, and `Organizations` holds the state-based Aggregate (its Version is in the document's metadata). `docker compose down` stops the containers, and `docker compose down -v` also deletes their data.
+
+---
+
+## ⬆️ Upgrading to Rosetta 1.25
+
+Mostly additions, but a few changes can break a build or change what a test or service does:
+
+- **`ISubscription<'TEvent>` has a new `SkipUnknownEvents` property.** Only your own `ISubscription` implementations need it: `member val SkipUnknownEvents = false with get, set`.
+- **An event a Projection's DU has no case for stops the Projection at once** with an `UnknownEventException` naming the event, instead of a `KeyNotFoundException` after five resubscribe attempts (about 30 s). Upcast it, add the case, or mark the Projection `[<SkipUnknownEvents>]`.
+- **The TestKits' comparer compares Guids, decimals and other structs by value.** Before, any two Guids looked equal, and decimals were compared only by their scale, so tests that should have failed on them passed. They fail now.
+- **`MongoDbProjectionsStore.LoadAsync`/`LoadManyAsync` throw server errors** (after the transient retries) instead of returning null or nothing, which looked like "not found".
+- **`MongoDbProjectionsStore.StoreInUnitOfWorkAsync` is transactional** (it writes in the transaction's session): a failed write stores none of the documents.
+- **`RavenDbProjectionsStore.DeleteAsync`/`DeleteInUnitOfWorkAsync` work**: they always threw before.
+- **The TestKits' in-memory store takes `int`, `int64` and `Guid` Ids**, and a missing document loads as null instead of throwing.
+- **MongoDB credentials are escaped**, and `MongoDB:ConnectionString` can replace `Host`, `Port`, `Username`, `Password` and `AuthSource`. `MongoConfig` has a new `ConnectionString` field, which only matters if you build the record yourself.
+- **Every Handler's failure is in the `ProjectionException`** (its inner `AggregateException`), and a Handler that throws before returning its `Task` is wrapped like the others.
+- **`KurrentDBSubscriptionFactory` takes the registered `IEventUpcaster`s** in its constructor, and `KurrentDBAggregateRepository` can take them too. Both are created by DI.
+- **`UseAggregatesWith` registers the Aggregate Handlers once** (it registered them twice). Each `Use…`/`Add…` still throws if it's used twice.
+- **Removed:** the `HostBuilderEventSourcedExtensionInUse`, `HostBuilderStateBasedExtensionInUse` (Aggregates) and `HostBuilderExtensionInUse` (Projections) constants. The services collection itself now records what was added.
 
 ---
 
@@ -604,7 +730,8 @@ docker compose up -d --remove-orphans
 - Use **CQRS**: Separate command and query responsibilities.
 - Keep **Domain logic** in Aggregates, not Handlers or Controllers.
 - Register all services via HostBuilder extensions.
-- Write minimal-code **Unit Tests** for Aggregates and Projections using **Aggregate Test Kit** and **Projections Test Kit**
+- Write minimal-code **Unit Tests** for Aggregates and Projections using **Aggregate Test Kit** and **Projections Test Kit**, and for upcasters using **Upcasting Test Kit**.
+- When an event changes shape, **upcast** the stored events instead of rewriting them, and deploy the services that read new events (Projections) before the ones that write them (Aggregates).
 
 ---
 

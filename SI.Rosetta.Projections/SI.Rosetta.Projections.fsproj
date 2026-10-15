@@ -22,6 +22,7 @@
     <Compile Include="IAmHandledBy.fs" />
     <Compile Include="HandlesStreamAttribute.fs" />
     <Compile Include="DisabledProjectionAttribute.fs" />
+    <Compile Include="SkipUnknownEventsAttribute.fs" />
     <Compile Include="CustomProjectionStreamAttribute.fs" />
     <Compile Include="ISubscription.fs" />
     <Compile Include="ISubscriptionFactory.fs" />

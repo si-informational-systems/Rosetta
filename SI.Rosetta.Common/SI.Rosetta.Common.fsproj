@@ -13,6 +13,7 @@
     <Compile Include="Pluralizer.fs" />
     <Compile Include="UnionCaseInfoUtils.fs" />
     <Compile Include="Messages.fs" />
+    <Compile Include="StoredEvents.fs" />
   </ItemGroup>
 
   <ItemGroup>

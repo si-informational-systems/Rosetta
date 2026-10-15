@@ -90,8 +90,8 @@ type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
                                             updateDef <- updateDef.Set(prop.Name, value)
                     
                                     let options = UpdateOptions(IsUpsert = true)
-                                    let cancellationToken = CancellationToken.None
-                                    let! _ = collection.UpdateOneAsync(filter, updateDef, options, cancellationToken).ConfigureAwait(false)
+                                    // In the session s, or the write isn't part of the transaction
+                                    let! _ = collection.UpdateOneAsync(s, filter, updateDef, options, ct).ConfigureAwait(false)
                                     ()
                                 ()
                             with ex -> ExceptionDispatchInfo.Capture(ex).Throw()
@@ -110,15 +110,9 @@ type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
                     let collectionName = PluralizeName(typeof<'T>.Name)
                     let collection = db.GetCollection<'T>(collectionName)
                     let filter = Builders<'T>.Filter.Eq("Id", stringId)
-                    let! mongoResult =
-                        task {
-                            try
-                                let! doc = collection.Find(filter).FirstOrDefaultAsync().ConfigureAwait(false)
-                                return doc
-                            with
-                            | :? MongoException -> return Unchecked.defaultof<'T>
-                        }
-                    return mongoResult
+                    // A missing document is null. Errors propagate (and transient ones are retried), so they're never taken for "not found"
+                    let! doc = collection.Find(filter).FirstOrDefaultAsync().ConfigureAwait(false)
+                    return doc
                 })
 
         member this.LoadManyAsync<'T when 'T : not struct>(ids: obj[]) =
@@ -132,16 +126,9 @@ type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
                     let collectionName = PluralizeName(typeof<'T>.Name)
                     let collection = db.GetCollection<'T>(collectionName)
                     let filter = Builders<'T>.Filter.In("Id", stringIds)
-                    let! mongoResult =
-                        task {
-                            try
-                                let! docs = collection.Find(filter).ToListAsync().ConfigureAwait(false)
-                                return docs |> Seq.cast<'T> |> Seq.toArray
-                            with
-                            | :? MongoException -> return Array.empty<'T>
-                        }
+                    let! mongoResult = collection.Find(filter).ToListAsync().ConfigureAwait(false)
 
-                    let foundDocs = 
+                    let foundDocs =
                         mongoResult
                         |> Seq.choose (fun doc ->
                             let docType = doc.GetType()
