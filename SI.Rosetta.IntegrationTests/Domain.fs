@@ -66,11 +66,7 @@ type ParcelCreatedUpcaster() =
     interface IEventUpcaster with
         member _.Upcast(ev) =
             match ev.TypeName with
-            | "ParcelCreated" ->
-                let data = ev.Data.DeepClone() :?> Newtonsoft.Json.Linq.JObject
-                data.["Recipient"] <- data.["Addressee"]
-                data.Remove("Addressee") |> ignore
-                { TypeName = "ParcelRegistered"; Data = data }
+            | "ParcelCreated" -> { ev.RenameField("Addressee", "Recipient") with TypeName = "ParcelRegistered" }
             | _ -> ev
 
 [<CLIMutable>]

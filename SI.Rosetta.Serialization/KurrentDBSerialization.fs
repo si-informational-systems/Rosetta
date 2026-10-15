@@ -4,7 +4,8 @@ open SI.Rosetta.Common
 
 /// EventEncoding as KurrentDB events: the record JSON is the event data, and the metadata names the record type
 module KurrentDBSerialization =
-    open Newtonsoft.Json
+    open System.Diagnostics
+    open System.Text.Json
     open System.Collections.Generic
     open System.Text
     open Microsoft.FSharp.Reflection
@@ -15,7 +16,7 @@ module KurrentDBSerialization =
     let EventsDUClrTypeNameHeader = "EventsDiscriminatedUnionClrTypeName"
     let DiscriminatedUnionCaseTypeHeader = "DiscriminatedUnionCaseType"
 
-    let JsonSettings = EventEncoding.JsonSettings
+    let JsonOptions = EventEncoding.JsonOptions
 
     type KurrentDBSerializedEvent = {
         EventClrName: string
@@ -35,8 +36,15 @@ module KurrentDBSerialization =
             dict.Add(EventClrTypeNameHeader, fieldType.AssemblyQualifiedName)
             dict.Add(EventsDUClrTypeNameHeader, event.GetType().AssemblyQualifiedName)
             dict.Add(DiscriminatedUnionCaseTypeHeader, typeName)
+            // The command's trace, which the projections handling the event continue
+            match Activity.Current with
+            | null -> ()
+            | activity ->
+                dict.[RosettaTelemetry.TraceParentHeader] <- activity.Id
+                if not (System.String.IsNullOrEmpty activity.TraceStateString) then
+                    dict.[RosettaTelemetry.TraceStateHeader] <- activity.TraceStateString
             dict
-        let metadata = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(eventHeaders, JsonSettings))
+        let metadata = JsonSerializer.SerializeToUtf8Bytes(eventHeaders, JsonOptions)
 
         let serialized: KurrentDBSerializedEvent = {
             EventClrName = typeName
@@ -47,11 +55,25 @@ module KurrentDBSerialization =
 
     /// The event as the 'TEvent case its record type names, after the upcasters, or the record type name 'TEvent has no case for
     let private ReadEvent<'TEvent when 'TEvent :> IAggregateEvents> (upcasters: IEventUpcaster seq) (resolvedEvent: ResolvedEvent) : Result<'TEvent, string> =
-        let metadata = resolvedEvent.Event.Metadata.ToArray()
-        let metadataObj = JsonConvert.DeserializeObject<Dictionary<string, obj>>(Encoding.UTF8.GetString(metadata))
-        let caseTypeName = metadataObj.[DiscriminatedUnionCaseTypeHeader].ToString()
+        use metadata = JsonDocument.Parse(resolvedEvent.Event.Metadata)
+        let caseTypeName = metadata.RootElement.GetProperty(DiscriminatedUnionCaseTypeHeader).GetString()
         let json = Encoding.UTF8.GetString(resolvedEvent.Event.Data.ToArray())
         EventEncoding.Decode<'TEvent> upcasters caseTypeName json
+
+    /// The trace context of the command that stored the event, or the default (no parent) when it has none
+    let TraceContextOf (resolvedEvent: ResolvedEvent) : ActivityContext =
+        try
+            use metadata = JsonDocument.Parse(resolvedEvent.Event.Metadata)
+            let mutable traceParent = Unchecked.defaultof<JsonElement>
+            let mutable traceState = Unchecked.defaultof<JsonElement>
+            if metadata.RootElement.TryGetProperty(RosettaTelemetry.TraceParentHeader, &traceParent) then
+                let state =
+                    if metadata.RootElement.TryGetProperty(RosettaTelemetry.TraceStateHeader, &traceState) then traceState.GetString()
+                    else null
+                let mutable context = Unchecked.defaultof<ActivityContext>
+                if ActivityContext.TryParse(traceParent.GetString(), state, &context) then context else ActivityContext()
+            else ActivityContext()
+        with _ -> ActivityContext()
 
     /// The event as a 'TEvent case, after the upcasters. Throws UnknownEventException when 'TEvent has no case for its record type
     let DeserializeWith<'TEvent when 'TEvent :> IAggregateEvents> (upcasters: IEventUpcaster seq) (resolvedEvent: ResolvedEvent) : 'TEvent =

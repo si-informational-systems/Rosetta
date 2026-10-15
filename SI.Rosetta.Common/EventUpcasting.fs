@@ -1,15 +1,23 @@
 namespace SI.Rosetta.Common
 
 open System
-open Newtonsoft.Json.Linq
+open System.Text.Json.Nodes
 
 /// An event as it was written, before it's matched to a case of the events DU it's read into
 type StoredEvent = {
-    /// The name of the record type it was written with, which picks the DU case
+    /// The name it was stored under (its record's [<EventType>] or type name), which picks the DU case
     TypeName: string
-    /// The record, as JSON
-    Data: JObject
-}
+    /// The record, as JSON. It's parsed for each event read, so an upcaster may change it in place
+    Data: JsonObject
+} with
+    /// The event with its field oldName renamed newName, or unchanged when it has no oldName
+    member this.RenameField(oldName: string, newName: string) =
+        let mutable value = Unchecked.defaultof<JsonNode>
+        if this.Data.TryGetPropertyValue(oldName, &value) then
+            // A JSON node belongs to one object, so it leaves the old field before it joins the new one
+            this.Data.Remove oldName |> ignore
+            this.Data.[newName] <- value
+        this
 
 /// Rewrites an event written by an older version of the domain into one the current events DU can read,
 /// e.g. after a record type or one of its fields was renamed.

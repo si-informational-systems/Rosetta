@@ -78,6 +78,7 @@ type IProjectionsStore =
 - **RavenDB/MongoDB Projections**: Fast, flexible read models.
 - **Event Evolution**: Upcasters rename events and fields as they're read; an event a DU doesn't know stops a Projection with a clear error, or is skipped with `[<SkipUnknownEvents>]`.
 - **Plug-and-Play Host Extensions**: Register everything with a single line, on any .NET host builder.
+- **OpenTelemetry-ready**: Traces and metrics for commands and projections, with one trace from a request to every read model it updates.
 - **CQRS Handlers**: Command and event handler patterns out-of-the-box.
 - **Idempotency & Consistency**: Built-in support for safe, repeatable operations.
 - **Modern F# & C# Support**: Idiomatic, clean code for both languages.
@@ -494,7 +495,35 @@ How the JavaScript projections are deployed on startup:
 
 ## 🔁 Evolving events: upcasting and unknown events
 
-An event is matched to its DU case by the **name of its record type**, so renaming a record, or one of its fields, would leave the events already in KurrentDB unreadable. An **upcaster** rewrites them, as they're read, into the shape the current DU expects:
+An event is stored under the **name of its record type**, and read back into the DU case whose record has that name. Changing a record would therefore leave the events already in KurrentDB unreadable, unless you use one of these:
+
+| The record… | Old events stay readable with |
+|---|---|
+| gains a field | nothing: older events read it as its default (`null`, `0`, `None`) |
+| loses a field | nothing: the stored value is ignored |
+| is renamed | `[<EventType("OldName")>]` on the renamed record |
+| renames, retypes or splits fields, or is renamed without an `[<EventType>]` | an upcaster |
+
+### The stored format
+
+An event's data is its record as plain JSON (System.Text.Json), and its metadata names the record it's stored under, so the events don't depend on F#: a C# service can read them into C# records. F# options are written as their value, or `null` for `None`. DUs inside a record keep the `{"Case": …, "Fields": […]}` shape, so they're F#-only.
+
+### Stable event type names
+
+`[<EventType>]` fixes the name a record is stored under (and that Custom Projections link it by), so the record type can be renamed freely:
+
+```fsharp
+open SI.Rosetta.Common
+
+[<EventType("PersonRegistered")>]   // the name its events were stored under
+type PersonSignedUp = { Id: string; Name: string }
+```
+
+Keep the name once events are stored. To make every rename safe from the start, give each event record an `[<EventType>]` with its current name. Two cases of one DU can't share a name: reading that DU fails with an error naming them.
+
+### Upcasters
+
+An **upcaster** rewrites old events, as they're read, into the shape the current DU expects:
 
 ```fsharp
 open SI.Rosetta.Common   // where IEventUpcaster lives, so a Published Language project can hold its upcasters
@@ -504,17 +533,16 @@ type PersonCreatedUpcaster() =
     interface IEventUpcaster with
         member _.Upcast(ev) =
             match ev.TypeName with
-            | "PersonCreated" ->
-                let data = ev.Data.DeepClone() :?> Newtonsoft.Json.Linq.JObject
-                data.["Name"] <- data.["FullName"]
-                data.Remove("FullName") |> ignore
-                { TypeName = "PersonRegistered"; Data = data }
+            | "PersonCreated" -> { ev.RenameField("FullName", "Name") with TypeName = "PersonRegistered" }
             | _ -> ev
 
 services.AddSingleton<IEventUpcaster, PersonCreatedUpcaster>()
 ```
 
+`ev.Data` is the record as a System.Text.Json `JsonObject`, parsed for each event read, so an upcaster may change it in place. `RenameField` covers the common case. For other changes, use the `JsonObject` API directly: a JSON node belongs to one object, so remove it (or `DeepClone` it) before adding it under another name.
+
 - Register them in **every service that reads the events**: the Aggregates service rebuilds Aggregates from their stored events, too. Register them as singletons: one instance serves every Projection and command at once, so keep them stateless.
+- `TypeName` is the name the event is stored under (its record's `[<EventType>]` name, or the record type's name), and the upcaster returns the name of the record it should be read as.
 - Every event read from KurrentDB, by Aggregates and Projections alike, goes through every registered upcaster, **in registration order**, each getting the previous one's output. So register a chain oldest step first (v1→v2 before v2→v3), or upcast every old shape of an event straight to the current one in a single upcaster, which doesn't depend on order. Only the reading side changes: the stored events stay as they were written.
 - An event whose record type the DU has no case for (even after upcasting) throws an `UnknownEventException` that names the event, its stream and its number.
 - An **Aggregate** always fails on such an event: rebuilding its state without it would be wrong.
@@ -527,6 +555,47 @@ type PersonProjection() =
     inherit Projection<PersonEvents>()
     interface IAmHandledBy<PersonProjectionHandler, PersonEvents>
 ```
+
+---
+
+## 📈 Observability
+
+Rosetta traces and measures commands and projections with .NET's own `ActivitySource` and `Meter`, both named **`SI.Rosetta`**. It records nothing, and costs next to nothing, until your application listens. To export them with OpenTelemetry (packages `OpenTelemetry.Extensions.Hosting` and an exporter, e.g. `OpenTelemetry.Exporter.OpenTelemetryProtocol`):
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing.AddSource("SI.Rosetta").AddOtlpExporter())
+    .WithMetrics(metrics => metrics.AddMeter("SI.Rosetta").AddOtlpExporter());
+```
+
+```fsharp
+builder.Services
+    .AddOpenTelemetry()
+    .WithTracing(fun tracing -> tracing.AddSource("SI.Rosetta").AddOtlpExporter() |> ignore)
+    .WithMetrics(fun metrics -> metrics.AddMeter("SI.Rosetta").AddOtlpExporter() |> ignore) |> ignore
+```
+
+**Traces**
+
+| Span | Kind | Tags |
+|---|---|---|
+| `{Aggregate} {Command}`, e.g. `Person RegisterPerson` | Internal | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.command`, `rosetta.events` (stored), `rosetta.outcome` (`handled`, `rejected`, `failed`), `rosetta.domain_error` |
+| `{Projection} {Event}`, e.g. `Person PersonRegistered` | Consumer | `rosetta.projection`, `rosetta.stream`, `rosetta.event`, `rosetta.checkpoint`, `rosetta.outcome` (`skipped`) |
+
+A command's trace context (W3C `traceparent`/`tracestate`) is stored in the metadata of the events it produces, and the projections handling those events continue it. So one trace runs from the request, through the command, to every read model it updates, even across services. A rejected command (`DomainException`) or a failing projection marks its span as an error. Spans of your own code and of instrumented clients nest inside Rosetta's.
+
+**Metrics**
+
+| Instrument | Unit | Tags |
+|---|---|---|
+| `rosetta.commands` | `{command}` | `rosetta.aggregate`, `rosetta.command`, `rosetta.outcome` |
+| `rosetta.command.duration` | `s` | `rosetta.aggregate`, `rosetta.command` |
+| `rosetta.events.stored` | `{event}` | `rosetta.aggregate` |
+| `rosetta.projection.events` | `{event}` | `rosetta.projection`, `rosetta.outcome` (`handled`, `failed`, `skipped`) |
+| `rosetta.projection.event.duration` | `s` | `rosetta.projection` |
+| `rosetta.projection.resubscriptions` | `{resubscription}` | `rosetta.projection` |
+
+**Logs** still go through `ILogger`, configured by your application as before. With OpenTelemetry logging (`builder.Logging.AddOpenTelemetry(…)`), every entry written during a command or a projection also carries its trace and span ids.
 
 ---
 
@@ -665,6 +734,22 @@ dotnet run --project Test.Aggregates    # 2nd terminal: registers and renames a 
 ```
 
 The results show up in RavenDB Studio, database `TEST.ROSETTA`: the `People`, `TotalPeoples` and `Checkpoints` collections come from the Projections, and `Organizations` holds the state-based Aggregate (its Version is in the document's metadata). `docker compose down` stops the containers, and `docker compose down -v` also deletes their data.
+
+---
+
+## ⬆️ Upgrading to Rosetta 1.26
+
+- **Events are read and written with System.Text.Json** instead of Newtonsoft.Json, in the same format: events already stored read the same, and nothing is converted. Data is written compact rather than indented.
+- **F# options in events are written as their value** (`"Nickname": "Johnny"`, `null` for `None`) instead of `{"Case": "Some", "Fields": ["Johnny"]}`, so C# and plain System.Text.Json readers understand them. Rosetta 1.26 reads both shapes, but **services still on 1.25 can't read the new one**. Upgrade every service that reads your events before one that writes them, or keep writing the old shape until they're all upgraded:
+
+  ```fsharp
+  EventEncoding.WriteOptionsAs <- OptionFormat.Newtonsoft   // at startup, before any event is written
+  ```
+- **Decimals and date-like strings are stored exactly as written.** Before, decimals went through a `double` (`1234567890.123456789012345678` was stored as `1234567890.1234567`, `12.50` as `12.5`), and a string like `"2026-10-15T08:30:00.000Z"` was stored as `"…08:30:00Z"`. Events already stored keep what was written.
+- **Upcasters get the event as a System.Text.Json `JsonObject`** (`StoredEvent.Data`), instead of a `JObject`. `StoredEvent.RenameField` covers renamed fields.
+- **`[<EventType("name")>]`** on an event record fixes the name it's stored under, so the record can be renamed. See [Stable event type names](#stable-event-type-names).
+- `KurrentDBSerialization.JsonSettings` (Newtonsoft) is now `JsonOptions` (System.Text.Json).
+- **Traces and metrics**, off until your application listens to `SI.Rosetta`: see [Observability](#-observability). Events written inside a trace carry `traceparent` (and `tracestate`) in their metadata.
 
 ---
 

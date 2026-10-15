@@ -2,6 +2,7 @@ namespace SI.Rosetta.Projections
 
 open System
 open System.Collections.Generic
+open System.Diagnostics
 open System.Threading.Tasks
 open SI.Rosetta.Common
 
@@ -35,14 +36,19 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
     /// Throws a ProjectionException holding every handler's failure when any fails
     member this.HandleEvent(ev: 'TEvent, c: uint64) =
         task {
+            let started = Stopwatch.GetTimestamp()
+            let projectionTag = RosettaTelemetry.Tag "rosetta.projection" this.Name
             this.Checkpoint.Value <- c
             let handling = Task.WhenAll(this.StartHandlingTasks ev c)
             try
                 do! handling.ConfigureAwait(false)
             with _ when handling.IsFaulted ->
+                RosettaTelemetry.ProjectionEvents.Add(1L, projectionTag, RosettaTelemetry.Tag "rosetta.outcome" "failed")
                 // Awaiting rethrows only the first failure: handling.Exception has them all
                 raise (this.CreateProjectionException ev c handling.Exception)
             do! this.CheckpointStore.StoreAsync(this.Checkpoint).ConfigureAwait(false)
+            RosettaTelemetry.ProjectionEvents.Add(1L, projectionTag, RosettaTelemetry.Tag "rosetta.outcome" "handled")
+            RosettaTelemetry.ProjectionEventDuration.Record(RosettaTelemetry.SecondsSince started, projectionTag)
         }
         
     interface IProjectionInstance<'TEvent> with

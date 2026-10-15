@@ -19,10 +19,7 @@ type OrganizationRenamedUpcaster() =
     interface IEventUpcaster with
         member _.Upcast(ev) =
             match ev.TypeName with
-            | "OrganizationRenamed" ->
-                ev.Data.["Name"] <- ev.Data.["NewName"]
-                ev.Data.Remove("NewName") |> ignore
-                { TypeName = "OrganizationNameChanged"; Data = ev.Data }
+            | "OrganizationRenamed" -> { ev.RenameField("NewName", "Name") with TypeName = "OrganizationNameChanged" }
             | _ -> ev
 
 type OrganizationUpcastingTests() =

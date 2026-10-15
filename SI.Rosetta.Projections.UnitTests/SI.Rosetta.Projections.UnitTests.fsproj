@@ -17,6 +17,7 @@
     <Compile Include="TestKitProjectionStoreTests.fs" />
     <Compile Include="ProjectionTests.fs" />
     <Compile Include="SerializationTests.fs" />
+    <Compile Include="EventFormatTests.fs" />
     <Compile Include="HostingTests.fs" />
   </ItemGroup>
 

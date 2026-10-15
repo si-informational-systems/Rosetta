@@ -9,7 +9,7 @@ open System.Security.Cryptography.X509Certificates
 open System.Text
 open System.Threading.Tasks
 open Microsoft.Extensions.Configuration
-open Newtonsoft.Json.Linq
+open System.Text.Json
 open SI.Rosetta.Persistence.KurrentDB
 
 type StoredProjectionDefinition = {
@@ -84,11 +84,15 @@ type KurrentDBProjectionsHttpApi(conf: IConfiguration) =
                     use! response = client.SendAsync(request).ConfigureAwait(false)
                     if response.IsSuccessStatusCode then
                         let! json = response.Content.ReadAsStringAsync().ConfigureAwait(false)
-                        let config = JObject.Parse(json)
+                        use config = JsonDocument.Parse(json)
+                        let mutable query = Unchecked.defaultof<JsonElement>
+                        let mutable emitEnabled = Unchecked.defaultof<JsonElement>
                         result <- Ok {
-                            Query = config.Value<string>("query")
+                            Query = if config.RootElement.TryGetProperty("query", &query) then query.GetString() else null
                             // The field is missing when emit is disabled
-                            EmitEnabled = config.Value<Nullable<bool>>("emitEnabled").GetValueOrDefault() }
+                            EmitEnabled =
+                                config.RootElement.TryGetProperty("emitEnabled", &emitEnabled)
+                                && emitEnabled.ValueKind = JsonValueKind.True }
                         remaining <- []
                     else
                         result <- Error (sprintf "GET %s returned %d %O" uri.AbsoluteUri (int response.StatusCode) response.StatusCode)

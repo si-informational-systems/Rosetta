@@ -13,12 +13,15 @@
     <Compile Include="Pluralizer.fs" />
     <Compile Include="UnionCaseInfoUtils.fs" />
     <Compile Include="Messages.fs" />
+    <Compile Include="EventType.fs" />
     <Compile Include="EventUpcasting.fs" />
+    <Compile Include="OptionFormat.fs" />
     <Compile Include="EventEncoding.fs" />
+    <Compile Include="RosettaTelemetry.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="FSharp.SystemTextJson" Version="1.4.36" />
     <PackageReference Include="Pluralize.NET" Version="1.0.2" />
   </ItemGroup>
 

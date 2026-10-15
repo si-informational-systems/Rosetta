@@ -1,6 +1,7 @@
 ﻿namespace SI.Rosetta.Projections.KurrentDB
 
 open System
+open System.Diagnostics
 open System.Runtime.ExceptionServices
 open System.Threading
 open System.Threading.Tasks
@@ -55,18 +56,41 @@ type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
         let level = if SkippedEventTypes.Add typeName then LogLevel.Warning else LogLevel.Debug
         logger.Log(level, "Projection {Name} SKIPPED event {EventType} (event {EventNumber} of stream {EventStream}): {EventsType} has no case for it.",
             this.Name, typeName, event.Event.EventNumber.ToUInt64(), event.Event.EventStreamId, typeof<'TEvent>.Name)
+        RosettaTelemetry.ProjectionEvents.Add(
+            1L, RosettaTelemetry.Tag "rosetta.projection" this.Name, RosettaTelemetry.Tag "rosetta.outcome" "skipped")
+        match Activity.Current with
+        | null -> ()
+        | activity -> activity.SetTag("rosetta.outcome", "skipped") |> ignore
 
     member private this.HandleEvent (event: ResolvedEvent) =
         task {
             let oneBasedCheckPoint = event.OriginalEventNumber.ToUInt64() + 1UL
             if isNotDeleted event then
-                if skipUnknownEvents then
-                    match KurrentDBSerialization.TryDeserializeWith<'TEvent> Upcasters event with
-                    | Some ev -> do! eventReceived(ev, oneBasedCheckPoint).ConfigureAwait(false)
-                    | None -> this.LogSkipped event
-                else
-                    let ev = KurrentDBSerialization.DeserializeWith<'TEvent> Upcasters event
-                    do! eventReceived(ev, oneBasedCheckPoint).ConfigureAwait(false)
+                // Continues the trace of the command that stored the event, read only when someone listens
+                let parent =
+                    if RosettaTelemetry.ActivitySource.HasListeners() then KurrentDBSerialization.TraceContextOf event
+                    else ActivityContext()
+                use activity =
+                    RosettaTelemetry.ActivitySource.StartActivity(
+                        sprintf "%s %s" this.Name event.Event.EventType, ActivityKind.Consumer, parent)
+                if not (isNull activity) then
+                    activity
+                        .SetTag("rosetta.projection", this.Name)
+                        .SetTag("rosetta.stream", event.Event.EventStreamId)
+                        .SetTag("rosetta.event", event.Event.EventType)
+                        .SetTag("rosetta.checkpoint", oneBasedCheckPoint) |> ignore
+                try
+                    if skipUnknownEvents then
+                        match KurrentDBSerialization.TryDeserializeWith<'TEvent> Upcasters event with
+                        | Some ev -> do! eventReceived(ev, oneBasedCheckPoint).ConfigureAwait(false)
+                        | None -> this.LogSkipped event
+                    else
+                        let ev = KurrentDBSerialization.DeserializeWith<'TEvent> Upcasters event
+                        do! eventReceived(ev, oneBasedCheckPoint).ConfigureAwait(false)
+                with ex ->
+                    if not (isNull activity) then
+                        activity.SetStatus(ActivityStatusCode.Error, ex.Message).AddException(ex) |> ignore
+                    ExceptionDispatchInfo.Throw ex
 
             currentCheckpoint <- oneBasedCheckPoint
             if resubscriptionAttempt > 0 then
@@ -154,6 +178,7 @@ type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
                         ExceptionDispatchInfo.Capture(unknown).Throw()
                     | Some ex ->
                         resubscriptionAttempt <- resubscriptionAttempt + 1
+                        RosettaTelemetry.Resubscriptions.Add(1L, RosettaTelemetry.Tag "rosetta.projection" this.Name)
                         if resubscriptionAttempt > MaxResubscriptionAttempts then
                             hasFailed <- true
                             error <- ex.Message

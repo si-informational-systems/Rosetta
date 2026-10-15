@@ -15,6 +15,7 @@
     <Compile Include="OrganizationTests.fs" />
     <Compile Include="HostingTests.fs" />
     <Compile Include="UpcastingTests.fs" />
+    <Compile Include="TelemetryTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

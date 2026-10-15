@@ -2,6 +2,7 @@ namespace SI.Rosetta.Projections.KurrentDB
 
 open System
 open System.Text
+open SI.Rosetta.Common
 
 module KurrentDBProjectionBuilder =
     let private IsNotFirstElement i = i > 0
@@ -22,7 +23,7 @@ module KurrentDBProjectionBuilder =
             if IsNotFirstElement i then
                 sb.Append "," |> ignore
             sb.Append(sprintf "%s: function(s,e){linkTo('%s', e);return s;}"
-                eventType.Name parameters.DestinationStreamName) |> ignore)
+                (EventEncoding.TypeNameOf eventType) parameters.DestinationStreamName) |> ignore)
         sb.ToString()
 
     let BuildProjectionDefinition (parameters: KurrentDBProjectionParameters): KurrentDBProjection =
