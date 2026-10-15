@@ -2,7 +2,7 @@
 
 open SI.Rosetta.Common
 
-/// StoredEvents' encoding, as KurrentDB events: the record JSON is the event data, and the metadata names the record type
+/// EventEncoding as KurrentDB events: the record JSON is the event data, and the metadata names the record type
 module KurrentDBSerialization =
     open Newtonsoft.Json
     open System.Collections.Generic
@@ -15,7 +15,7 @@ module KurrentDBSerialization =
     let EventsDUClrTypeNameHeader = "EventsDiscriminatedUnionClrTypeName"
     let DiscriminatedUnionCaseTypeHeader = "DiscriminatedUnionCaseType"
 
-    let JsonSettings = StoredEvents.JsonSettings
+    let JsonSettings = EventEncoding.JsonSettings
 
     type KurrentDBSerializedEvent = {
         EventClrName: string
@@ -24,7 +24,7 @@ module KurrentDBSerialization =
     }
 
     let Serialize(event: IAggregateEvents, headers: IDictionary<string, obj>) : KurrentDBSerializedEvent =
-        let typeName, json = StoredEvents.Encode event
+        let typeName, json = EventEncoding.Encode event
         let data = Encoding.UTF8.GetBytes json
 
         let case, _ = FSharpValue.GetUnionFields(event, event.GetType())
@@ -51,7 +51,7 @@ module KurrentDBSerialization =
         let metadataObj = JsonConvert.DeserializeObject<Dictionary<string, obj>>(Encoding.UTF8.GetString(metadata))
         let caseTypeName = metadataObj.[DiscriminatedUnionCaseTypeHeader].ToString()
         let json = Encoding.UTF8.GetString(resolvedEvent.Event.Data.ToArray())
-        StoredEvents.Decode<'TEvent> upcasters caseTypeName json
+        EventEncoding.Decode<'TEvent> upcasters caseTypeName json
 
     /// The event as a 'TEvent case, after the upcasters. Throws UnknownEventException when 'TEvent has no case for its record type
     let DeserializeWith<'TEvent when 'TEvent :> IAggregateEvents> (upcasters: IEventUpcaster seq) (resolvedEvent: ResolvedEvent) : 'TEvent =

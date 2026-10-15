@@ -19,8 +19,8 @@ type UpcastingTestKitBase<'TEvents when 'TEvents :> IAggregateEvents>() as this 
         Services.BuildServiceProvider())
 
     let Read (upcasters: IEventUpcaster array) (eventNumber: int) (ev: IAggregateEvents) : 'TEvents =
-        let typeName, json = StoredEvents.Encode ev
-        match StoredEvents.Decode<'TEvents> upcasters typeName json with
+        let typeName, json = EventEncoding.Encode ev
+        match EventEncoding.Decode<'TEvents> upcasters typeName json with
         | Ok current -> current
         | Error unknown -> raise (UnknownEventException(unknown, typeof<'TEvents>, "Given", uint64 eventNumber))
 
