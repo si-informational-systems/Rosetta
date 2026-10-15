@@ -737,41 +737,6 @@ The results show up in RavenDB Studio, database `TEST.ROSETTA`: the `People`, `T
 
 ---
 
-## ⬆️ Upgrading to Rosetta 1.26
-
-- **Events are read and written with System.Text.Json** instead of Newtonsoft.Json, in the same format: events already stored read the same, and nothing is converted. Data is written compact rather than indented.
-- **F# options in events are written as their value** (`"Nickname": "Johnny"`, `null` for `None`) instead of `{"Case": "Some", "Fields": ["Johnny"]}`, so C# and plain System.Text.Json readers understand them. Rosetta 1.26 reads both shapes, but **services still on 1.25 can't read the new one**. Upgrade every service that reads your events before one that writes them, or keep writing the old shape until they're all upgraded:
-
-  ```fsharp
-  EventEncoding.WriteOptionsAs <- OptionFormat.Newtonsoft   // at startup, before any event is written
-  ```
-- **Decimals and date-like strings are stored exactly as written.** Before, decimals went through a `double` (`1234567890.123456789012345678` was stored as `1234567890.1234567`, `12.50` as `12.5`), and a string like `"2026-10-15T08:30:00.000Z"` was stored as `"…08:30:00Z"`. Events already stored keep what was written.
-- **Upcasters get the event as a System.Text.Json `JsonObject`** (`StoredEvent.Data`), instead of a `JObject`. `StoredEvent.RenameField` covers renamed fields.
-- **`[<EventType("name")>]`** on an event record fixes the name it's stored under, so the record can be renamed. See [Stable event type names](#stable-event-type-names).
-- `KurrentDBSerialization.JsonSettings` (Newtonsoft) is now `JsonOptions` (System.Text.Json).
-- **Traces and metrics**, off until your application listens to `SI.Rosetta`: see [Observability](#-observability). Events written inside a trace carry `traceparent` (and `tracestate`) in their metadata.
-
----
-
-## ⬆️ Upgrading to Rosetta 1.25
-
-Mostly additions, but a few changes can break a build or change what a test or service does:
-
-- **`ISubscription<'TEvent>` has a new `SkipUnknownEvents` property.** Only your own `ISubscription` implementations need it: `member val SkipUnknownEvents = false with get, set`.
-- **An event a Projection's DU has no case for stops the Projection at once** with an `UnknownEventException` naming the event, instead of a `KeyNotFoundException` after five resubscribe attempts (about 30 s). Upcast it, add the case, or mark the Projection `[<SkipUnknownEvents>]`.
-- **The TestKits' comparer compares Guids, decimals and other structs by value.** Before, any two Guids looked equal, and decimals were compared only by their scale, so tests that should have failed on them passed. They fail now.
-- **`MongoDbProjectionsStore.LoadAsync`/`LoadManyAsync` throw server errors** (after the transient retries) instead of returning null or nothing, which looked like "not found".
-- **`MongoDbProjectionsStore.StoreInUnitOfWorkAsync` is transactional** (it writes in the transaction's session): a failed write stores none of the documents.
-- **`RavenDbProjectionsStore.DeleteAsync`/`DeleteInUnitOfWorkAsync` work**: they always threw before.
-- **The TestKits' in-memory store takes `int`, `int64` and `Guid` Ids**, and a missing document loads as null instead of throwing.
-- **MongoDB credentials are escaped**, and `MongoDB:ConnectionString` can replace `Host`, `Port`, `Username`, `Password` and `AuthSource`. `MongoConfig` has a new `ConnectionString` field, which only matters if you build the record yourself.
-- **Every Handler's failure is in the `ProjectionException`** (its inner `AggregateException`), and a Handler that throws before returning its `Task` is wrapped like the others.
-- **`KurrentDBSubscriptionFactory` takes the registered `IEventUpcaster`s** in its constructor, and `KurrentDBAggregateRepository` can take them too. Both are created by DI.
-- **`UseAggregatesWith` registers the Aggregate Handlers once** (it registered them twice). Each `Use…`/`Add…` still throws if it's used twice.
-- **Removed:** the `HostBuilderEventSourcedExtensionInUse`, `HostBuilderStateBasedExtensionInUse` (Aggregates) and `HostBuilderExtensionInUse` (Projections) constants. The services collection itself now records what was added.
-
----
-
 ## ⬆️ Upgrading from EventStoreDB 24.10 to KurrentDB
 
 KurrentDB 26.x upgrades a 24.10 database in place. Back it up first.
