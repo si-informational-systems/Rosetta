@@ -15,7 +15,10 @@ type KurrentDBAggregateRepositoryTests(databases: Databases) =
     let NewId () = sprintf "StoredParcels-%s" (Guid.NewGuid().ToString("N"))
 
     let Get (repository: IAggregateRepository) (id: string) =
-        repository.GetAsync<ParcelAggregate, ParcelAggregateState, ParcelEvents>(id)
+        task {
+            let! state = repository.GetAsync<ParcelAggregateState>(id)
+            return state |> Option.map (fun state -> ParcelAggregate(State = state))
+        }
 
     [<Fact>]
     member this.``An aggregate is read back as it was stored``() =
@@ -25,7 +28,7 @@ type KurrentDBAggregateRepositoryTests(databases: Databases) =
             let parcel = ParcelAggregate()
             parcel.Execute(ParcelCommands.Register { Id = id; Recipient = "Ada" })
             parcel.Execute(ParcelCommands.Readdress { Id = id; Recipient = "Grace" })
-            do! repository.StoreAsync<ParcelAggregate, ParcelAggregateState>(parcel)
+            do! repository.StoreAsync(parcel)
 
             let! stored = Get repository id
 
@@ -40,15 +43,15 @@ type KurrentDBAggregateRepositoryTests(databases: Databases) =
             let id = NewId()
             let parcel = ParcelAggregate()
             parcel.Execute(ParcelCommands.Register { Id = id; Recipient = "Ada" })
-            do! repository.StoreAsync<ParcelAggregate, ParcelAggregateState>(parcel)
+            do! repository.StoreAsync(parcel)
 
             let! first = Get repository id
             let! second = Get repository id
             first.Value.Execute(ParcelCommands.Readdress { Id = id; Recipient = "Grace" })
             second.Value.Execute(ParcelCommands.Readdress { Id = id; Recipient = "Linus" })
-            do! repository.StoreAsync<ParcelAggregate, ParcelAggregateState>(first.Value)
+            do! repository.StoreAsync(first.Value)
 
-            let! _ = Assert.ThrowsAsync<ConcurrencyException>(fun () -> repository.StoreAsync<ParcelAggregate, ParcelAggregateState>(second.Value))
+            let! _ = Assert.ThrowsAsync<ConcurrencyException>(fun () -> repository.StoreAsync(second.Value))
             ()
         }
 

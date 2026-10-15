@@ -23,34 +23,27 @@ type TestKitAggregateRepository() =
             InMemoryStore.[id] <- list
     
     interface IAggregateRepository with
-        member this.GetAsync<'TAggregate, 'TAggregateState, 'TEvents
-                        when 'TAggregate : (new : unit -> 'TAggregate) 
-                        and 'TAggregate :> IAggregate<'TAggregateState>
-                        and 'TAggregate : not struct
-                        and 'TAggregateState : (new : unit -> 'TAggregateState)
-                        and 'TAggregateState :> IAggregateStateInstance<'TEvents>
-                        and 'TEvents :> IAggregateEvents>
+        member this.GetAsync<'TAggregateState
+                        when 'TAggregateState : (new : unit -> 'TAggregateState)
+                        and 'TAggregateState :> IAggregateState>
             (id: string, version: int64) =
             task {
                 if not (InMemoryStore.ContainsKey id) then
                     return None
                 else
                     let state = new 'TAggregateState()
-                    
+
                     let events = InMemoryStore.[id]
-                    events 
+                    events
                     |> Seq.takeWhile (fun _ -> state.Version <> version)
-                    |> Seq.iter (fun ev -> 
-                        state.Mutate(ev :?> 'TEvents))
-                            
-                    let agg = new 'TAggregate()
-                    agg.SetState state
-                    return Some agg
+                    |> Seq.iter state.Mutate
+
+                    return Some state
             }
-            
-        member this.StoreAsync<'TAggregate, 'TAggregateState
-                            when 'TAggregate :> IAggregate<'TAggregateState>>
-            (agg: 'TAggregate) =
+
+        member this.StoreAsync<'TAggregateState
+                            when 'TAggregateState :> IAggregateState>
+            (agg: IAggregate<'TAggregateState>) =
             task {
                 let events = LoadEvents agg.Id
                 

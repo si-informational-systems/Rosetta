@@ -16,8 +16,8 @@ module OrganizationEndpoints =
     // State-based: the state is the Organization's RavenDB document, its Version is in the document's @metadata
     let LoadOrganization (repo: IStateBasedAggregateRepository) (id: string) () =
         task {
-            let! organization = repo.GetAsync<OrganizationAggregate, Organization, OrganizationEvents>(id).ConfigureAwait(false)
-            return organization |> Option.map (fun organization -> organization.State :> IAggregateState)
+            let! organization = repo.GetAsync<Organization>(id).ConfigureAwait(false)
+            return organization |> Option.map (fun organization -> organization :> IAggregateState)
         }
 
     let Map (app: WebApplication) =

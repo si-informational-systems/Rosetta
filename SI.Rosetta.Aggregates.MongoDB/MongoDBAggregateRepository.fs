@@ -11,28 +11,21 @@ type MongoDBAggregateRepository(db: IMongoDatabase) =
         db.GetCollection<'TAggregateState>(PluralizeName(typeof<'TAggregateState>.Name))
 
     interface IStateBasedAggregateRepository with
-        member this.GetAsync<'TAggregate, 'TAggregateState, 'TEvents
-                                    when 'TAggregate :> IAggregate<'TAggregateState>
-                                    and 'TAggregate : (new : unit -> 'TAggregate)
-                                    and 'TAggregate : not struct
-                                    and 'TAggregateState : (new : unit -> 'TAggregateState)
-                                    and 'TAggregateState :> IAggregateStateInstance<'TEvents>
-                                    and 'TEvents :> IAggregateEvents>
-            (id: string, version: int64): System.Threading.Tasks.Task<Option<'TAggregate>> =
+        member this.GetAsync<'TAggregateState
+                                    when 'TAggregateState : (new : unit -> 'TAggregateState)
+                                    and 'TAggregateState :> IAggregateState>
+            (id: string, version: int64): System.Threading.Tasks.Task<Option<'TAggregateState>> =
             task {
                 let collection = this.GetCollection<'TAggregateState>()
                 let filter = Builders<'TAggregateState>.Filter.Eq("Id", id)
                 let! aggregateState = collection.Find(filter).FirstOrDefaultAsync().ConfigureAwait(false)
                 if isNull (box aggregateState) then return None
-                else
-                    let aggregate = new 'TAggregate()
-                    aggregate.SetState(aggregateState)
-                    return Some aggregate
+                else return Some aggregateState
             }
 
-        member this.StoreAsync<'TAggregate, 'TAggregateState
-                    when 'TAggregate :> IAggregate<'TAggregateState>>
-                    (aggregate: 'TAggregate): System.Threading.Tasks.Task =
+        member this.StoreAsync<'TAggregateState
+                    when 'TAggregateState :> IAggregateState>
+                    (aggregate: IAggregate<'TAggregateState>): System.Threading.Tasks.Task =
             task {
                 let collection = this.GetCollection<'TAggregateState>()
                 let filter = Builders<'TAggregateState>.Filter.Eq("Id", aggregate.Id)

@@ -3,7 +3,7 @@ namespace $rootnamespace$.$fileinputname$
 open SI.Rosetta.Aggregates
 
 type $fileinputname$Aggregate() =
-    inherit Aggregate<$fileinputname$AggregateState, $fileinputname$Commands, $fileinputname$Events>()
+    inherit Aggregate<$fileinputname$AggregateState, $fileinputname$Commands>()
 
     override this.Execute(command: $fileinputname$Commands) =
         match command with

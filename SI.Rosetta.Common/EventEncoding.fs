@@ -76,16 +76,16 @@ module EventEncoding =
     let Encode (event: IAggregateEvents) : string * string =
         EncodeWith WriteOptionsAs event
 
-    /// The 'TEvent case for a stored event, after the upcasters, or the event type name 'TEvent has no case for
-    let Decode<'TEvent when 'TEvent :> IAggregateEvents>
-        (upcasters: IEventUpcaster seq) (typeName: string) (json: string) : Result<'TEvent, string> =
+    /// The eventsType case for a stored event, after the upcasters, or the event type name eventsType has no case for
+    let DecodeAs (eventsType: Type)
+        (upcasters: IEventUpcaster seq) (typeName: string) (json: string) : Result<IAggregateEvents, string> =
         let FindCase name =
-            match (CasesOf typeof<'TEvent>).TryGetValue name with
+            match (CasesOf eventsType).TryGetValue name with
             | true, case -> Some case
             | false, _ -> None
 
         let MakeEvent (case: UnionCaseInfo) (record: obj) =
-            FSharpValue.MakeUnion(case, [| record |]) :?> 'TEvent
+            FSharpValue.MakeUnion(case, [| record |]) :?> IAggregateEvents
 
         if Seq.isEmpty upcasters then
             match FindCase typeName with
@@ -98,3 +98,8 @@ module EventEncoding =
             match FindCase stored.TypeName with
             | Some case -> Ok (MakeEvent case (stored.Data.Deserialize(GetUnionCaseType case, JsonOptions)))
             | None -> Error stored.TypeName
+
+    /// The 'TEvent case for a stored event, after the upcasters, or the event type name 'TEvent has no case for
+    let Decode<'TEvent when 'TEvent :> IAggregateEvents>
+        (upcasters: IEventUpcaster seq) (typeName: string) (json: string) : Result<'TEvent, string> =
+        DecodeAs typeof<'TEvent> upcasters typeName json |> Result.map (fun ev -> ev :?> 'TEvent)

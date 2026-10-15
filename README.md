@@ -41,17 +41,14 @@ It provides:
 ```fsharp
 //Implementing the db for Aggregates (either to save the entire AggregateState all at once or to save the produced Events for Event Sourcing purposes)
 type IAggregateRepository =
-    abstract member StoreAsync<'TAggregate, 'TAggregateState
-            when 'TAggregate :> IAggregate<'TAggregateState>> : 
-            aggregate: 'TAggregate -> Task
-    abstract member GetAsync<'TAggregate, 'TAggregateState, 'TEvents
-            when 'TAggregate : (new : unit -> 'TAggregate) 
-            and 'TAggregate :> IAggregate<'TAggregateState>
-            and 'TAggregate : not struct
-            and 'TAggregateState : (new : unit -> 'TAggregateState)
-            and 'TAggregateState :> IAggregateStateInstance<'TEvents>
-            and 'TEvents :> IAggregateEvents> : 
-        id: string * [<Optional; DefaultParameterValue(Int64.MaxValue)>] version: int64 -> Task<Option<'TAggregate>>
+    abstract member StoreAsync<'TAggregateState
+            when 'TAggregateState :> IAggregateState> :
+            aggregate: IAggregate<'TAggregateState> -> Task
+    // An event-sourced store reads the events as state.EventsType and applies them with state.Mutate
+    abstract member GetAsync<'TAggregateState
+            when 'TAggregateState : (new : unit -> 'TAggregateState)
+            and 'TAggregateState :> IAggregateState> :
+        id: string * [<Optional; DefaultParameterValue(Int64.MaxValue)>] version: int64 -> Task<Option<'TAggregateState>>
 
 type IEventSourcedAggregateRepository = inherit IAggregateRepository // e.g. KurrentDB
 type IStateBasedAggregateRepository = inherit IAggregateRepository   // e.g. RavenDB, MongoDB
@@ -300,7 +297,7 @@ Each applied event increments `Version`, which is used for optimistic concurrenc
 
 ```fsharp
 type PersonAggregate() =
-    inherit Aggregate<PersonAggregateState, PersonCommands, PersonEvents>() // <AggregateState, IAggregateCommands, IAggregateEvents>
+    inherit Aggregate<PersonAggregateState, PersonCommands>() // <AggregateState, IAggregateCommands>
 
     override this.Execute(command: PersonCommands) =
         match command with
@@ -322,6 +319,8 @@ type PersonAggregate() =
         this.Apply event
 ```
 
+`this.Apply` only compiles with the events DU of the Aggregate's state: `PersonEvents` here, from `AggregateState<PersonEvents>`.
+
 ### Handler
 
 ```fsharp
@@ -330,7 +329,7 @@ type IPersonAggregateHandler = // [REQUIRED] the Handler is registered in DI und
 
 // IEventSourcedAggregateRepository - Event Sourcing; IStateBasedAggregateRepository - persist the AggregateState instead
 type PersonAggregateHandler(repo: IEventSourcedAggregateRepository) =
-    inherit AggregateHandler<PersonAggregate, PersonAggregateState, PersonCommands, PersonEvents>() // <Aggregate, AggregateState, IAggregateCommands, IAggregateEvents>
+    inherit AggregateHandler<PersonAggregate, PersonCommands>() // <Aggregate, IAggregateCommands>
     do base.AggregateRepository <- repo
     interface IPersonAggregateHandler
 
@@ -405,6 +404,7 @@ and PersonProjectionHandler(store: INoSqlStore) =
 ```
 
 - A Projection can be handled by several Handlers - add one `IAmHandledBy<…>` per Handler.
+- `IAmHandledBy<Handler, Events>` must name the Projection's own events DU: a Handler of another DU doesn't compile (FS0366 "No implementation was given for 'abstract IProjectionOf.EventsType…'" on that line).
 - Checkpoints are stored per Projection (`Checkpoints-{ProjectionName}`), so a restarted service continues where it stopped.
 - Add `[<DisabledProjection>]` to switch a Projection off.
 

@@ -53,12 +53,12 @@ module KurrentDBSerialization =
         }
         serialized
 
-    /// The event as the 'TEvent case its record type names, after the upcasters, or the record type name 'TEvent has no case for
-    let private ReadEvent<'TEvent when 'TEvent :> IAggregateEvents> (upcasters: IEventUpcaster seq) (resolvedEvent: ResolvedEvent) : Result<'TEvent, string> =
+    /// The event as the eventsType case its record type names, after the upcasters, or the record type name eventsType has no case for
+    let private ReadEvent (eventsType: System.Type) (upcasters: IEventUpcaster seq) (resolvedEvent: ResolvedEvent) : Result<IAggregateEvents, string> =
         use metadata = JsonDocument.Parse(resolvedEvent.Event.Metadata)
         let caseTypeName = metadata.RootElement.GetProperty(DiscriminatedUnionCaseTypeHeader).GetString()
         let json = Encoding.UTF8.GetString(resolvedEvent.Event.Data.ToArray())
-        EventEncoding.Decode<'TEvent> upcasters caseTypeName json
+        EventEncoding.DecodeAs eventsType upcasters caseTypeName json
 
     /// The trace context of the command that stored the event, or the default (no parent) when it has none
     let TraceContextOf (resolvedEvent: ResolvedEvent) : ActivityContext =
@@ -75,17 +75,23 @@ module KurrentDBSerialization =
             else ActivityContext()
         with _ -> ActivityContext()
 
-    /// The event as a 'TEvent case, after the upcasters. Throws UnknownEventException when 'TEvent has no case for its record type
-    let DeserializeWith<'TEvent when 'TEvent :> IAggregateEvents> (upcasters: IEventUpcaster seq) (resolvedEvent: ResolvedEvent) : 'TEvent =
-        match ReadEvent<'TEvent> upcasters resolvedEvent with
+    /// The event as an eventsType case, after the upcasters. Throws UnknownEventException when eventsType has no case for its record type
+    let DeserializeAs (eventsType: System.Type) (upcasters: IEventUpcaster seq) (resolvedEvent: ResolvedEvent) : IAggregateEvents =
+        match ReadEvent eventsType upcasters resolvedEvent with
         | Ok ev -> ev
         | Error typeName ->
             raise (UnknownEventException(
-                typeName, typeof<'TEvent>, resolvedEvent.Event.EventStreamId, resolvedEvent.Event.EventNumber.ToUInt64()))
+                typeName, eventsType, resolvedEvent.Event.EventStreamId, resolvedEvent.Event.EventNumber.ToUInt64()))
+
+    /// The event as a 'TEvent case, after the upcasters. Throws UnknownEventException when 'TEvent has no case for its record type
+    let DeserializeWith<'TEvent when 'TEvent :> IAggregateEvents> (upcasters: IEventUpcaster seq) (resolvedEvent: ResolvedEvent) : 'TEvent =
+        DeserializeAs typeof<'TEvent> upcasters resolvedEvent :?> 'TEvent
 
     /// The event as a 'TEvent case, after the upcasters, or None when 'TEvent has no case for its record type
     let TryDeserializeWith<'TEvent when 'TEvent :> IAggregateEvents> (upcasters: IEventUpcaster seq) (resolvedEvent: ResolvedEvent) : 'TEvent option =
-        ReadEvent<'TEvent> upcasters resolvedEvent |> Result.toOption
+        match ReadEvent typeof<'TEvent> upcasters resolvedEvent with
+        | Ok ev -> Some (ev :?> 'TEvent)
+        | Error _ -> None
 
     /// The event as a 'TEvent case. Throws UnknownEventException when 'TEvent has no case for its record type
     let Deserialize<'TEvent when 'TEvent :> IAggregateEvents>(resolvedEvent: ResolvedEvent) : 'TEvent =

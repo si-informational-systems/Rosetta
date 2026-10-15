@@ -7,7 +7,7 @@ type I$fileinputname$AggregateHandler =
 
 // Use IStateBasedAggregateRepository instead to persist the AggregateState without Event Sourcing
 type $fileinputname$AggregateHandler(repo: IEventSourcedAggregateRepository) =
-    inherit AggregateHandler<$fileinputname$Aggregate, $fileinputname$AggregateState, $fileinputname$Commands, $fileinputname$Events>()
+    inherit AggregateHandler<$fileinputname$Aggregate, $fileinputname$Commands>()
     do base.AggregateRepository <- repo
     interface I$fileinputname$AggregateHandler
     

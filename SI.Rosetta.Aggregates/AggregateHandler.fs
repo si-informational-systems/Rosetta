@@ -9,14 +9,11 @@ open Microsoft.FSharp.Reflection
 open SI.Rosetta.Common
 
 [<AbstractClass>]
-type AggregateHandler<'TAggregate, 'TAggregateState, 'TCommands, 'TEvents 
-        when 'TAggregate :> IAggregateInstance<'TAggregateState, 'TCommands> 
+type AggregateHandler<'TAggregate, 'TCommands
+        when 'TAggregate :> IAggregateInstance<'TCommands>
         and 'TAggregate : (new : unit -> 'TAggregate)
         and 'TAggregate : not struct
-        and 'TAggregateState : (new : unit -> 'TAggregateState)
-        and 'TAggregateState :> IAggregateStateInstance<'TEvents>
-        and 'TCommands :> IAggregateCommands
-        and 'TEvents :> IAggregateEvents>() =
+        and 'TCommands :> IAggregateCommands>() =
 
     let AggregateName = typeof<'TAggregate>.Name.Replace("Aggregate", "", StringComparison.InvariantCultureIgnoreCase)
     let NotFoundResponse = sprintf "%sDoesNotExist" AggregateName
@@ -47,19 +44,17 @@ type AggregateHandler<'TAggregate, 'TAggregateState, 'TCommands, 'TEvents
             let mutable outcome = "handled"
             try
                 try
-                    let! aggOpt = this.AggregateRepository.GetAsync<'TAggregate, 'TAggregateState, 'TEvents>(id).ConfigureAwait(false)
-                    let aggregate =
-                        match aggOpt with
-                        | Some agg -> agg
-                        | None when mustExist -> raise (DomainException.Named(NotFoundResponse, String.Empty))
-                        | None -> new 'TAggregate()
+                    let aggregate = new 'TAggregate()
+                    let! exists = aggregate.LoadAsync(this.AggregateRepository, id).ConfigureAwait(false)
+                    if mustExist && not exists then
+                        raise (DomainException.Named(NotFoundResponse, String.Empty))
                     let originalVersion = aggregate.Version
 
                     aggregate.Execute command
                     this.PublishedEvents <- aggregate.PublishedEvents
 
                     if originalVersion <> aggregate.Version then
-                        do! this.AggregateRepository.StoreAsync<'TAggregate, 'TAggregateState>(aggregate).ConfigureAwait(false)
+                        do! aggregate.StoreAsync(this.AggregateRepository).ConfigureAwait(false)
                         let stored = aggregate.Version - originalVersion
                         RosettaTelemetry.EventsStored.Add(stored, RosettaTelemetry.Tag "rosetta.aggregate" AggregateName)
                         if not (isNull activity) then activity.SetTag("rosetta.events", stored) |> ignore

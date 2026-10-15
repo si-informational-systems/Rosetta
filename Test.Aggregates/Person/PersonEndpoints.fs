@@ -22,8 +22,8 @@ module PersonEndpoints =
     // Event-Sourced: the state is rebuilt from the Person's KurrentDB stream
     let LoadPerson (repo: IEventSourcedAggregateRepository) (id: string) () =
         task {
-            let! person = repo.GetAsync<PersonAggregate, PersonAggregateState, PersonEvents>(id).ConfigureAwait(false)
-            return person |> Option.map (fun person -> person.State :> IAggregateState)
+            let! person = repo.GetAsync<PersonAggregateState>(id).ConfigureAwait(false)
+            return person |> Option.map (fun person -> person :> IAggregateState)
         }
 
     let Map (app: WebApplication) =

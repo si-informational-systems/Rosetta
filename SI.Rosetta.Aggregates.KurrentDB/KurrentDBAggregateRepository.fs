@@ -20,9 +20,7 @@ type KurrentDBAggregateRepository(client: KurrentDBClient, upcasters: IEventUpca
         let serializedEvent = KurrentDBSerialization.Serialize(event, headers)
         EventData(Uuid.NewUuid(), serializedEvent.EventClrName, serializedEvent.Data, ReadOnlyMemory<byte> serializedEvent.Metadata)
 
-    member private this.SaveAggregate<'TAggregate, 'TAggregateState
-                            when 'TAggregate :> IAggregate<'TAggregateState>> 
-                            (aggregate: 'TAggregate) = 
+    member private this.SaveAggregate (aggregate: IAggregate) =
         task {
             let commitHeaders = 
                 let dict = Dictionary<string, obj>()
@@ -42,12 +40,10 @@ type KurrentDBAggregateRepository(client: KurrentDBClient, upcasters: IEventUpca
             aggregate.Changes.Clear()
         }
 
-    member private this.TrySaveAggregate<'TAggregate, 'TAggregateState
-                                when 'TAggregate :> IAggregate<'TAggregateState>> 
-                                (aggregate: 'TAggregate) =
+    member private this.TrySaveAggregate (aggregate: IAggregate) =
         task {
             try
-                do! this.SaveAggregate<'TAggregate, 'TAggregateState>(aggregate).ConfigureAwait(false)
+                do! this.SaveAggregate(aggregate).ConfigureAwait(false)
             with
             | :? AggregateException as ex when (ex.InnerException :? WrongExpectedVersionException) -> 
                 raise (ConcurrencyException ex.Message)
@@ -56,37 +52,31 @@ type KurrentDBAggregateRepository(client: KurrentDBClient, upcasters: IEventUpca
         }
 
     interface IEventSourcedAggregateRepository with
-        member this.StoreAsync<'TAggregate, 'TAggregateState
-                                when 'TAggregate :> IAggregate<'TAggregateState>> 
-                                aggregate = 
+        member this.StoreAsync<'TAggregateState
+                                when 'TAggregateState :> IAggregateState>
+                                (aggregate: IAggregate<'TAggregateState>) =
             task {
-                do! this.TrySaveAggregate<'TAggregate, 'TAggregateState>(aggregate).ConfigureAwait(false)
+                do! this.TrySaveAggregate(aggregate).ConfigureAwait(false)
             }
 
-        member this.GetAsync<'TAggregate, 'TAggregateState, 'TEvents 
-                                when 'TAggregate : (new : unit -> 'TAggregate) 
-                                and 'TAggregate :> IAggregate<'TAggregateState>
-                                and 'TAggregate : not struct
-                                and 'TAggregateState : (new : unit -> 'TAggregateState)
-                                and 'TAggregateState :> IAggregateStateInstance<'TEvents>
-                                and 'TEvents :> IAggregateEvents>
+        member this.GetAsync<'TAggregateState
+                                when 'TAggregateState : (new : unit -> 'TAggregateState)
+                                and 'TAggregateState :> IAggregateState>
             (id: string, version: int64) =
             task {
                 let state = new 'TAggregateState()
-                let aggregate = new 'TAggregate()
 
                 try
                     let events = client.ReadStreamAsync(Direction.Forwards, id, StreamPosition.Start, version)
-                    
+
                     do! events
                         |> AsyncSeq.takeWhile (fun _ -> state.Version <> version)
                         |> AsyncSeq.iter (fun resolvedEvent ->
-                            let deserializedEvent = KurrentDBSerialization.DeserializeWith<'TEvents> Upcasters resolvedEvent
+                            let deserializedEvent = KurrentDBSerialization.DeserializeAs state.EventsType Upcasters resolvedEvent
                             state.Mutate deserializedEvent
                             )
-                    
-                    aggregate.SetState state
-                    return Some aggregate
+
+                    return Some state
 
                 with
                 | :? AggregateException as ex when (ex.InnerException :? StreamNotFoundException) -> 

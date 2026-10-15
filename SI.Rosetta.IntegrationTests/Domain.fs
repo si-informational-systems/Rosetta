@@ -35,7 +35,7 @@ type ParcelAggregateState() =
             this.Recipient <- e.Recipient
 
 type ParcelAggregate() =
-    inherit Aggregate<ParcelAggregateState, ParcelCommands, ParcelEvents>()
+    inherit Aggregate<ParcelAggregateState, ParcelCommands>()
 
     override this.Execute(command) =
         match command with
@@ -50,7 +50,7 @@ type IParcelAggregateHandler =
     inherit IAggregateHandler
 
 type ParcelAggregateHandler(repo: IEventSourcedAggregateRepository) =
-    inherit AggregateHandler<ParcelAggregate, ParcelAggregateState, ParcelCommands, ParcelEvents>()
+    inherit AggregateHandler<ParcelAggregate, ParcelCommands>()
     do base.AggregateRepository <- repo
     interface IParcelAggregateHandler
 

@@ -71,12 +71,12 @@ The generated files provide a basic structure that you can extend:
 - Add your state properties and specific event handling logic
 
 ### Aggregate  
-- Inherits from `Aggregate<{Name}AggregateState, {Name}Commands, {Name}Events>`
+- Inherits from `Aggregate<{Name}AggregateState, {Name}Commands>`
 - Contains a default `Execute` implementation
 - Add your business logic and command handling
 
 ### AggregateHandler
-- Inherits from `AggregateHandler<{Name}Aggregate, {Name}AggregateState, {Name}Commands, {Name}Events>`
+- Inherits from `AggregateHandler<{Name}Aggregate, {Name}Commands>`
 - Takes an `IEventSourcedAggregateRepository` (swap it for `IStateBasedAggregateRepository` to persist the state without Event Sourcing)
 - Implements `I{Name}AggregateHandler` interface (required: Handlers are registered in DI under it)
 - Contains a default `ExecuteAsync` implementation

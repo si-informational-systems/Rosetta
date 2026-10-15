@@ -3,7 +3,7 @@
 open SI.Rosetta.Aggregates
 
 type OrganizationAggregate() =
-    inherit Aggregate<OrganizationAggregateState, OrganizationCommands, OrganizationEvents>()
+    inherit Aggregate<OrganizationAggregateState, OrganizationCommands>()
 
     override this.Execute(command: OrganizationCommands) =
         match command with

@@ -51,6 +51,9 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
             RosettaTelemetry.ProjectionEventDuration.Record(RosettaTelemetry.SecondsSince started, projectionTag)
         }
         
+    interface IProjectionOf<'TEvent> with
+        member this.EventsType = typeof<'TEvent>
+
     interface IProjectionInstance<'TEvent> with
         member this.Name 
             with get() = this.Name
