@@ -16,6 +16,7 @@ open SI.Rosetta.Persistence.RavenDB
 open SI.Rosetta.Persistence.KurrentDB
 open SI.Rosetta.Persistence.MongoDB
 open SI.Rosetta.Common
+open KurrentDB.Client
 
 /// Registered with the event-sourced aggregates, so they're added only once
 type internal EventSourcedAggregatesAdded() = class end
@@ -90,9 +91,11 @@ module ServiceCollectionExtensions =
 
         match typeof<'AggregateRepository> with
         | t when t = typeof<KurrentDB> ->
-            let client = KurrentDBFactory.InitializeKurrentDB configuration
+            // The application's one client, shared with Projections when they're in the same host
+            KurrentDBServices.AddKurrentDBClients services configuration
             services.AddSingleton<IEventSourcedAggregateRepository>(fun sp ->
-                KurrentDBAggregateRepository(client, sp.GetServices<IEventUpcaster>()) :> IEventSourcedAggregateRepository) |> ignore
+                KurrentDBAggregateRepository(sp.GetRequiredService<KurrentDBClient>(), sp.GetServices<IEventUpcaster>())
+                :> IEventSourcedAggregateRepository) |> ignore
         | _ -> raise (Exception("Only types extending `EventSourcedAggregateRepository` can be used as an Aggregate Repository generic option!"))
 
     let private AddStateBasedRepository<'AggregateRepository> (services: IServiceCollection) (configuration: IConfiguration) =

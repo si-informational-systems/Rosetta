@@ -99,6 +99,33 @@ type ParcelProjection() =
     inherit Projection<ParcelEvents>()
     interface IAmHandledBy<ParcelProjectionHandler, ParcelEvents>
 
+/// The recipients a Parcel was addressed to, in order
+[<CLIMutable>]
+type ParcelRoute = { Id: string; Recipients: string list }
+
+type ParcelRouteProjectionHandler(store: INoSqlStore) =
+    let Store = store
+
+    member private this.Route(id: string, recipient: string) =
+        task {
+            let routeId = sprintf "Routes-%s" id
+            let! route = Store.LoadAsync<ParcelRoute>(routeId).ConfigureAwait(false)
+            let recipients = if isNull (box route) then [] else route.Recipients
+            do! Store.StoreAsync({ Id = routeId; Recipients = recipients @ [ recipient ] }).ConfigureAwait(false)
+        }
+
+    interface IProjectionHandler<ParcelEvents> with
+        member this.Handle(event, _checkpoint) =
+            match event with
+            | ParcelEvents.Registered e -> this.Route(e.Id, e.Recipient)
+            | ParcelEvents.Readdressed e -> this.Route(e.Id, e.Recipient)
+
+/// Also run by the hosted service in HostingTests: a second subscription on the same stream
+[<HandlesStream(ParcelStreams.Parcels)>]
+type ParcelRouteProjection() =
+    inherit Projection<ParcelEvents>()
+    interface IAmHandledBy<ParcelRouteProjectionHandler, ParcelEvents>
+
 /// Started directly by KurrentDBSubscriptionTests, so the hosted service leaves it alone
 [<DisabledProjection; SkipUnknownEvents; HandlesStream(ParcelStreams.SkippingParcels)>]
 type SkippingParcelProjection() =

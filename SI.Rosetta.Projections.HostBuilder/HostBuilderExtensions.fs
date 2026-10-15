@@ -11,6 +11,7 @@ open MongoDB.Driver
 open Raven.Client.Documents
 open SI.Rosetta.Projections
 open SI.Rosetta.Projections.KurrentDB
+open SI.Rosetta.Persistence.KurrentDB
 open SI.Rosetta.Persistence.RavenDB
 open SI.Rosetta.Persistence.MongoDB
 open SI.Rosetta.Projections.RavenDB
@@ -78,6 +79,8 @@ module ServiceCollectionExtensions =
         match typeof<'EventRepository> with
         //KURRENTDB
         | t when t = typeof<KurrentDB> ->
+            // One client for every subscription, shared with Aggregates when they're in the same host
+            KurrentDBServices.AddKurrentDBClients services configuration
             services
                 .AddTransient<ISubscriptionFactory, KurrentDBSubscriptionFactory>()
                 .AddTransient<IKurrentDBCustomJSProjectionsFactory, KurrentDBCustomJSProjectionsFactory>() |> ignore

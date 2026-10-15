@@ -8,7 +8,6 @@ open Microsoft.Extensions.Logging
 open FSharp.Control
 open System.Reflection
 open KurrentDB.Client
-open SI.Rosetta.Persistence.KurrentDB
 
 type CustomProjectionAction =
     | Create
@@ -33,8 +32,11 @@ module CustomProjectionSync =
 type IKurrentDBCustomJSProjectionsFactory =
     abstract member CreateCustomProjections: Assembly -> Task
 
-type KurrentDBCustomJSProjectionsFactory(conf: IConfiguration, logger: ILogger<KurrentDBCustomJSProjectionsFactory>) =
-    let ProjectionManagementClient = KurrentDBFactory.InitializeProjectionManagementClient conf
+type KurrentDBCustomJSProjectionsFactory(
+    conf: IConfiguration,
+    logger: ILogger<KurrentDBCustomJSProjectionsFactory>,
+    projectionManagementClient: KurrentDBProjectionManagementClient) =
+    let ProjectionManagementClient = projectionManagementClient
     let HttpApi = KurrentDBProjectionsHttpApi(conf)
 
     member private this.BuildProjectionDefinitions (assembly: Assembly) =

@@ -159,6 +159,8 @@ For anything else MongoDB supports (TLS, `mongodb+srv://`, a replica set, severa
 
 Rosetta uses `KurrentDB.Client` and is tested against KurrentDB 26.2. A single KurrentDB node is free to run in production from 26.2; clusters need a license.
 
+A service has **one `KurrentDBClient`** (and one `KurrentDBProjectionManagementClient`), registered as singletons and shared by its Aggregates and every Projection subscription: a client multiplexes all of them over its gRPC connection. It's created on first use, so registering doesn't connect, and a service starts even while KurrentDB is unreachable: the calls that need it fail until it's back (subscriptions retry, see [Projections at runtime](#projections-at-runtime)). To configure the client yourself, register your own `KurrentDBClient` singleton before calling Rosetta, which keeps it.
+
 ### 3. Register Aggregates & Projections
 
 The first generic argument chooses the Event-Sourced store, the second the store for state-based Aggregates (or Projections).

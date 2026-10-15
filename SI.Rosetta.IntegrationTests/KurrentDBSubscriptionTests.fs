@@ -3,7 +3,6 @@ namespace SI.Rosetta.IntegrationTests
 open System
 open System.Threading
 open System.Threading.Tasks
-open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.DependencyInjection
 open Xunit
 open KurrentDB.Client
@@ -19,7 +18,7 @@ type KurrentDBSubscriptionTests(databases: Databases) =
     let Services =
         ServiceCollection()
             .AddLogging()
-            .AddSingleton<IConfiguration>(databases.Configuration "unused")
+            .AddSingleton<KurrentDBClient>(databases.KurrentDBClient)
             .AddSingleton<INoSqlStore>(Store)
             .AddTransient<ICheckpointStore, StubCheckpointStore>()
             .AddTransient<ISubscriptionFactory, KurrentDBSubscriptionFactory>()

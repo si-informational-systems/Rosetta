@@ -19,6 +19,8 @@ type HostingTests(databases: Databases) =
             let assembly = typeof<ParcelProjection>.Assembly
             builder.UseAggregatesWithEventSourcing<SI.Rosetta.Aggregates.HostBuilder.KurrentDB>(assembly) |> ignore
             builder.UseProjectionsWith<SI.Rosetta.Projections.HostBuilder.KurrentDB, RavenDB>(assembly) |> ignore
+            // Aggregates and Projections share the one client
+            Assert.Single(builder.Services, fun descriptor -> descriptor.ServiceType = typeof<global.KurrentDB.Client.KurrentDBClient>) |> ignore
             use host = builder.Build()
             do! host.StartAsync()
 
@@ -28,10 +30,12 @@ type HostingTests(databases: Databases) =
             do! handler.ExecuteAsync(ParcelCommands.Readdress { Id = id; Recipient = "Grace" })
 
             let store = host.Services.GetRequiredService<INoSqlStore>()
-            do! Eventually (TimeSpan.FromSeconds 60.0) "the Parcel projection catches up" (fun () ->
+            do! Eventually (TimeSpan.FromSeconds 60.0) "the Parcel and ParcelRoute projections catch up" (fun () ->
                     task {
                         let! parcel = store.LoadAsync<Parcel>(id)
+                        let! route = store.LoadAsync<ParcelRoute>(sprintf "Routes-%s" id)
                         return not (isNull (box parcel)) && parcel.Recipient = "Grace"
+                            && not (isNull (box route)) && route.Recipients = [ "Ada"; "Grace" ]
                     })
             do! host.StopAsync()
         }

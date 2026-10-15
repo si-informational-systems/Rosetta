@@ -6,6 +6,7 @@ open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
 open Xunit
+open KurrentDB.Client
 open SI.Rosetta.Projections
 open SI.Rosetta.Projections.HostBuilder
 
@@ -30,6 +31,19 @@ type HostingTests() =
         Assert.NotNull(host.Services.GetRequiredService<INoSqlStore>())
         Assert.NotNull(host.Services.GetRequiredService<ICheckpointStore>())
         Assert.NotNull(host.Services.GetRequiredService<OrganizationProjectionHandler>())
+
+    [<Fact>]
+    member this.``Every subscription shares one KurrentDBClient``() =
+        let builder = CreateBuilder()
+
+        builder.UseProjectionsWith<KurrentDB, MongoDB>(typeof<OrganizationProjection>.Assembly) |> ignore
+
+        let registered (serviceType: Type) =
+            builder.Services |> Seq.filter (fun descriptor -> descriptor.ServiceType = serviceType) |> Seq.exactlyOne
+        Assert.Equal(ServiceLifetime.Singleton, (registered typeof<KurrentDBClient>).Lifetime)
+        Assert.Equal(ServiceLifetime.Singleton, (registered typeof<KurrentDBProjectionManagementClient>).Lifetime)
+        use host = builder.Build()
+        Assert.Same(host.Services.GetRequiredService<KurrentDBClient>(), host.Services.GetRequiredService<KurrentDBClient>())
 
     [<Fact>]
     member this.``Projections can only be added once``() =
