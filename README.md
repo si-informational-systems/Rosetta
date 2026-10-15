@@ -231,7 +231,7 @@ services.AddProjectionsWith<KurrentDB, RavenDB>(configuration, typeof(PersonProj
 | `UseAggregatesWith<TEventSourced, TStateBased>` | a mix of both | both of the above |
 | `UseProjectionsWith<TEventRepository, TProjectionsStore>` | Projections | `KurrentDB` → `RavenDB`, `MongoDB` |
 
-Each `Use…` has an `Add…` counterpart for `IServiceCollection`, and each can be used once per service collection. Aggregate Handlers and Projection Handlers are discovered in the given assembly and registered automatically.
+Each `Use…` has an `Add…` counterpart for `IServiceCollection`, and each can be used once per service collection. The stores are a closed set: only Rosetta's own `KurrentDB`, `RavenDB` and `MongoDB` compile as store arguments (the marker types can't be inherited). Aggregate Handlers and Projection Handlers are discovered in the given assembly and registered automatically.
 
 ---
 

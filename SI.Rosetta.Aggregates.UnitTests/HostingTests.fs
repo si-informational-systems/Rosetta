@@ -61,3 +61,11 @@ type HostingTests() =
 
         Assert.Throws<InvalidOperationException>(fun () ->
             builder.UseAggregatesWithoutEventSourcing<MongoDB>(typeof<OrganizationAggregateHandler>.Assembly) |> ignore) |> ignore
+
+    [<Fact>]
+    member this.``Only Rosetta's stores can be used``() =
+        // No public constructor: the bases can't be inherited outside Rosetta, or passed as a store (the new() constraint)
+        Assert.Empty(typeof<EventSourcedAggregateRepository>.GetConstructors())
+        Assert.Empty(typeof<StateBasedAggregateRepository>.GetConstructors())
+        for store in [ typeof<KurrentDB>; typeof<RavenDB>; typeof<MongoDB> ] do
+            Assert.True(store.IsSealed, sprintf "%s can be inherited" store.Name)

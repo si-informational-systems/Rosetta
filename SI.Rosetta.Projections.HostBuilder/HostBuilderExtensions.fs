@@ -36,9 +36,9 @@ module HostBuilderExtensionCommon =
 module ServiceCollectionExtensions =
     /// The projections in projectionsAssembly, subscribed to 'EventRepository and stored in 'ProjectionsStore
     let AddProjectionsWith<'EventRepository, 'ProjectionsStore
-        when 'EventRepository : not struct
+        when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
         and 'EventRepository :> EventRepository
-        and 'ProjectionsStore : not struct
+        and 'ProjectionsStore : not struct and 'ProjectionsStore : (new : unit -> 'ProjectionsStore)
         and 'ProjectionsStore :> ProjectionStore
         > (services: IServiceCollection) (configuration: IConfiguration) (projectionsAssembly: Assembly) =
         if services |> Seq.exists (fun descriptor -> descriptor.ServiceType = typeof<ProjectionsAdded>) then
@@ -99,9 +99,9 @@ module ServiceCollectionExtensions =
 [<AutoOpen>]
 module HostBuilderExtensions =
     let UseProjectionsWith<'EventRepository, 'ProjectionsStore
-    when 'EventRepository : not struct
+    when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
     and 'EventRepository :> EventRepository
-    and 'ProjectionsStore : not struct
+    and 'ProjectionsStore : not struct and 'ProjectionsStore : (new : unit -> 'ProjectionsStore)
     and 'ProjectionsStore :> ProjectionStore
     > (hostBuilder: IHostBuilder) (projectionsAssembly: Assembly) =
         hostBuilder.ConfigureServices(fun ctx services ->
@@ -112,9 +112,9 @@ module HostBuilderExtensions =
 module CSharp_HostBuilderExtensions =
     [<Extension>]
     let UseProjectionsWith<'EventRepository, 'ProjectionsStore
-    when 'EventRepository : not struct
+    when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
     and 'EventRepository :> EventRepository
-    and 'ProjectionsStore : not struct
+    and 'ProjectionsStore : not struct and 'ProjectionsStore : (new : unit -> 'ProjectionsStore)
     and 'ProjectionsStore :> ProjectionStore
     > (hostBuilder: IHostBuilder, projectionsAssembly: Assembly) =
         HostBuilderExtensions.UseProjectionsWith<'EventRepository, 'ProjectionsStore> hostBuilder projectionsAssembly
@@ -125,9 +125,9 @@ module CSharp_HostBuilderExtensions =
 type ProjectionsExtensions =
     [<Extension>]
     static member UseProjectionsWith<'EventRepository, 'ProjectionsStore
-        when 'EventRepository : not struct
+        when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
         and 'EventRepository :> EventRepository
-        and 'ProjectionsStore : not struct
+        and 'ProjectionsStore : not struct and 'ProjectionsStore : (new : unit -> 'ProjectionsStore)
         and 'ProjectionsStore :> ProjectionStore>
         (builder: IHostApplicationBuilder, projectionsAssembly: Assembly) =
         ServiceCollectionExtensions.AddProjectionsWith<'EventRepository, 'ProjectionsStore>
@@ -136,9 +136,9 @@ type ProjectionsExtensions =
 
     [<Extension>]
     static member AddProjectionsWith<'EventRepository, 'ProjectionsStore
-        when 'EventRepository : not struct
+        when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
         and 'EventRepository :> EventRepository
-        and 'ProjectionsStore : not struct
+        and 'ProjectionsStore : not struct and 'ProjectionsStore : (new : unit -> 'ProjectionsStore)
         and 'ProjectionsStore :> ProjectionStore>
         (services: IServiceCollection, configuration: IConfiguration, projectionsAssembly: Assembly) =
         ServiceCollectionExtensions.AddProjectionsWith<'EventRepository, 'ProjectionsStore> services configuration projectionsAssembly
