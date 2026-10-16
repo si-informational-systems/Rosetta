@@ -32,41 +32,6 @@ It provides:
 
 ---
 
-## 📝 Note:
-
- - While **Rosetta** is opinionated in its choice of technologies, it is built to be easily extensible.
- - You can integrate any Event Sourcing Store and SQL/NoSQL database implementation with minimal effort, adapting the framework to your unique requirements and infrastructure.
- - Any additional implementations are very welcome and would contribute to the Framework's out-of-the-box usability!
-
-```fsharp
-//Implementing the db for Aggregates (either to save the entire AggregateState all at once or to save the produced Events for Event Sourcing purposes)
-type IAggregateRepository =
-    abstract member StoreAsync<'TAggregateState
-            when 'TAggregateState :> IAggregateState> :
-            aggregate: IAggregate<'TAggregateState> -> Task
-    // An event-sourced store reads the events as state.EventsType and applies them with state.Mutate
-    abstract member GetAsync<'TAggregateState
-            when 'TAggregateState : (new : unit -> 'TAggregateState)
-            and 'TAggregateState :> IAggregateState> :
-        id: string * [<Optional; DefaultParameterValue(Int64.MaxValue)>] version: int64 -> Task<Option<'TAggregateState>>
-
-type IEventSourcedAggregateRepository = inherit IAggregateRepository // e.g. KurrentDB
-type IStateBasedAggregateRepository = inherit IAggregateRepository   // e.g. RavenDB, MongoDB
-
-//Implementing the db for Projections
-type ICheckpointStore =
-    abstract member ReadAsync: id: string -> Task<Checkpoint> 
-    abstract member StoreAsync: checkpoint: Checkpoint -> Task
-
-type IProjectionsStore =
-    abstract member StoreAsync<'T when 'T : not struct> : doc: 'T -> Task
-    abstract member StoreInUnitOfWorkAsync<'T when 'T : not struct> : docs: 'T[] -> Task
-    abstract member LoadAsync<'T when 'T : not struct> : id: obj -> Task<'T>
-    abstract member LoadManyAsync<'T when 'T : not struct> : ids: obj[] -> Task<Dictionary<obj, 'T>>
-    abstract member DeleteAsync<'T when 'T : not struct>: id: obj -> Task
-    abstract member DeleteInUnitOfWorkAsync<'T when 'T : not struct>: ids: obj[] -> Task
-```
-
 ## 📦 Features
 
 - **Aggregate & Event Abstractions**: Write expressive, testable domain logic.
@@ -700,6 +665,43 @@ type PersonUpcastingTests() =
 
 ---
 
+## 📝 Note:
+
+ - While **Rosetta** is opinionated in its choice of technologies, it is built to be easily extensible.
+ - You can integrate any Event Sourcing Store and SQL/NoSQL database implementation with minimal effort, adapting the framework to your unique requirements and infrastructure.
+ - Any additional implementations are very welcome and would contribute to the Framework's out-of-the-box usability!
+
+```fsharp
+//Implementing the db for Aggregates (either to save the entire AggregateState all at once or to save the produced Events for Event Sourcing purposes)
+type IAggregateRepository =
+    abstract member StoreAsync<'TAggregateState
+            when 'TAggregateState :> IAggregateState> :
+            aggregate: IAggregate<'TAggregateState> -> Task
+    // An event-sourced store reads the events as state.EventsType and applies them with state.Mutate
+    abstract member GetAsync<'TAggregateState
+            when 'TAggregateState : (new : unit -> 'TAggregateState)
+            and 'TAggregateState :> IAggregateState> :
+        id: string * [<Optional; DefaultParameterValue(Int64.MaxValue)>] version: int64 -> Task<Option<'TAggregateState>>
+
+type IEventSourcedAggregateRepository = inherit IAggregateRepository // e.g. KurrentDB
+type IStateBasedAggregateRepository = inherit IAggregateRepository   // e.g. RavenDB, MongoDB
+
+//Implementing the db for Projections
+type ICheckpointStore =
+    abstract member ReadAsync: id: string -> Task<Checkpoint> 
+    abstract member StoreAsync: checkpoint: Checkpoint -> Task
+
+type IProjectionsStore =
+    abstract member StoreAsync<'T when 'T : not struct> : doc: 'T -> Task
+    abstract member StoreInUnitOfWorkAsync<'T when 'T : not struct> : docs: 'T[] -> Task
+    abstract member LoadAsync<'T when 'T : not struct> : id: obj -> Task<'T>
+    abstract member LoadManyAsync<'T when 'T : not struct> : ids: obj[] -> Task<Dictionary<obj, 'T>>
+    abstract member DeleteAsync<'T when 'T : not struct>: id: obj -> Task
+    abstract member DeleteInUnitOfWorkAsync<'T when 'T : not struct>: ids: obj[] -> Task
+```
+
+---
+
 ## 🛠️ Building from source
 
 ```shell
@@ -745,34 +747,6 @@ Test.Aggregates is a small ASP.NET Core app (`--urls` changes its address). Its 
 The page's tables list the RavenDB documents (database `TEST.ROSETTA`), which you can also browse in RavenDB Studio. `People` and `TotalPeoples` come from the Projections, so they fill only while Test.Projections runs. `Organizations` holds the state-based Aggregate, whose Version is in the document's metadata. Organization never writes to KurrentDB, so `TotalOrganizations` stays 0. RavenDB refuses cross-origin requests, so the page reads the documents through the app (`GET /people`, `/organizations`, `/totals`).
 
 `docker compose down` stops the containers, and `docker compose down -v` also deletes their data.
-
----
-
-## ⬆️ Upgrading from EventStoreDB 24.10 to KurrentDB
-
-KurrentDB 26.x upgrades a 24.10 database in place. Back it up first.
-
-1. **Move the services to the Rosetta version that uses `KurrentDB.Client` first.** It works against both 24.10 and 26.2, so the services don't have to change at the same time as the server. Rosetta's own names changed with it:
-   - the packages `SI.Rosetta.Persistence.EventStore`, `SI.Rosetta.Aggregates.EventStore` and `SI.Rosetta.Projections.EventStore` are now `….KurrentDB` (the HostBuilder packages bring them in);
-   - the configuration section `EventStoreDB` is now `KurrentDB`. A service with only the old section fails at startup with `KurrentDB:ConnectionString is missing from the configuration`;
-   - the store marker type `EventStore` is now `KurrentDB`, and the `EventStore*`/`ES*` types are now `KurrentDB*`;
-   - `esdb://` connection strings still work, and `kurrentdb://` is the new scheme.
-2. **Rename the server settings.** `EVENTSTORE_*` environment variables become `KURRENTDB_*`, and `eventstore.conf` becomes `kurrentdb.conf`. The data and log paths move from `/var/lib/eventstore` and `/var/log/eventstore` to `/var/lib/kurrentdb` and `/var/log/kurrentdb`. KurrentDB sends anonymous usage statistics to Kurrent unless `KURRENTDB_TELEMETRY_OPTOUT` is `true`.
-3. **In Docker, give the data to the new user.** The EventStoreDB image runs as uid 1000, but the KurrentDB image (`kurrentplatform/kurrentdb`) runs as uid 1001. If the data directory isn't writable, KurrentDB doesn't fail. It logs `Access to path /var/lib/kurrentdb denied`, starts an **empty** database inside the container and still reports healthy. Fix the ownership before the first start, then check that your streams are there before the services connect:
-
-   ```shell
-   docker run --rm -v <data-volume>:/data -v <logs-volume>:/logs alpine chown -R 1001:1001 /data /logs
-   ```
-
-System projections such as `$by_category`, existing Custom Projections and the Projections' checkpoints carry over unchanged. Rosetta doesn't need AtomPub (`ENABLE_ATOM_PUB_OVER_HTTP`): it only reads projection definitions over the HTTP projections API, which is always on.
-
-To keep the data of the samples' older `eventstore` container, copy its volume before the first `docker compose up`:
-
-```shell
-docker compose create kurrentdb
-docker run --rm -v rosetta_eventstore-data:/from:ro -v rosetta_kurrentdb-data:/to alpine sh -c "cp -a /from/. /to/ && chown -R 1001:1001 /to"
-docker compose up -d --remove-orphans
-```
 
 ---
 
