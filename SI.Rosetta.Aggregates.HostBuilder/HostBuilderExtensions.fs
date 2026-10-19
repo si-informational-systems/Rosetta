@@ -6,6 +6,7 @@ open Microsoft.Extensions.Configuration
 open System
 open System.Reflection
 open System.Runtime.CompilerServices
+open System.Runtime.InteropServices
 open SI.Rosetta.Aggregates
 open SI.Rosetta.Aggregates.KurrentDB
 open SI.Rosetta.Aggregates.RavenDB
@@ -23,6 +24,9 @@ type internal EventSourcedAggregatesAdded() = class end
 
 /// Registered with the state-based aggregates, so they're added only once
 type internal StateBasedAggregatesAdded() = class end
+
+/// Registered with the outbox, so it's added only once
+type internal OutboxAdded() = class end
 
 [<AutoOpen>]
 module HostBuilderKurrentDBExtensionCommmon =
@@ -63,6 +67,12 @@ module HostBuilderRavenDBExtensionCommmon =
                         ))
         docStore;
 
+    /// The application's one IDocumentStore, shared by the state-based aggregates, the outbox and Projections when
+    /// they're in the same host. One the application registered first is kept
+    let RegisterRavenDocumentStore(services: IServiceCollection, config: IConfiguration) =
+        if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IDocumentStore>)) then
+            services.AddSingleton<IDocumentStore>(CreateRavenDocumentStore(config)) |> ignore
+
 [<AutoOpen>]
 module HostBuilderMongoDBExtensionCommmon =
     let RegisterMongoDatabase(services: IServiceCollection, config: IConfiguration) =
@@ -74,20 +84,52 @@ module HostBuilderMongoDBExtensionCommmon =
                 sp.GetRequiredService<IMongoClient>().GetDatabase(mongoConfig.DatabaseName)) |> ignore
         MongoConventions.Register()
 
+module OutboxConfiguration =
+    /// The outbox's settings from the Outbox configuration section: CollectionName (Outbox unless set) and
+    /// EventTTLMinutes (no expiry unless set)
+    let Read (configuration: IConfiguration) =
+        let options = OutboxOptions()
+        match configuration.["Outbox:CollectionName"] with
+        | name when String.IsNullOrWhiteSpace name -> ()
+        | name -> options.CollectionName <- name.Trim()
+        match configuration.["Outbox:EventTTLMinutes"] with
+        | minutes when String.IsNullOrWhiteSpace minutes -> ()
+        | minutes ->
+            match Double.TryParse(minutes, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture) with
+            | true, value when value > 0.0 -> options.EventTTL <- Nullable(TimeSpan.FromMinutes value)
+            | _ -> raise (InvalidOperationException(sprintf "Outbox:EventTTLMinutes must be a positive number of minutes, not '%s'." minutes))
+        options
+
 /// The registrations behind every Use…/Add… entry point: they only need the services and the configuration,
 /// so they work with IHostBuilder, IHostApplicationBuilder (Host.CreateApplicationBuilder, WebApplication.CreateBuilder)
 /// or a plain IServiceCollection
 [<AutoOpen>]
 module ServiceCollectionExtensions =
     let private EnsureAddedOnce<'Marker when 'Marker : (new : unit -> 'Marker) and 'Marker : not struct and 'Marker : (new : unit -> 'Marker)>
-        (services: IServiceCollection) (kind: string) =
+        (services: IServiceCollection) (addedTwice: string) =
         if services |> Seq.exists (fun descriptor -> descriptor.ServiceType = typeof<'Marker>) then
-            raise (InvalidOperationException(
-                sprintf "%s aggregates can only be added once: by one of `UseAggregatesWith…` or `AddAggregatesWith…`." kind))
+            raise (InvalidOperationException addedTwice)
         services.AddSingleton<'Marker>(new 'Marker()) |> ignore
 
+    let private AggregatesAddedTwice (kind: string) =
+        sprintf "%s aggregates can only be added once: by one of `UseAggregatesWith…` or `AddAggregatesWith…`." kind
+
+    /// The outbox, when one is registered: by UseOutboxWith/AddOutboxWith, before or after the aggregates, as the
+    /// repositories ask for it when they're first resolved. Or the application's own IOutbox
+    let private OutboxOf (sp: IServiceProvider) =
+        match box (sp.GetService<IOutbox>()) with
+        | null -> None
+        | outbox -> Some (outbox :?> IOutbox)
+
+    /// The repository, with the outbox behind it when one is registered
+    let private WithOutbox<'TRepository when 'TRepository :> IAggregateRepository>
+        (sp: IServiceProvider) (repository: IAggregateRepository) : 'TRepository =
+        match OutboxOf sp with
+        | None -> box repository :?> 'TRepository
+        | Some outbox -> box (OutboxAggregateRepository(repository, outbox)) :?> 'TRepository
+
     let private AddEventSourcedRepository<'AggregateRepository> (services: IServiceCollection) (configuration: IConfiguration) =
-        EnsureAddedOnce<EventSourcedAggregatesAdded> services "Event-sourced"
+        EnsureAddedOnce<EventSourcedAggregatesAdded> services (AggregatesAddedTwice "Event-sourced")
 
         match typeof<'AggregateRepository> with
         | t when t = typeof<KurrentDB> ->
@@ -95,20 +137,28 @@ module ServiceCollectionExtensions =
             KurrentDBServices.AddKurrentDBClients services configuration
             services.AddSingleton<IEventSourcedAggregateRepository>(fun sp ->
                 KurrentDBAggregateRepository(sp.GetRequiredService<KurrentDBClient>(), sp.GetServices<IEventUpcaster>())
-                :> IEventSourcedAggregateRepository) |> ignore
+                |> WithOutbox<IEventSourcedAggregateRepository> sp) |> ignore
         | _ -> raise (Exception("Only types extending `EventSourcedAggregateRepository` can be used as an Aggregate Repository generic option!"))
 
     let private AddStateBasedRepository<'AggregateRepository> (services: IServiceCollection) (configuration: IConfiguration) =
-        EnsureAddedOnce<StateBasedAggregatesAdded> services "State-based"
+        EnsureAddedOnce<StateBasedAggregatesAdded> services (AggregatesAddedTwice "State-based")
 
         match typeof<'AggregateRepository> with
+        // An outbox in the same store records the events with the state, in one transaction
         | t when t = typeof<RavenDB> ->
-            if not (services |> Seq.exists(fun descriptor -> descriptor.ServiceType = typeof<IDocumentStore>)) then
-                services.AddSingleton<IDocumentStore>(CreateRavenDocumentStore(configuration)) |> ignore
-            services.AddSingleton<IStateBasedAggregateRepository, RavenDBAggregateRepository>() |> ignore
+            RegisterRavenDocumentStore(services, configuration)
+            services.AddSingleton<IStateBasedAggregateRepository>(fun sp ->
+                let store = sp.GetRequiredService<IDocumentStore>()
+                match OutboxOf sp with
+                | Some (:? RavenDBOutbox as outbox) -> RavenDBAggregateRepository(store, Some outbox) :> IStateBasedAggregateRepository
+                | _ -> RavenDBAggregateRepository(store) |> WithOutbox<IStateBasedAggregateRepository> sp) |> ignore
         | t when t = typeof<MongoDB> ->
             RegisterMongoDatabase(services, configuration)
-            services.AddSingleton<IStateBasedAggregateRepository, MongoDBAggregateRepository>() |> ignore
+            services.AddSingleton<IStateBasedAggregateRepository>(fun sp ->
+                let db = sp.GetRequiredService<IMongoDatabase>()
+                match OutboxOf sp with
+                | Some (:? MongoDBOutbox as outbox) -> MongoDBAggregateRepository(db, Some outbox) :> IStateBasedAggregateRepository
+                | _ -> MongoDBAggregateRepository(db) |> WithOutbox<IStateBasedAggregateRepository> sp) |> ignore
         | _ -> raise (Exception("Only types extending `StateBasedAggregateRepository` can be used as an Aggregate Repository generic option!"))
 
     /// Event-sourced aggregates, with the handlers in aggregatesAssembly
@@ -140,6 +190,32 @@ module ServiceCollectionExtensions =
         RegisterAggregateHandlers(services, aggregatesAssembly)
         services
 
+    /// The outbox in 'OutboxStore, with the Outbox configuration section's settings, which configure may change
+    let internal AddOutbox<'OutboxStore> (services: IServiceCollection) (configuration: IConfiguration) (configure: Action<OutboxOptions>) =
+        EnsureAddedOnce<OutboxAdded> services "The outbox can only be added once: by `UseOutboxWith` or `AddOutboxWith`."
+        // Invalid settings fail now, not on the first command
+        let options = OutboxConfiguration.Read configuration
+        if not (isNull configure) then configure.Invoke options
+        options.Validate()
+
+        match typeof<'OutboxStore> with
+        | t when t = typeof<RavenDB> ->
+            RegisterRavenDocumentStore(services, configuration)
+            services.AddSingleton<IOutbox>(fun sp -> RavenDBOutbox(sp.GetRequiredService<IDocumentStore>(), options) :> IOutbox) |> ignore
+        | t when t = typeof<MongoDB> ->
+            RegisterMongoDatabase(services, configuration)
+            services.AddSingleton<IOutbox>(fun sp -> MongoDBOutbox(sp.GetRequiredService<IMongoDatabase>(), options) :> IOutbox) |> ignore
+        | _ -> raise (Exception("Only `RavenDB` and `MongoDB` can be used as an Outbox store generic option!"))
+        services
+
+    /// The outbox in 'OutboxStore (RavenDB or MongoDB): once an aggregate is stored, event-sourced or state-based, its
+    /// PublishedEvents are recorded there. Its settings come from the Outbox configuration section, and it can be added
+    /// before or after the aggregates
+    let AddOutboxWith<'OutboxStore
+        when 'OutboxStore : not struct and 'OutboxStore : (new : unit -> 'OutboxStore) and 'OutboxStore :> StateBasedAggregateRepository>
+        (services: IServiceCollection) (configuration: IConfiguration) =
+        AddOutbox<'OutboxStore> services configuration null
+
 [<AutoOpen>]
 module HostBuilderExtensions =
     let UseAggregatesWithEventSourcing<'AggregateRepository
@@ -162,6 +238,13 @@ module HostBuilderExtensions =
         (hostBuilder: IHostBuilder) (aggregatesAssembly: Assembly) =
         hostBuilder.ConfigureServices(fun ctx services ->
             AddAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository> services ctx.Configuration aggregatesAssembly |> ignore)
+
+    /// The outbox in 'OutboxStore (RavenDB or MongoDB), recording the PublishedEvents of every stored aggregate
+    let UseOutboxWith<'OutboxStore
+        when 'OutboxStore : not struct and 'OutboxStore : (new : unit -> 'OutboxStore) and 'OutboxStore :> StateBasedAggregateRepository>
+        (hostBuilder: IHostBuilder) =
+        hostBuilder.ConfigureServices(fun ctx services ->
+            AddOutboxWith<'OutboxStore> services ctx.Configuration |> ignore)
 
 // C#-friendly (tupled) extension methods delegating to the F# functions above
 [<Extension>]
@@ -186,6 +269,14 @@ module CSharp_HostBuilderExtensions =
         and 'TStateBasedAggregateRepository :> StateBasedAggregateRepository>
         (hostBuilder: IHostBuilder, aggregatesAssembly: Assembly) =
         HostBuilderExtensions.UseAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository> hostBuilder aggregatesAssembly
+
+    /// The outbox in 'OutboxStore (RavenDB or MongoDB), with the Outbox configuration section's settings, which configure may change
+    [<Extension>]
+    let UseOutboxWith<'OutboxStore
+        when 'OutboxStore : not struct and 'OutboxStore : (new : unit -> 'OutboxStore) and 'OutboxStore :> StateBasedAggregateRepository>
+        (hostBuilder: IHostBuilder, [<Optional; DefaultParameterValue(null: Action<OutboxOptions>)>] configure: Action<OutboxOptions>) =
+        hostBuilder.ConfigureServices(fun ctx services ->
+            ServiceCollectionExtensions.AddOutbox<'OutboxStore> services ctx.Configuration configure |> ignore)
 
 /// Extension methods for IHostApplicationBuilder (Host.CreateApplicationBuilder, WebApplication.CreateBuilder)
 /// and IServiceCollection, from C# or F#, delegating to the F# functions above
@@ -218,6 +309,15 @@ type AggregatesExtensions =
             builder.Services builder.Configuration aggregatesAssembly |> ignore
         builder
 
+    /// The outbox in 'OutboxStore (RavenDB or MongoDB), recording the PublishedEvents of every stored aggregate.
+    /// Its settings come from the Outbox configuration section, and configure may change them
+    [<Extension>]
+    static member UseOutboxWith<'OutboxStore
+        when 'OutboxStore : not struct and 'OutboxStore : (new : unit -> 'OutboxStore) and 'OutboxStore :> StateBasedAggregateRepository>
+        (builder: IHostApplicationBuilder, [<Optional; DefaultParameterValue(null: Action<OutboxOptions>)>] configure: Action<OutboxOptions>) =
+        ServiceCollectionExtensions.AddOutbox<'OutboxStore> builder.Services builder.Configuration configure |> ignore
+        builder
+
     [<Extension>]
     static member AddAggregatesWithEventSourcing<'AggregateRepository
         when 'AggregateRepository : not struct and 'AggregateRepository : (new : unit -> 'AggregateRepository) and 'AggregateRepository :> EventSourcedAggregateRepository>
@@ -239,3 +339,11 @@ type AggregatesExtensions =
         (services: IServiceCollection, configuration: IConfiguration, aggregatesAssembly: Assembly) =
         ServiceCollectionExtensions.AddAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository>
             services configuration aggregatesAssembly
+
+    /// The outbox in 'OutboxStore (RavenDB or MongoDB), recording the PublishedEvents of every stored aggregate.
+    /// Its settings come from the Outbox configuration section, and configure may change them
+    [<Extension>]
+    static member AddOutboxWith<'OutboxStore
+        when 'OutboxStore : not struct and 'OutboxStore : (new : unit -> 'OutboxStore) and 'OutboxStore :> StateBasedAggregateRepository>
+        (services: IServiceCollection, configuration: IConfiguration, [<Optional; DefaultParameterValue(null: Action<OutboxOptions>)>] configure: Action<OutboxOptions>) =
+        ServiceCollectionExtensions.AddOutbox<'OutboxStore> services configuration configure

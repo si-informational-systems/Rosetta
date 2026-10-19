@@ -17,6 +17,7 @@
     <Compile Include="MongoConfigTests.fs" />
     <Compile Include="KurrentDBAggregateRepositoryTests.fs" />
     <Compile Include="StateBasedAggregateRepositoryTests.fs" />
+    <Compile Include="OutboxTests.fs" />
     <Compile Include="KurrentDBSubscriptionTests.fs" />
     <Compile Include="HostingTests.fs" />
   </ItemGroup>

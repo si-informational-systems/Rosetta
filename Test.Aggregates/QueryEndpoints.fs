@@ -32,3 +32,5 @@ module QueryEndpoints =
         app.MapGet("/organizations", Func<RavenDocuments, Task<IResult>>(fun documents -> documents.CollectionAsync "Organizations")) |> ignore
         // Read Model of the cp-TotalPeopleAndOrganizations Custom Projection
         app.MapGet("/totals", Func<RavenDocuments, Task<IResult>>(fun documents -> documents.CollectionAsync "TotalPeoples")) |> ignore
+        // The PublishedEvents the Outbox recorded
+        app.MapGet("/outbox", Func<RavenDocuments, Task<IResult>>(fun documents -> documents.CollectionAsync "Outbox")) |> ignore

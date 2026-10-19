@@ -15,7 +15,7 @@ type AggregateHandler<'TAggregate, 'TCommands
         and 'TAggregate : not struct
         and 'TCommands :> IAggregateCommands>() =
 
-    let AggregateName = typeof<'TAggregate>.Name.Replace("Aggregate", "", StringComparison.InvariantCultureIgnoreCase)
+    let AggregateName = AggregateNameOf typeof<'TAggregate>
     let NotFoundResponse = sprintf "%sDoesNotExist" AggregateName
 
     /// The command's record type name (RegisterPerson), for traces and metrics
@@ -33,7 +33,8 @@ type AggregateHandler<'TAggregate, 'TCommands
         member this.GetPublishedEvents() = this.PublishedEvents
 
     /// Loads the aggregate (a new one when it doesn't exist and mustExist is false), executes the command and stores
-    /// the aggregate when its version changed. Traced as "{Aggregate} {Command}" and counted in the rosetta.* metrics
+    /// the aggregate when its version changed. When it didn't, a repository with an outbox records the events the
+    /// command published. Traced as "{Aggregate} {Command}" and counted in the rosetta.* metrics
     member private this.Handle (id: string) (command: 'TCommands) (mustExist: bool) =
         task {
             let commandName = CommandName command
@@ -58,6 +59,13 @@ type AggregateHandler<'TAggregate, 'TCommands
                         let stored = aggregate.Version - originalVersion
                         RosettaTelemetry.EventsStored.Add(stored, RosettaTelemetry.Tag "rosetta.aggregate" AggregateName)
                         if not (isNull activity) then activity.SetTag("rosetta.events", stored) |> ignore
+                    elif aggregate.PublishedEvents.Count > 0 then
+                        // Nothing to store, e.g. an idempotent repeat, but the events it published again are recorded unless
+                        // the outbox holds them: the attempt that stored the aggregate may have failed before it recorded them
+                        match this.AggregateRepository with
+                        | :? IRecordPublishedEvents as outbox ->
+                            do! outbox.RecordPublishedEventsAsync(aggregate).ConfigureAwait(false)
+                        | _ -> ()
                 with
                 | :? DomainException as ex ->
                     outcome <- "rejected"

@@ -18,6 +18,7 @@
     <Compile Include="IAggregateHandler.fs" />
     <Compile Include="IAggregateRepository.fs" />
     <Compile Include="IAggregateInstance.fs" />
+    <Compile Include="Outbox.fs" />
     <Compile Include="AggregateState.fs" />
     <Compile Include="Aggregate.fs" />
     <Compile Include="AggregateHandler.fs" />

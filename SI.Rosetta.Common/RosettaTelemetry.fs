@@ -20,6 +20,8 @@ module RosettaTelemetry =
     let CommandDuration = Meter.CreateHistogram<double>("rosetta.command.duration", "s", "How long commands took")
     /// Events aggregates produced and stored, by aggregate
     let EventsStored = Meter.CreateCounter<int64>("rosetta.events.stored", "{event}", "Events aggregates produced and stored")
+    /// Events recorded in the outbox, by aggregate
+    let OutboxEvents = Meter.CreateCounter<int64>("rosetta.outbox.events", "{event}", "Events recorded in the outbox")
     /// Events projections received, by projection and outcome (handled, failed, skipped)
     let ProjectionEvents = Meter.CreateCounter<int64>("rosetta.projection.events", "{event}", "Events projections received")
     let ProjectionEventDuration = Meter.CreateHistogram<double>("rosetta.projection.event.duration", "s", "How long projections took to handle an event")

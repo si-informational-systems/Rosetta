@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="MongoDBOutbox.fs" />
     <Compile Include="MongoDBAggregateRepository.fs" />
   </ItemGroup>
 

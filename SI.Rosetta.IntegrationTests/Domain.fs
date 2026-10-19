@@ -40,11 +40,19 @@ type ParcelAggregate() =
     override this.Execute(command) =
         match command with
         | ParcelCommands.Register cmd when not this.ShouldHandleIdempotency ->
-            this.Apply(ParcelEvents.Registered { Id = cmd.Id; Recipient = cmd.Recipient })
-        | ParcelCommands.Register _ -> ()
+            this.Publish(ParcelEvents.Registered { Id = cmd.Id; Recipient = cmd.Recipient })
+        // Idempotent: nothing changes, but the event is published again, so a repeat records it in the outbox
+        | ParcelCommands.Register cmd ->
+            this.PublishedEvents.Add(ParcelEvents.Registered { Id = cmd.Id; Recipient = cmd.Recipient })
         | ParcelCommands.Readdress cmd when this.State.Recipient <> cmd.Recipient ->
-            this.Apply(ParcelEvents.Readdressed { Id = cmd.Id; Recipient = cmd.Recipient })
-        | ParcelCommands.Readdress _ -> ()
+            this.Publish(ParcelEvents.Readdressed { Id = cmd.Id; Recipient = cmd.Recipient })
+        | ParcelCommands.Readdress cmd ->
+            this.PublishedEvents.Add(ParcelEvents.Readdressed { Id = cmd.Id; Recipient = cmd.Recipient })
+
+    /// Applied, and published to the outside world: the outbox records it
+    member private this.Publish(event: ParcelEvents) =
+        this.PublishedEvents.Add event
+        this.Apply event
 
 type IParcelAggregateHandler =
     inherit IAggregateHandler

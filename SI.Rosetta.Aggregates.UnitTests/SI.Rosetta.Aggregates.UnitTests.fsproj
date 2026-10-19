@@ -16,6 +16,7 @@
     <Compile Include="HostingTests.fs" />
     <Compile Include="UpcastingTests.fs" />
     <Compile Include="TelemetryTests.fs" />
+    <Compile Include="OutboxTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

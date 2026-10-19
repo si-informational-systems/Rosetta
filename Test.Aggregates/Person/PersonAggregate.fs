@@ -9,7 +9,8 @@ type PersonAggregate() =
         match command with
         | PersonCommands.Register cmd -> 
             if this.State.Version > 0 then
-                if this.IsIdempotent cmd then ()
+                // Idempotent: nothing changes, but the event is published again, so a redelivered command records it in the outbox
+                if this.IsIdempotent cmd then this.PublishedEvents.Add(this.Registered cmd)
                 else raise (DomainException("Person already registered"))
             else this.Register cmd
 
@@ -22,8 +23,11 @@ type PersonAggregate() =
             else this.SetHeight cmd
 
 
+    member private this.Registered(cmd: RegisterPerson) =
+        PersonEvents.Registered { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
+
     member private this.Register(cmd: RegisterPerson) =
-        let event = PersonEvents.Registered { Id = cmd.Id; Name = cmd.Name; Metadata = cmd.Metadata }
+        let event = this.Registered cmd
         this.PublishedEvents.Add event
         this.Apply event
 

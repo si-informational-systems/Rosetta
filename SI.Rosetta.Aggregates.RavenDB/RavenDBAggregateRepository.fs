@@ -3,9 +3,13 @@
 open Raven.Client.Documents
 open SI.Rosetta.Aggregates
 
-type RavenDBAggregateRepository(store: IDocumentStore) =
+/// With an outbox, the aggregate's PublishedEvents are saved with its state, in one transaction, or on their own when
+/// the command changed nothing
+type RavenDBAggregateRepository(store: IDocumentStore, outbox: RavenDBOutbox option) =
     // Version is kept in the document's @metadata so the AggregateState document itself stays clean
     let VersionMetadataKey = "Rosetta-Aggregate-Version"
+
+    new(store: IDocumentStore) = RavenDBAggregateRepository(store, None)
 
     interface IStateBasedAggregateRepository with
         member this.GetAsync<'TAggregateState
@@ -32,5 +36,19 @@ type RavenDBAggregateRepository(store: IDocumentStore) =
                 do! session.StoreAsync(state).ConfigureAwait(false)
                 let metadata = session.Advanced.GetMetadataFor(state)
                 metadata.[VersionMetadataKey] <- box aggregate.Version
+                let events =
+                    match outbox with
+                    | Some _ -> OutboxEvents.Of aggregate
+                    | None -> [||]
+                let! recorded =
+                    if events.Length > 0 then outbox.Value.StoreAsync(session, events)
+                    else System.Threading.Tasks.Task.FromResult [||]
                 do! session.SaveChangesAsync().ConfigureAwait(false)
+                if recorded.Length > 0 then OutboxEvents.Recorded recorded.[0].Aggregate recorded.Length
             }
+
+    interface IRecordPublishedEvents with
+        member this.RecordPublishedEventsAsync(aggregate) =
+            match outbox with
+            | Some outbox -> OutboxEvents.RecordAsync outbox aggregate
+            | None -> System.Threading.Tasks.Task.CompletedTask

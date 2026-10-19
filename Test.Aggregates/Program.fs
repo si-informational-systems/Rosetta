@@ -20,6 +20,9 @@ let main args =
     // UseAggregatesWith is used when a combination of both EventSourced and NonEventSourced persistence is used
     // UseAggregatesWithEventSourcing is used when only EventSourced persistence is used
     // UseAggregatesWithoutEventSourcing is used when only NonEventSourced persistence is used
+    // The PublishedEvents of both aggregates are recorded in RavenDB's Outbox collection: Organization's with its state,
+    // in one transaction, and Person's once its events are appended to KurrentDB
+    UseOutboxWith<RavenDB> builder.Host |> ignore
     builder.Services.AddSingleton<RavenDocuments>() |> ignore
 
     let app = builder.Build()

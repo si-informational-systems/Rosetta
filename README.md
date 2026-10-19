@@ -23,6 +23,7 @@ It provides:
 - 🧩 **Aggregate Roots** and **Domain Events** (DDD)
 - ⚡ **Event Sourcing** with KurrentDB
 - 🗄️ **State-based Aggregates** (no Event Sourcing) persisted in RavenDB or MongoDB — or mix both styles in one service
+- 📤 **Outbox**: the PublishedEvents of every stored Aggregate recorded in RavenDB or MongoDB, for publishing to the outside world
 - 📊 **Projections** from KurrentDB with persistence using RavenDB and MongoDB (NoSQL)
 - 📊 **Custom (Cross-Aggregate) Projection Definitions**
 - 🔁 **Event Upcasting** to keep reading events written by older versions of the domain
@@ -37,6 +38,7 @@ It provides:
 - **Aggregate & Event Abstractions**: Write expressive, testable domain logic.
 - **KurrentDB Integration**: Reliable, scalable event storage with optimistic concurrency.
 - **State-based Aggregates**: Persist the AggregateState itself in RavenDB or MongoDB when Event Sourcing isn't needed.
+- **Outbox Pattern**: Integration events recorded with the state that produced them, in one transaction where the stores allow it, with an optional TTL.
 - **RavenDB/MongoDB Projections**: Fast, flexible read models.
 - **Event Evolution**: Upcasters rename events and fields as they're read; an event a DU doesn't know stops a Projection with a clear error, or is skipped with `[<SkipUnknownEvents>]`.
 - **Plug-and-Play Host Extensions**: Register everything with a single line, on any .NET host builder.
@@ -54,6 +56,7 @@ graph TD
     A[Client/API] -->|Command| B[Aggregate Handler]
     B -->|Event| C[KurrentDB]
     B -->|AggregateState| G[RavenDB / MongoDB]
+    B -->|PublishedEvents| H[Outbox: RavenDB / MongoDB]
     C -->|Event| D[Projection Handler/s]
     D -->|Read Model| E[RavenDB / MongoDB]
     E -->|Query| F[Client/API]
@@ -191,6 +194,7 @@ services.AddProjectionsWith<KurrentDB, RavenDB>(configuration, typeof(PersonProj
 | `UseAggregatesWithEventSourcing<TEventSourced>` | every Aggregate is Event-Sourced | `KurrentDB` |
 | `UseAggregatesWithoutEventSourcing<TStateBased>` | every Aggregate persists its state | `RavenDB`, `MongoDB` |
 | `UseAggregatesWith<TEventSourced, TStateBased>` | a mix of both | both of the above |
+| `UseOutboxWith<TOutboxStore>` | the Aggregates' PublishedEvents are recorded in an [Outbox](#-outbox) | `RavenDB`, `MongoDB` |
 | `UseProjectionsWith<TEventRepository, TProjectionsStore>` | Projections | `KurrentDB` → `RavenDB`, `MongoDB` |
 
 Each `Use…` has an `Add…` counterpart for `IServiceCollection`, and each can be used once per service collection. The stores are a closed set: only Rosetta's own `KurrentDB`, `RavenDB` and `MongoDB` compile as store arguments (the marker types can't be inherited). Aggregate Handlers and Projection Handlers are discovered in the given assembly and registered automatically.
@@ -276,7 +280,7 @@ type PersonAggregate() =
 
     member private this.Register(cmd: RegisterPerson) =
         let event = PersonEvents.Registered { Id = cmd.Id; Name = cmd.Name }
-        this.PublishedEvents.Add event // OPTIONAL: integration events for the outside world
+        this.PublishedEvents.Add event // OPTIONAL: integration events for the outside world (see Outbox)
         this.Apply event
 
     member private this.ChangeName(cmd: ChangePersonName) =
@@ -328,6 +332,107 @@ type PersonConsumer(handler: IPersonAggregateHandler) =
 |---|---|---|
 | RavenDB | the AggregateState document | the document's `@metadata` (`Rosetta-Aggregate-Version`) |
 | MongoDB | the AggregateState document, in the pluralized state type name collection | a regular `version` field |
+
+---
+
+## 📤 Outbox
+
+The Outbox records the **PublishedEvents** of every Aggregate that's stored, so that another process can publish them to the outside world (a message broker, other services) without losing any. Register it next to the Aggregates, before or after them:
+
+```fsharp
+Host.CreateDefaultBuilder(args)
+|> fun builder -> UseAggregatesWith<KurrentDB, RavenDB> builder typeof<PersonAggregateHandler>.Assembly
+|> fun builder -> UseOutboxWith<RavenDB> builder
+|> fun builder -> builder.Build().Run()
+```
+
+```csharp
+builder.UseAggregatesWith<Stores.KurrentDB, Stores.RavenDB>(typeof(PersonAggregateHandler).Assembly);
+builder.UseOutboxWith<Stores.RavenDB>();
+```
+
+The Outbox store is `RavenDB` or `MongoDB`, configured by its section as in [Configure Infrastructure](#2-configure-infrastructure). The Outbox's own settings come from the optional `Outbox` section:
+
+```json
+{
+  "Outbox": {
+    "CollectionName": "Outbox",
+    "EventTTLMinutes": 10080
+  }
+}
+```
+
+| Setting | Unless set | |
+|---|---|---|
+| `CollectionName` | `Outbox` | the collection the events are recorded in |
+| `EventTTLMinutes` | events are kept until deleted | how long an event is kept, in minutes |
+
+`configure` changes them in code, after the configuration is read:
+
+```fsharp
+builder.UseOutboxWith<RavenDB>(fun outbox -> outbox.EventTTL <- Nullable(TimeSpan.FromDays 7.0)) |> ignore
+```
+
+```csharp
+builder.UseOutboxWith<Stores.RavenDB>(outbox => outbox.EventTTL = TimeSpan.FromDays(7));
+```
+
+### When the events are recorded
+
+Every command that completes records the PublishedEvents of its Aggregate. When the command changed the Aggregate's `Version`, they're recorded as the Aggregate is stored, and whether the two writes are one transaction depends on where the Aggregate lives:
+
+| Aggregate | Outbox | The events are recorded |
+|---|---|---|
+| state-based, in RavenDB | `RavenDB` | with the state, in one `SaveChanges`: both are saved, or neither |
+| state-based, in MongoDB | `MongoDB` | with the state, in one transaction: both are saved, or neither. MongoDB transactions need a replica set (a single node is enough) |
+| event-sourced, in KurrentDB, or state-based in the other store | `RavenDB` or `MongoDB` | right after the Aggregate is stored. The two stores can't share a transaction, so a crash in between leaves the Aggregate stored without its events in the Outbox, until the command is repeated |
+
+A command that changed nothing, e.g. an idempotent repeat, stores nothing, but the events it published are recorded on their own. So **publish the events in the idempotent branch too**: when a crash stored an Aggregate without recording its events, the redelivered command (from a RabbitMQ queue, say) is idempotent, and records them this time.
+
+```fsharp
+| PersonCommands.Register cmd ->
+    if this.State.Version > 0 then
+        if this.State.Name <> cmd.Name then
+            raise (DomainException.Named("PersonAlreadyRegistered", "Person already registered"))
+        // Idempotent: nothing changes, but the event is published again
+        this.PublishedEvents.Add(PersonEvents.Registered { Id = cmd.Id; Name = cmd.Name })
+    else this.Register cmd
+```
+
+The Outbox keeps **one record per event**. An event's `Id` comes from what makes it that event: the Aggregate, its `Version`, the event's position among the command's PublishedEvents, its type and its data. A repeat publishes the same events at the same `Version`, so they get the same `Id`s, and the Outbox only adds the ones it doesn't hold: the record that's there stays exactly as it was, so a RavenDB subscription or a MongoDB change stream doesn't see it again. RavenDB checks which events it holds, and saves the others on condition they're still new: if a concurrent repeat recorded one meanwhile, the save fails with a `ConcurrencyException` (and the command can be retried) instead of overwriting it. MongoDB upserts with `$setOnInsert`.
+
+An event published again after the Aggregate changed further has a later `Version`, so it's recorded again. Whatever consumes the events must still handle duplicates (as with any broker's redeliveries), and the `Id` serves as their message id.
+
+A rejected command (`DomainException`) or a failed store (`ConcurrencyException`) records nothing.
+
+### The recorded events
+
+Each PublishedEvent is one document (`RavenDBOutboxEvent`, `MongoDBOutboxEvent`):
+
+| Field | |
+|---|---|
+| `Id` | a UUID v8 from the SHA-256 of the Aggregate, its `Version`, the event's `Position`, `EventType` and `Data`: the same event published again has the same `Id`. In RavenDB, the document id is `{CollectionName}/{Id}` |
+| `Aggregate`, `AggregateId` | the Aggregate that published it, e.g. `Person` and `People-1` |
+| `Version` | the Aggregate's `Version` after the command |
+| `Position` | the event's place among the PublishedEvents of its command, from 0 |
+| `EventType`, `Data` | the event as KurrentDB stores it: the name its record is stored under, and the record as JSON, exactly as written |
+| `RecordedAt` | when it was first recorded, in UTC. In `RecordedAt` and `Position` order, the events read back in the order they were recorded |
+| `TraceParent`, `TraceState` | the command's W3C trace context, so publishing the event can continue the command's trace |
+
+Rosetta records the events; publishing them is up to you, e.g. with a RavenDB data subscription or a MongoDB change stream on the collection. `EventEncoding.Decode` reads an event back into its DU, through the upcasters:
+
+```fsharp
+match EventEncoding.Decode<PersonEvents> upcasters recorded.EventType recorded.Data with
+| Ok event -> ()            // publish it
+| Error unknownEvent -> ()  // a record type PersonEvents has no case for
+```
+
+### Expiry
+
+With `EventTTLMinutes`, each event expires that long after it was recorded. The expiry is stored in each event, so a changed TTL applies to the events recorded from then on.
+
+- **RavenDB** keeps it in the document's `@expires` metadata, which only Document Expiration acts on. The Outbox turns Document Expiration on for the database (once, on first use) when it's off, and leaves an existing configuration alone. A certificate that can't read the database record can't check it, so turn it on yourself in that case (Studio: Settings → Document Expiration).
+- **MongoDB** keeps it in an `expiresAt` field, which a TTL index the Outbox creates on first use acts on. MongoDB deletes expired documents every 60 seconds.
 
 ---
 
@@ -558,6 +663,7 @@ A command's trace context (W3C `traceparent`/`tracestate`) is stored in the meta
 | `rosetta.commands` | `{command}` | `rosetta.aggregate`, `rosetta.command`, `rosetta.outcome` |
 | `rosetta.command.duration` | `s` | `rosetta.aggregate`, `rosetta.command` |
 | `rosetta.events.stored` | `{event}` | `rosetta.aggregate` |
+| `rosetta.outbox.events` | `{event}` | `rosetta.aggregate` |
 | `rosetta.projection.events` | `{event}` | `rosetta.projection`, `rosetta.outcome` (`handled`, `failed`, `skipped`) |
 | `rosetta.projection.event.duration` | `s` | `rosetta.projection` |
 | `rosetta.projection.resubscriptions` | `{resubscription}` | `rosetta.projection` |
@@ -686,6 +792,12 @@ type IAggregateRepository =
 type IEventSourcedAggregateRepository = inherit IAggregateRepository // e.g. KurrentDB
 type IStateBasedAggregateRepository = inherit IAggregateRepository   // e.g. RavenDB, MongoDB
 
+//Implementing the Outbox's store: register it as a singleton IOutbox instead of calling UseOutboxWith,
+//and every command records its Aggregate's PublishedEvents in it
+type IOutbox =
+    // Records the events it doesn't hold yet (by Id), leaves the others as they are, and returns how many it recorded
+    abstract member RecordAsync: events: OutboxEvent[] -> Task<int>
+
 //Implementing the db for Projections
 type ICheckpointStore =
     abstract member ReadAsync: id: string -> Task<Checkpoint> 
@@ -744,7 +856,7 @@ Test.Aggregates is a small ASP.NET Core app (`--urls` changes its address). Its 
 
 **Scenarios** cover every case in one click: registering, renaming and setting the height; idempotent repeats; registering an existing Id under another name; changing a Person that doesn't exist; and the same for an Organization.
 
-The page's tables list the RavenDB documents (database `TEST.ROSETTA`), which you can also browse in RavenDB Studio. `People` and `TotalPeoples` come from the Projections, so they fill only while Test.Projections runs. `Organizations` holds the state-based Aggregate, whose Version is in the document's metadata. Organization never writes to KurrentDB, so `TotalOrganizations` stays 0. RavenDB refuses cross-origin requests, so the page reads the documents through the app (`GET /people`, `/organizations`, `/totals`).
+The page's tables list the RavenDB documents (database `TEST.ROSETTA`), which you can also browse in RavenDB Studio. `People` and `TotalPeoples` come from the Projections, so they fill only while Test.Projections runs. `Organizations` holds the state-based Aggregate, whose Version is in the document's metadata. Organization never writes to KurrentDB, so `TotalOrganizations` stays 0. `Outbox` holds the PublishedEvents of both Aggregates: their registrations, once each however often a registration is repeated. RavenDB refuses cross-origin requests, so the page reads the documents through the app (`GET /people`, `/organizations`, `/totals`, `/outbox`).
 
 `docker compose down` stops the containers, and `docker compose down -v` also deletes their data.
 
