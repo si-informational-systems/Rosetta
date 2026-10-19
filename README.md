@@ -106,11 +106,17 @@ Whether you're using Aggregates, Projections, or both - the persistence undernea
     "Password": "your_password",
     "AuthSource": "your_auth_source",
     "DatabaseName": "your_db_name"
+  },
+  "Outbox": {
+    "CollectionName": "Outbox",
+    "EventTTLMinutes": 10080
   }
 }
 ```
 
 `CertificatePath`/`CertificatePassword` and the MongoDB credentials are optional. Rosetta escapes the MongoDB username and password, so they may contain `@`, `:`, `/`, `?`, `#` or `%`.
+
+The `Outbox` section configures the [Outbox](#-outbox), which records the PublishedEvents of every stored Aggregate in RavenDB or MongoDB, for publishing to the outside world. Both of its settings are optional: without `CollectionName` the events go to the `Outbox` collection, and without `EventTTLMinutes` they're kept until deleted (`10080` keeps them for a week).
 
 For anything else MongoDB supports (TLS, `mongodb+srv://`, a replica set, several hosts), set the whole connection string instead. It replaces `Host`, `Port`, `Username`, `Password` and `AuthSource`, and when `DatabaseName` isn't set, the database comes from its path:
 
@@ -139,6 +145,7 @@ open SI.Rosetta.Aggregates.HostBuilder
 
 Host.CreateDefaultBuilder(args)
 |> fun builder -> UseAggregatesWith<KurrentDB, RavenDB> builder typeof<PersonAggregateHandler>.Assembly
+|> fun builder -> UseOutboxWith<RavenDB> builder // the PublishedEvents, recorded in RavenDB (see Outbox)
 |> fun builder -> builder.Build().Run()
 ```
 
@@ -163,6 +170,7 @@ using Stores = SI.Rosetta.Aggregates.HostBuilder;   // store marker types
 
 Host.CreateDefaultBuilder(args)
     .UseAggregatesWith<Stores.KurrentDB, Stores.MongoDB>(typeof(PersonAggregateHandler).Assembly)
+    .UseOutboxWith<Stores.MongoDB>()   // the PublishedEvents, recorded in MongoDB (see Outbox)
     .Build()
     .Run();
 ```
@@ -841,6 +849,16 @@ Both samples read `config/appsettings.json` from their project folder. It's giti
 {
   "RavenDB": { "Urls": "http://127.0.0.1:8080/", "DatabaseName": "TEST.ROSETTA" },
   "KurrentDB": { "ConnectionString": "kurrentdb://localhost:2113?tls=false" }
+}
+```
+
+Test.Aggregates records its Aggregates' PublishedEvents in the [Outbox](#-outbox), so its file can also hold the optional `Outbox` section. Here the events go to RavenDB's `Outbox` collection and expire after a week:
+
+```json
+{
+  "RavenDB": { "Urls": "http://127.0.0.1:8080/", "DatabaseName": "TEST.ROSETTA" },
+  "KurrentDB": { "ConnectionString": "kurrentdb://localhost:2113?tls=false" },
+  "Outbox": { "CollectionName": "Outbox", "EventTTLMinutes": 10080 }
 }
 ```
 
