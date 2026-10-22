@@ -15,12 +15,22 @@ type OutboxOptions() =
     member val CollectionName = OutboxOptions.DefaultCollectionName with get, set
     /// How long a recorded event is kept (Outbox:EventTTLMinutes); null keeps the events until something deletes them
     member val EventTTL = Nullable<TimeSpan>() with get, set
+    /// 36 hours: the shortest expiration frequency every RavenDB licence allows, Community included
+    static member val DefaultExpirationFrequency = TimeSpan.FromHours 36.0
+    /// How often RavenDB deletes the expired documents (Outbox:ExpirationFrequencyMinutes; 36 hours, which every
+    /// licence allows, when it isn't set), when the outbox turns the database's document expiration on for EventTTL.
+    /// A database whose document expiration is already on keeps its own frequency. RavenDB only: MongoDB's TTL monitor
+    /// deletes the expired documents every 60 seconds by itself
+    member val ExpirationFrequency = OutboxOptions.DefaultExpirationFrequency with get, set
 
     member this.Validate() =
         if String.IsNullOrWhiteSpace this.CollectionName then
             raise (InvalidOperationException "The outbox's CollectionName can't be empty.")
         if this.EventTTL.HasValue && this.EventTTL.Value <= TimeSpan.Zero then
             raise (InvalidOperationException(sprintf "The outbox's EventTTL must be positive, not %O." this.EventTTL.Value))
+        // RavenDB counts it in whole seconds
+        if this.ExpirationFrequency < TimeSpan.FromSeconds 1.0 then
+            raise (InvalidOperationException(sprintf "The outbox's ExpirationFrequency must be at least a second, not %O." this.ExpirationFrequency))
 
 /// A PublishedEvent as the outbox records it, whichever store holds it
 type OutboxEvent =

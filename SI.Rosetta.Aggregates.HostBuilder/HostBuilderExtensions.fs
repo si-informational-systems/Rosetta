@@ -3,6 +3,8 @@
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Configuration
+open Microsoft.Extensions.Logging
+open Microsoft.Extensions.Logging.Abstractions
 open System
 open System.Reflection
 open System.Runtime.CompilerServices
@@ -85,19 +87,24 @@ module HostBuilderMongoDBExtensionCommmon =
         MongoConventions.Register()
 
 module OutboxConfiguration =
-    /// The outbox's settings from the Outbox configuration section: CollectionName (Outbox unless set) and
-    /// EventTTLMinutes (no expiry unless set)
+    /// A setting of the Outbox section that's a positive number of minutes, when it's set
+    let private MinutesOf (configuration: IConfiguration) (key: string) =
+        match configuration.["Outbox:" + key] with
+        | minutes when String.IsNullOrWhiteSpace minutes -> None
+        | minutes ->
+            match Double.TryParse(minutes, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture) with
+            | true, value when value > 0.0 -> Some (TimeSpan.FromMinutes value)
+            | _ -> raise (InvalidOperationException(sprintf "Outbox:%s must be a positive number of minutes, not '%s'." key minutes))
+
+    /// The outbox's settings from the Outbox configuration section: CollectionName (Outbox unless set),
+    /// EventTTLMinutes (no expiry unless set) and ExpirationFrequencyMinutes (36 hours unless set; RavenDB only)
     let Read (configuration: IConfiguration) =
         let options = OutboxOptions()
         match configuration.["Outbox:CollectionName"] with
         | name when String.IsNullOrWhiteSpace name -> ()
         | name -> options.CollectionName <- name.Trim()
-        match configuration.["Outbox:EventTTLMinutes"] with
-        | minutes when String.IsNullOrWhiteSpace minutes -> ()
-        | minutes ->
-            match Double.TryParse(minutes, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture) with
-            | true, value when value > 0.0 -> options.EventTTL <- Nullable(TimeSpan.FromMinutes value)
-            | _ -> raise (InvalidOperationException(sprintf "Outbox:EventTTLMinutes must be a positive number of minutes, not '%s'." minutes))
+        MinutesOf configuration "EventTTLMinutes" |> Option.iter (fun ttl -> options.EventTTL <- Nullable ttl)
+        MinutesOf configuration "ExpirationFrequencyMinutes" |> Option.iter (fun frequency -> options.ExpirationFrequency <- frequency)
         options
 
 /// The registrations behind every Use…/Add… entry point: they only need the services and the configuration,
@@ -201,7 +208,13 @@ module ServiceCollectionExtensions =
         match typeof<'OutboxStore> with
         | t when t = typeof<RavenDB> ->
             RegisterRavenDocumentStore(services, configuration)
-            services.AddSingleton<IOutbox>(fun sp -> RavenDBOutbox(sp.GetRequiredService<IDocumentStore>(), options) :> IOutbox) |> ignore
+            services.AddSingleton<IOutbox>(fun sp ->
+                // A plain IServiceCollection may have no logging
+                let logger =
+                    match sp.GetService<ILogger<RavenDBOutbox>>() with
+                    | null -> NullLogger<RavenDBOutbox>.Instance :> ILogger<RavenDBOutbox>
+                    | logger -> logger
+                RavenDBOutbox(sp.GetRequiredService<IDocumentStore>(), options, logger) :> IOutbox) |> ignore
         | t when t = typeof<MongoDB> ->
             RegisterMongoDatabase(services, configuration)
             services.AddSingleton<IOutbox>(fun sp -> MongoDBOutbox(sp.GetRequiredService<IMongoDatabase>(), options) :> IOutbox) |> ignore

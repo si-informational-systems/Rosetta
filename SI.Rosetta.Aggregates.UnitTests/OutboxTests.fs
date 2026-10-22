@@ -109,13 +109,19 @@ type OutboxTests() =
 
         Assert.Equal("Outbox", options.CollectionName)
         Assert.False(options.EventTTL.HasValue)
+        Assert.Equal(TimeSpan.FromHours 36.0, options.ExpirationFrequency)
 
     [<Fact>]
     member this.``The settings are read from the Outbox section``() =
-        let options = OutboxConfiguration.Read(Configuration [ "Outbox:CollectionName", "IntegrationEvents"; "Outbox:EventTTLMinutes", "90" ])
+        let options =
+            OutboxConfiguration.Read(Configuration [
+                "Outbox:CollectionName", "IntegrationEvents"
+                "Outbox:EventTTLMinutes", "90"
+                "Outbox:ExpirationFrequencyMinutes", "1440" ])
 
         Assert.Equal("IntegrationEvents", options.CollectionName)
         Assert.Equal(TimeSpan.FromMinutes 90.0, options.EventTTL.Value)
+        Assert.Equal(TimeSpan.FromDays 1.0, options.ExpirationFrequency)
 
     [<Theory>]
     [<InlineData("0")>]
@@ -123,6 +129,16 @@ type OutboxTests() =
     [<InlineData("an hour")>]
     member this.``A TTL that isn't a positive number of minutes fails the registration``(minutes: string) =
         let builder = CreateBuilder [ "Outbox:EventTTLMinutes", minutes ]
+
+        Assert.Throws<InvalidOperationException>(fun () -> builder.UseOutboxWith<MongoDB>() |> ignore) |> ignore
+
+    [<Theory>]
+    [<InlineData("0")>]
+    [<InlineData("-60")>]
+    [<InlineData("daily")>]
+    [<InlineData("0.001")>]
+    member this.``An expiration frequency that isn't at least a second fails the registration``(minutes: string) =
+        let builder = CreateBuilder [ "Outbox:EventTTLMinutes", "90"; "Outbox:ExpirationFrequencyMinutes", minutes ]
 
         Assert.Throws<InvalidOperationException>(fun () -> builder.UseOutboxWith<MongoDB>() |> ignore) |> ignore
 
@@ -138,6 +154,25 @@ type OutboxTests() =
 
         Assert.Equal("IntegrationEvents", configured.CollectionName)
         Assert.Equal(TimeSpan.FromDays 7.0, configured.EventTTL.Value)
+
+    [<Fact>]
+    member this.``configure changes the expiration frequency read from the configuration``() =
+        let builder = CreateBuilder [ "Outbox:EventTTLMinutes", "90"; "Outbox:ExpirationFrequencyMinutes", "1440" ]
+        let mutable configured = Unchecked.defaultof<OutboxOptions>
+
+        builder.UseOutboxWith<MongoDB>(fun options ->
+            Assert.Equal(TimeSpan.FromDays 1.0, options.ExpirationFrequency)
+            options.ExpirationFrequency <- TimeSpan.FromHours 72.0
+            configured <- options) |> ignore
+
+        Assert.Equal(TimeSpan.FromHours 72.0, configured.ExpirationFrequency)
+
+    [<Fact>]
+    member this.``configure can't set an expiration frequency under a second``() =
+        let builder = CreateBuilder []
+
+        Assert.Throws<InvalidOperationException>(fun () ->
+            builder.UseOutboxWith<MongoDB>(fun options -> options.ExpirationFrequency <- TimeSpan.FromMilliseconds 500.0) |> ignore) |> ignore
 
     [<Fact>]
     member this.``configure can't leave the collection name empty``() =

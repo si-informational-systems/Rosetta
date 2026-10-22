@@ -1,10 +1,17 @@
 namespace SI.Rosetta.IntegrationTests
 
 open System
+open System.Collections.Concurrent
 open System.Globalization
+open System.Net
+open System.Net.Http
+open System.Text
+open System.Threading
+open System.Threading.Tasks
 open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
+open Microsoft.Extensions.Logging
 open MongoDB.Bson
 open MongoDB.Driver
 open Raven.Client
@@ -18,6 +25,37 @@ open SI.Rosetta.Aggregates.KurrentDB
 open SI.Rosetta.Aggregates.RavenDB
 open SI.Rosetta.Common
 open SI.Rosetta.Persistence.RavenDB
+
+/// Keeps what's logged, formatted
+type CapturingLogger<'T>() =
+    member val Entries = ConcurrentQueue<LogLevel * string>()
+    interface ILogger<'T> with
+        member this.BeginScope<'TState>(_state: 'TState) : IDisposable = null
+        member this.IsEnabled(_level) = true
+        member this.Log<'TState>(level: LogLevel, _eventId: EventId, state: 'TState, ex: exn, formatter: Func<'TState, exn, string>) =
+            this.Entries.Enqueue((level, formatter.Invoke(state, ex)))
+
+/// Refuses every change to the database's document expiration, with the error a RavenDB licence that doesn't allow
+/// the frequency answers with (Community refuses anything under 36 hours), and counts the refusals
+type RefusingExpirationHandler(inner: HttpMessageHandler) =
+    inherit DelegatingHandler(inner)
+    let mutable Refusals = 0
+    member this.Refused = Volatile.Read(&Refusals)
+    override this.SendAsync(request: HttpRequestMessage, cancellationToken: CancellationToken) =
+        if request.Method = HttpMethod.Post && request.RequestUri.AbsolutePath.EndsWith("/admin/expiration/config") then
+            Interlocked.Increment(&Refusals) |> ignore
+            let message = "Your license doesn't allow modifying the expiration frequency below 36 hours."
+            let error =
+                sprintf """{"Url":"%s","Type":"Raven.Client.Exceptions.Commercial.LicenseLimitException","Message":"%s","Error":"%s"}"""
+                    request.RequestUri.AbsolutePath message message
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.PaymentRequired, Content = new StringContent(error, Encoding.UTF8, "application/json")))
+        else base.SendAsync(request, cancellationToken)
+
+/// RavenDB shares its HttpClients between the stores whose conventions give the same HttpClientType, so the refusing
+/// one has its own type: the other tests' stores keep theirs
+type RefusingExpirationHttpClient(handler: RefusingExpirationHandler) =
+    inherit HttpClient(handler)
+    member this.Handler = handler
 
 /// The outbox in RavenDB and MongoDB, as UseOutboxWith registers it
 type OutboxTests(databases: Databases) =
@@ -147,6 +185,57 @@ type OutboxTests(databases: Databases) =
 
             let! after = store.Maintenance.Server.SendAsync(GetDatabaseRecordOperation(database))
             Assert.False(after.Expiration.Disabled)
+            // 36 hours, which every licence allows
+            Assert.Equal(Nullable 129600L, after.Expiration.DeleteFrequencyInSec)
+        }
+
+    [<Fact>]
+    member this.``RavenDB turns document expiration on with the configured frequency``() =
+        task {
+            let database = NewDatabase()
+            let configuration = databases.Configuration(database, [ "Outbox:EventTTLMinutes", "1440"; "Outbox:ExpirationFrequencyMinutes", "90" ])
+            use host = Build configuration (fun builder ->
+                builder.UseAggregatesWithoutEventSourcing<RavenDB>(Assembly).UseOutboxWith<RavenDB>() |> ignore)
+            let store = host.Services.GetRequiredService<IDocumentStore>()
+
+            do! host.Services.GetRequiredService<IStateBasedAggregateRepository>().StoreAsync(Registered (NewId()))
+
+            let! record = store.Maintenance.Server.SendAsync(GetDatabaseRecordOperation(database))
+            Assert.False(record.Expiration.Disabled)
+            Assert.Equal(Nullable 5400L, record.Expiration.DeleteFrequencyInSec)
+        }
+
+    [<Fact>]
+    member this.``RavenDB records the events, and warns once, when the licence refuses to turn document expiration on``() =
+        task {
+            let database = NewDatabase()
+            let clients = ConcurrentQueue<RefusingExpirationHttpClient>()
+            use store =
+                RavenDocumentStoreFactory.CreateAndInitializeDocumentStore (RavenConfig.FromConfiguration(databases.Configuration database))
+                    (Some (fun conventions ->
+                        conventions.HttpClientType <- typeof<RefusingExpirationHttpClient>
+                        conventions.CreateHttpClient <- Func<HttpClientHandler, HttpClient>(fun handler ->
+                            let client = new RefusingExpirationHttpClient(new RefusingExpirationHandler(handler))
+                            clients.Enqueue client
+                            client :> HttpClient)))
+            let logger = CapturingLogger<RavenDBOutbox>()
+            let outbox = RavenDBOutbox(store, OutboxOptions(EventTTL = Nullable(TimeSpan.FromHours 1.0)), logger)
+            let repository = RavenDBAggregateRepository(store, Some outbox) :> IAggregateRepository
+            let first, second = NewId(), NewId()
+
+            do! repository.StoreAsync(Registered first)
+            do! repository.StoreAsync(Registered second)
+
+            let! recorded = RavenOutboxOf store "Outbox" second
+            Assert.Single(recorded) |> ignore
+            // Asked once, not on every command
+            Assert.Equal(1, clients |> Seq.sumBy (fun client -> client.Handler.Refused))
+            let! record = store.Maintenance.Server.SendAsync(GetDatabaseRecordOperation(database))
+            Assert.True(isNull record.Expiration || record.Expiration.Disabled)
+            let level, message = Assert.Single(logger.Entries)
+            Assert.Equal(LogLevel.Warning, level)
+            Assert.Contains(database, message)
+            Assert.Contains("Settings → Document Expiration", message)
         }
 
     [<Fact>]

@@ -7,8 +7,11 @@ open Raven.Client
 open Raven.Client.Documents
 open Raven.Client.Documents.Operations.Expiration
 open Raven.Client.Documents.Session
+open Raven.Client.Exceptions.Commercial
 open Raven.Client.Exceptions.Security
 open Raven.Client.ServerWide.Operations
+open Microsoft.Extensions.Logging
+open Microsoft.Extensions.Logging.Abstractions
 open SI.Rosetta.Aggregates
 
 /// An outbox event as RavenDB holds it: a document of the outbox collection, expiring through its @expires metadata
@@ -29,16 +32,21 @@ type RavenDBOutboxEvent =
 /// Records the events as {CollectionName}/{Id} documents of the CollectionName collection, all of one command's in one
 /// transaction, skipping the ones it already holds. With a TTL, each document expires through its @expires metadata,
 /// so the TTL is in the documents and changing it changes only the events recorded from then on
-type RavenDBOutbox(store: IDocumentStore, options: OutboxOptions) =
+type RavenDBOutbox(store: IDocumentStore, options: OutboxOptions, logger: ILogger<RavenDBOutbox>) =
     let CollectionName = options.CollectionName
     let EventTTL = Option.ofNullable options.EventTTL
+    let ExpirationFrequency = options.ExpirationFrequency
     let mutable ExpirationChecked = EventTTL.IsNone
     let CheckingExpiration = new SemaphoreSlim(1, 1)
 
     let DocumentIdOf (event: OutboxEvent) = sprintf "%s/%O" CollectionName event.Id
 
-    /// Turns the database's document expiration on, once, when it's off: it's what deletes the expired events.
-    /// A certificate that can't read the database record leaves it as it is
+    /// Without a logger: a licence that refuses the expiration frequency goes unreported
+    new(store: IDocumentStore, options: OutboxOptions) = RavenDBOutbox(store, options, NullLogger<RavenDBOutbox>.Instance)
+
+    /// Turns the database's document expiration on, once, when it's off: it's what deletes the expired events. It
+    /// deletes them every ExpirationFrequency (36 hours unless set, which every licence allows). A certificate that
+    /// can't read the database record, or a licence that refuses the frequency, leaves it as it is
     member private this.EnsureExpirationAsync() =
         task {
             if not ExpirationChecked then
@@ -48,9 +56,19 @@ type RavenDBOutbox(store: IDocumentStore, options: OutboxOptions) =
                         try
                             let! record = store.Maintenance.Server.SendAsync(GetDatabaseRecordOperation(store.Database)).ConfigureAwait(false)
                             if isNull record.Expiration || record.Expiration.Disabled then
-                                let! _ = store.Maintenance.SendAsync(ConfigureExpirationOperation(ExpirationConfiguration(Disabled = false))).ConfigureAwait(false)
+                                let configuration =
+                                    ExpirationConfiguration(Disabled = false, DeleteFrequencyInSec = Nullable(int64 ExpirationFrequency.TotalSeconds))
+                                let! _ = store.Maintenance.SendAsync(ConfigureExpirationOperation(configuration)).ConfigureAwait(false)
                                 ()
-                        with :? AuthorizationException -> ()
+                        with
+                        | :? AuthorizationException -> ()
+                        | :? LicenseLimitException as refused ->
+                            logger.LogWarning(
+                                refused,
+                                "The outbox couldn't turn document expiration on for RavenDB database {Database}, deleting every {ExpirationFrequency}: the licence refused it. "
+                                + "Its expired events won't be deleted until document expiration is turned on by hand (Studio: Settings → Document Expiration), "
+                                + "with a frequency the licence allows.",
+                                store.Database, ExpirationFrequency)
                         ExpirationChecked <- true
                 finally
                     CheckingExpiration.Release() |> ignore

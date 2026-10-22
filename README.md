@@ -109,14 +109,15 @@ Whether you're using Aggregates, Projections, or both - the persistence undernea
   },
   "Outbox": {
     "CollectionName": "Outbox",
-    "EventTTLMinutes": 10080
+    "EventTTLMinutes": 10080,
+    "ExpirationFrequencyMinutes": 2160
   }
 }
 ```
 
 `CertificatePath`/`CertificatePassword` and the MongoDB credentials are optional. Rosetta escapes the MongoDB username and password, so they may contain `@`, `:`, `/`, `?`, `#` or `%`.
 
-The `Outbox` section configures the [Outbox](#-outbox), which records the PublishedEvents of every stored Aggregate in RavenDB or MongoDB, for publishing to the outside world. Both of its settings are optional: without `CollectionName` the events go to the `Outbox` collection, and without `EventTTLMinutes` they're kept until deleted (`10080` keeps them for a week).
+The `Outbox` section configures the [Outbox](#-outbox), which records the PublishedEvents of every stored Aggregate in RavenDB or MongoDB, for publishing to the outside world. All of its settings are optional: without `CollectionName` the events go to the `Outbox` collection, and without `EventTTLMinutes` they're kept until deleted (`10080` keeps them for a week). `ExpirationFrequencyMinutes` (RavenDB only) is how often RavenDB deletes the expired events when the Outbox turns Document Expiration on: every 36 hours (`2160`) unless set, which every RavenDB licence allows.
 
 For anything else MongoDB supports (TLS, `mongodb+srv://`, a replica set, several hosts), set the whole connection string instead. It replaces `Host`, `Port`, `Username`, `Password` and `AuthSource`, and when `DatabaseName` isn't set, the database comes from its path:
 
@@ -365,7 +366,8 @@ The Outbox store is `RavenDB` or `MongoDB`, configured by its section as in [Con
 {
   "Outbox": {
     "CollectionName": "Outbox",
-    "EventTTLMinutes": 10080
+    "EventTTLMinutes": 10080,
+    "ExpirationFrequencyMinutes": 2160
   }
 }
 ```
@@ -374,15 +376,22 @@ The Outbox store is `RavenDB` or `MongoDB`, configured by its section as in [Con
 |---|---|---|
 | `CollectionName` | `Outbox` | the collection the events are recorded in |
 | `EventTTLMinutes` | events are kept until deleted | how long an event is kept, in minutes |
+| `ExpirationFrequencyMinutes` | `2160` (36 hours) | **RavenDB only**: how often RavenDB deletes the expired events, in minutes, when the Outbox turns Document Expiration on (see [Expiry](#expiry)). MongoDB's TTL monitor runs every 60 seconds by itself |
 
 `configure` changes them in code, after the configuration is read:
 
 ```fsharp
-builder.UseOutboxWith<RavenDB>(fun outbox -> outbox.EventTTL <- Nullable(TimeSpan.FromDays 7.0)) |> ignore
+builder.UseOutboxWith<RavenDB>(fun outbox ->
+    outbox.EventTTL <- Nullable(TimeSpan.FromDays 7.0)
+    outbox.ExpirationFrequency <- TimeSpan.FromHours 1.0) |> ignore
 ```
 
 ```csharp
-builder.UseOutboxWith<Stores.RavenDB>(outbox => outbox.EventTTL = TimeSpan.FromDays(7));
+builder.UseOutboxWith<Stores.RavenDB>(outbox =>
+{
+    outbox.EventTTL = TimeSpan.FromDays(7);
+    outbox.ExpirationFrequency = TimeSpan.FromHours(1);
+});
 ```
 
 ### When the events are recorded
@@ -439,7 +448,9 @@ match EventEncoding.Decode<PersonEvents> upcasters recorded.EventType recorded.D
 
 With `EventTTLMinutes`, each event expires that long after it was recorded. The expiry is stored in each event, so a changed TTL applies to the events recorded from then on.
 
-- **RavenDB** keeps it in the document's `@expires` metadata, which only Document Expiration acts on. The Outbox turns Document Expiration on for the database (once, on first use) when it's off, and leaves an existing configuration alone. A certificate that can't read the database record can't check it, so turn it on yourself in that case (Studio: Settings → Document Expiration).
+- **RavenDB** keeps it in the document's `@expires` metadata, which only Document Expiration acts on. The Outbox turns Document Expiration on for the database (once, on first use) when it's off, deleting the expired documents every `ExpirationFrequencyMinutes`: 36 hours unless set, the shortest frequency a RavenDB Community licence allows, so it works with every licence. An expired event can therefore stay up to that long after its TTL; with a licence that allows it, set a shorter frequency. The Outbox leaves an existing Document Expiration configuration alone, frequency included. In two cases it can't turn Document Expiration on, so turn it on yourself (Studio: Settings → Document Expiration):
+  - a certificate that can't read the database record can't check it;
+  - a licence that doesn't allow the frequency refuses it (`LicenseLimitException`). The Outbox logs a Warning once, and the commands go on: the events are recorded, they just aren't deleted until Document Expiration is on, with a frequency the licence allows.
 - **MongoDB** keeps it in an `expiresAt` field, which a TTL index the Outbox creates on first use acts on. MongoDB deletes expired documents every 60 seconds.
 
 ---
