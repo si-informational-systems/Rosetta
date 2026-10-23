@@ -1,4 +1,4 @@
-namespace SI.Rosetta.Projections.KurrentDB
+﻿namespace SI.Rosetta.Projections.KurrentDB
 
 open System
 open System.Collections.Generic
@@ -30,7 +30,10 @@ module CustomProjectionSync =
         | Some _, Ok _ -> Unchanged
 
 type IKurrentDBCustomJSProjectionsFactory =
+    /// Creates or updates the custom projections of every ICustomProjectionEvents DU in the assembly
     abstract member CreateCustomProjections: Assembly -> Task
+    /// Creates or updates these custom projections
+    abstract member CreateCustomProjections: projections: KurrentDBProjectionParameters seq -> Task
 
 type KurrentDBCustomJSProjectionsFactory(
     conf: IConfiguration,
@@ -39,8 +42,7 @@ type KurrentDBCustomJSProjectionsFactory(
     let ProjectionManagementClient = projectionManagementClient
     let HttpApi = KurrentDBProjectionsHttpApi(conf)
 
-    member private this.BuildProjectionDefinitions (assembly: Assembly) =
-        let projections = CustomProjectionDiscovery.DiscoverCustomProjections assembly
+    member private this.BuildProjectionDefinitions (projections: KurrentDBProjectionParameters seq) =
         let projectDefinitions = Dictionary<string, string>()
 
         for parameters in projections do
@@ -51,8 +53,11 @@ type KurrentDBCustomJSProjectionsFactory(
 
     interface IKurrentDBCustomJSProjectionsFactory with
         member this.CreateCustomProjections(assembly: Assembly) =
+            (this :> IKurrentDBCustomJSProjectionsFactory).CreateCustomProjections(CustomProjectionDiscovery.DiscoverCustomProjections assembly)
+
+        member this.CreateCustomProjections(projections: KurrentDBProjectionParameters seq) : Task =
             task {
-                let projectDefinitions = this.BuildProjectionDefinitions assembly
+                let projectDefinitions = this.BuildProjectionDefinitions projections
 
                 let! existingProjections =
                     ProjectionManagementClient.ListAllAsync()

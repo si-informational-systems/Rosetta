@@ -206,7 +206,36 @@ services.AddProjectionsWith<KurrentDB, RavenDB>(configuration, typeof(PersonProj
 | `UseOutboxWith<TOutboxStore>` | the Aggregates' PublishedEvents are recorded in an [Outbox](#-outbox) | `RavenDB`, `MongoDB` |
 | `UseProjectionsWith<TEventRepository, TProjectionsStore>` | Projections | `KurrentDB` → `RavenDB`, `MongoDB` |
 
-Each `Use…` has an `Add…` counterpart for `IServiceCollection`, and each can be used once per service collection. The stores are a closed set: only Rosetta's own `KurrentDB`, `RavenDB` and `MongoDB` compile as store arguments (the marker types can't be inherited). Aggregate Handlers and Projection Handlers are discovered in the given assembly and registered automatically.
+Each `Use…` has an `Add…` counterpart for `IServiceCollection`, and each can be used once per service collection. The stores are a closed set: only Rosetta's own `KurrentDB`, `RavenDB` and `MongoDB` compile as store arguments (the marker types can't be inherited). Given an assembly, Rosetta finds the Aggregate Handlers, Projections and Projection Handlers in it and registers them.
+
+#### Naming the Handlers and Projections
+
+Instead of the assembly, every `Use…`/`Add…` above (Outbox aside) also takes a function that names what to register, one by one, or the assemblies to find it in, or both:
+
+```fsharp
+builder.UseAggregatesWith<KurrentDB, RavenDB>(fun aggregates ->
+    aggregates.Handler<PersonAggregateHandler>()                 // under its marker interface, IPersonAggregateHandler
+    aggregates.Handler<OrganizationAggregateHandler>()) |> ignore
+
+builder.UseProjectionsWith<KurrentDB, MongoDB>(fun projections ->
+    projections.Projection<PersonProjection, PersonEvents>()      // with the Handlers its IAmHandledBy declare
+    projections.FromAssemblyOf<OrganizationProjection>()) |> ignore   // and every Projection in that assembly
+```
+
+```csharp
+builder.UseAggregatesWith<Stores.KurrentDB, Stores.MongoDB>(aggregates =>
+    aggregates.Handler<PersonAggregateHandler>());
+services.AddProjectionsWith<KurrentDB, RavenDB>(configuration, projections =>
+    projections.Projection<PersonProjection, PersonEvents>());
+```
+
+| Member | Registers |
+|---|---|
+| `aggregates.Handler<THandler>()` | the Aggregate Handler, under its marker interface (its first interface that isn't `IAggregateHandler`). One without a marker interface fails when it's registered |
+| `projections.Projection<TProjection, TEvents>()` | the Projection, and the Projection Handlers it declares with `IAmHandledBy`. A Projection of another events DU doesn't compile. With `[<DisabledProjection>]` it doesn't run, even when it's named |
+| `….FromAssemblyOf<T>()`, `….FromAssembly(assembly)` | everything in the assembly, as when the assembly is passed: every Aggregate Handler, or every active Projection, every Projection Handler and every Custom Projection |
+
+Whatever is both named and found in an assembly is registered once. A named Projection is created without reflection over its events DU. A named Projection of a [Custom Projection](#-example-cross-aggregate-custom-projections) DU also creates its Custom Projection, with the stream constants found in the Projection's assembly. These overloads are methods on `IHostApplicationBuilder`, `IHostBuilder` and `IServiceCollection` (in F# too, with method syntax). Inside the function, `aggregates.HandlerTypes` and `projections.ProjectionTypes`/`HandlerTypes` list what will be registered.
 
 ---
 

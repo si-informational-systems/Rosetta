@@ -168,21 +168,49 @@ module ServiceCollectionExtensions =
                 | _ -> MongoDBAggregateRepository(db) |> WithOutbox<IStateBasedAggregateRepository> sp) |> ignore
         | _ -> raise (Exception("Only types extending `StateBasedAggregateRepository` can be used as an Aggregate Repository generic option!"))
 
+    let private AddHandlers (services: IServiceCollection) (registration: AggregatesRegistration) =
+        registration.HandlerTypes |> Seq.iter (RegisterAggregateHandler services)
+
+    /// Event-sourced aggregates, with the handlers registration names
+    let internal AddEventSourcedAggregates<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository : (new : unit -> 'AggregateRepository) and 'AggregateRepository :> EventSourcedAggregateRepository>
+        (services: IServiceCollection) (configuration: IConfiguration) (registration: AggregatesRegistration) =
+        AddEventSourcedRepository<'AggregateRepository> services configuration
+        AddHandlers services registration
+        services
+
+    /// State-based aggregates, with the handlers registration names
+    let internal AddStateBasedAggregates<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository : (new : unit -> 'AggregateRepository) and 'AggregateRepository :> StateBasedAggregateRepository>
+        (services: IServiceCollection) (configuration: IConfiguration) (registration: AggregatesRegistration) =
+        AddStateBasedRepository<'AggregateRepository> services configuration
+        AddHandlers services registration
+        services
+
+    /// Both event-sourced and state-based aggregates, with the handlers registration names
+    let internal AddBothAggregates<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository
+        when 'EventSourcedAggregateRepository : not struct and 'EventSourcedAggregateRepository : (new : unit -> 'EventSourcedAggregateRepository)
+        and 'EventSourcedAggregateRepository :> EventSourcedAggregateRepository
+        and 'TStateBasedAggregateRepository : not struct and 'TStateBasedAggregateRepository : (new : unit -> 'TStateBasedAggregateRepository)
+        and 'TStateBasedAggregateRepository :> StateBasedAggregateRepository>
+        (services: IServiceCollection) (configuration: IConfiguration) (registration: AggregatesRegistration) =
+        AddEventSourcedRepository<'EventSourcedAggregateRepository> services configuration
+        AddStateBasedRepository<'TStateBasedAggregateRepository> services configuration
+        // Once, for both kinds of aggregates
+        AddHandlers services registration
+        services
+
     /// Event-sourced aggregates, with the handlers in aggregatesAssembly
     let AddAggregatesWithEventSourcing<'AggregateRepository
         when 'AggregateRepository : not struct and 'AggregateRepository : (new : unit -> 'AggregateRepository) and 'AggregateRepository :> EventSourcedAggregateRepository>
         (services: IServiceCollection) (configuration: IConfiguration) (aggregatesAssembly: Assembly) =
-        AddEventSourcedRepository<'AggregateRepository> services configuration
-        RegisterAggregateHandlers(services, aggregatesAssembly)
-        services
+        AddEventSourcedAggregates<'AggregateRepository> services configuration (AggregatesRegistration.OfAssembly aggregatesAssembly)
 
     /// State-based aggregates, with the handlers in aggregatesAssembly
     let AddAggregatesWithoutEventSourcing<'AggregateRepository
         when 'AggregateRepository : not struct and 'AggregateRepository : (new : unit -> 'AggregateRepository) and 'AggregateRepository :> StateBasedAggregateRepository>
         (services: IServiceCollection) (configuration: IConfiguration) (aggregatesAssembly: Assembly) =
-        AddStateBasedRepository<'AggregateRepository> services configuration
-        RegisterAggregateHandlers(services, aggregatesAssembly)
-        services
+        AddStateBasedAggregates<'AggregateRepository> services configuration (AggregatesRegistration.OfAssembly aggregatesAssembly)
 
     /// Both event-sourced and state-based aggregates, with the handlers in aggregatesAssembly
     let AddAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository
@@ -191,11 +219,8 @@ module ServiceCollectionExtensions =
         and 'TStateBasedAggregateRepository : not struct and 'TStateBasedAggregateRepository : (new : unit -> 'TStateBasedAggregateRepository)
         and 'TStateBasedAggregateRepository :> StateBasedAggregateRepository>
         (services: IServiceCollection) (configuration: IConfiguration) (aggregatesAssembly: Assembly) =
-        AddEventSourcedRepository<'EventSourcedAggregateRepository> services configuration
-        AddStateBasedRepository<'TStateBasedAggregateRepository> services configuration
-        // Once, for both kinds of aggregates
-        RegisterAggregateHandlers(services, aggregatesAssembly)
-        services
+        AddBothAggregates<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository>
+            services configuration (AggregatesRegistration.OfAssembly aggregatesAssembly)
 
     /// The outbox in 'OutboxStore, with the Outbox configuration section's settings, which configure may change
     let internal AddOutbox<'OutboxStore> (services: IServiceCollection) (configuration: IConfiguration) (configure: Action<OutboxOptions>) =
@@ -292,7 +317,9 @@ module CSharp_HostBuilderExtensions =
             ServiceCollectionExtensions.AddOutbox<'OutboxStore> services ctx.Configuration configure |> ignore)
 
 /// Extension methods for IHostApplicationBuilder (Host.CreateApplicationBuilder, WebApplication.CreateBuilder)
-/// and IServiceCollection, from C# or F#, delegating to the F# functions above
+/// and IServiceCollection, from C# or F#, delegating to the F# functions above. The ones that take an
+/// Action<AggregatesRegistration> name the handlers (aggregates.Handler<…>()) or the assemblies to find them in
+/// (aggregates.FromAssemblyOf<…>()), on IHostBuilder too
 [<Extension; AbstractClass; Sealed>]
 type AggregatesExtensions =
     [<Extension>]
@@ -360,3 +387,87 @@ type AggregatesExtensions =
         when 'OutboxStore : not struct and 'OutboxStore : (new : unit -> 'OutboxStore) and 'OutboxStore :> StateBasedAggregateRepository>
         (services: IServiceCollection, configuration: IConfiguration, [<Optional; DefaultParameterValue(null: Action<OutboxOptions>)>] configure: Action<OutboxOptions>) =
         ServiceCollectionExtensions.AddOutbox<'OutboxStore> services configuration configure
+
+    /// Event-sourced aggregates, with the handlers register names
+    [<Extension>]
+    static member UseAggregatesWithEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository : (new : unit -> 'AggregateRepository) and 'AggregateRepository :> EventSourcedAggregateRepository>
+        (builder: IHostApplicationBuilder, register: Action<AggregatesRegistration>) =
+        ServiceCollectionExtensions.AddEventSourcedAggregates<'AggregateRepository> builder.Services builder.Configuration (AggregatesRegistration.Of register) |> ignore
+        builder
+
+    /// Event-sourced aggregates, with the handlers register names
+    [<Extension>]
+    static member UseAggregatesWithEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository : (new : unit -> 'AggregateRepository) and 'AggregateRepository :> EventSourcedAggregateRepository>
+        (hostBuilder: IHostBuilder, register: Action<AggregatesRegistration>) =
+        // Named now, so a mistake fails here and not when the host is built
+        let registration = AggregatesRegistration.Of register
+        hostBuilder.ConfigureServices(fun ctx services ->
+            ServiceCollectionExtensions.AddEventSourcedAggregates<'AggregateRepository> services ctx.Configuration registration |> ignore)
+
+    /// Event-sourced aggregates, with the handlers register names
+    [<Extension>]
+    static member AddAggregatesWithEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository : (new : unit -> 'AggregateRepository) and 'AggregateRepository :> EventSourcedAggregateRepository>
+        (services: IServiceCollection, configuration: IConfiguration, register: Action<AggregatesRegistration>) =
+        ServiceCollectionExtensions.AddEventSourcedAggregates<'AggregateRepository> services configuration (AggregatesRegistration.Of register)
+
+    /// State-based aggregates, with the handlers register names
+    [<Extension>]
+    static member UseAggregatesWithoutEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository : (new : unit -> 'AggregateRepository) and 'AggregateRepository :> StateBasedAggregateRepository>
+        (builder: IHostApplicationBuilder, register: Action<AggregatesRegistration>) =
+        ServiceCollectionExtensions.AddStateBasedAggregates<'AggregateRepository> builder.Services builder.Configuration (AggregatesRegistration.Of register) |> ignore
+        builder
+
+    /// State-based aggregates, with the handlers register names
+    [<Extension>]
+    static member UseAggregatesWithoutEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository : (new : unit -> 'AggregateRepository) and 'AggregateRepository :> StateBasedAggregateRepository>
+        (hostBuilder: IHostBuilder, register: Action<AggregatesRegistration>) =
+        // Named now, so a mistake fails here and not when the host is built
+        let registration = AggregatesRegistration.Of register
+        hostBuilder.ConfigureServices(fun ctx services ->
+            ServiceCollectionExtensions.AddStateBasedAggregates<'AggregateRepository> services ctx.Configuration registration |> ignore)
+
+    /// State-based aggregates, with the handlers register names
+    [<Extension>]
+    static member AddAggregatesWithoutEventSourcing<'AggregateRepository
+        when 'AggregateRepository : not struct and 'AggregateRepository : (new : unit -> 'AggregateRepository) and 'AggregateRepository :> StateBasedAggregateRepository>
+        (services: IServiceCollection, configuration: IConfiguration, register: Action<AggregatesRegistration>) =
+        ServiceCollectionExtensions.AddStateBasedAggregates<'AggregateRepository> services configuration (AggregatesRegistration.Of register)
+
+    /// Both event-sourced and state-based aggregates, with the handlers register names
+    [<Extension>]
+    static member UseAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository
+        when 'EventSourcedAggregateRepository : not struct and 'EventSourcedAggregateRepository : (new : unit -> 'EventSourcedAggregateRepository)
+        and 'EventSourcedAggregateRepository :> EventSourcedAggregateRepository
+        and 'TStateBasedAggregateRepository : not struct and 'TStateBasedAggregateRepository : (new : unit -> 'TStateBasedAggregateRepository)
+        and 'TStateBasedAggregateRepository :> StateBasedAggregateRepository>
+        (builder: IHostApplicationBuilder, register: Action<AggregatesRegistration>) =
+        ServiceCollectionExtensions.AddBothAggregates<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository> builder.Services builder.Configuration (AggregatesRegistration.Of register) |> ignore
+        builder
+
+    /// Both event-sourced and state-based aggregates, with the handlers register names
+    [<Extension>]
+    static member UseAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository
+        when 'EventSourcedAggregateRepository : not struct and 'EventSourcedAggregateRepository : (new : unit -> 'EventSourcedAggregateRepository)
+        and 'EventSourcedAggregateRepository :> EventSourcedAggregateRepository
+        and 'TStateBasedAggregateRepository : not struct and 'TStateBasedAggregateRepository : (new : unit -> 'TStateBasedAggregateRepository)
+        and 'TStateBasedAggregateRepository :> StateBasedAggregateRepository>
+        (hostBuilder: IHostBuilder, register: Action<AggregatesRegistration>) =
+        // Named now, so a mistake fails here and not when the host is built
+        let registration = AggregatesRegistration.Of register
+        hostBuilder.ConfigureServices(fun ctx services ->
+            ServiceCollectionExtensions.AddBothAggregates<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository> services ctx.Configuration registration |> ignore)
+
+    /// Both event-sourced and state-based aggregates, with the handlers register names
+    [<Extension>]
+    static member AddAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository
+        when 'EventSourcedAggregateRepository : not struct and 'EventSourcedAggregateRepository : (new : unit -> 'EventSourcedAggregateRepository)
+        and 'EventSourcedAggregateRepository :> EventSourcedAggregateRepository
+        and 'TStateBasedAggregateRepository : not struct and 'TStateBasedAggregateRepository : (new : unit -> 'TStateBasedAggregateRepository)
+        and 'TStateBasedAggregateRepository :> StateBasedAggregateRepository>
+        (services: IServiceCollection, configuration: IConfiguration, register: Action<AggregatesRegistration>) =
+        ServiceCollectionExtensions.AddBothAggregates<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository> services configuration (AggregatesRegistration.Of register)

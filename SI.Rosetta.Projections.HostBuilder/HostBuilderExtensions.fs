@@ -34,20 +34,21 @@ module HostBuilderExtensionCommon =
 /// or a plain IServiceCollection
 [<AutoOpen>]
 module ServiceCollectionExtensions =
-    /// The projections in projectionsAssembly, subscribed to 'EventRepository and stored in 'ProjectionsStore
-    let AddProjectionsWith<'EventRepository, 'ProjectionsStore
+    /// The projections registration names, subscribed to 'EventRepository and stored in 'ProjectionsStore
+    let internal AddProjections<'EventRepository, 'ProjectionsStore
         when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
         and 'EventRepository :> EventRepository
         and 'ProjectionsStore : not struct and 'ProjectionsStore : (new : unit -> 'ProjectionsStore)
         and 'ProjectionsStore :> ProjectionStore
-        > (services: IServiceCollection) (configuration: IConfiguration) (projectionsAssembly: Assembly) =
+        > (services: IServiceCollection) (configuration: IConfiguration) (registration: ProjectionsRegistration) =
         if services |> Seq.exists (fun descriptor -> descriptor.ServiceType = typeof<ProjectionsAdded>) then
             raise (InvalidOperationException("Projections can only be added once: by `UseProjectionsWith` or `AddProjectionsWith`."))
         services.AddSingleton<ProjectionsAdded>(ProjectionsAdded()) |> ignore
 
         services.AddTransient<IProjectionsFactory, ProjectionsFactory>() |> ignore
         services.AddTransient<IProjectionHandlerFactory, ProjectionHandlerFactory>() |> ignore
-        RegisterProjectionHandlers(services, projectionsAssembly)
+        for handlerType in registration.HandlerTypes do
+            services.AddTransient(handlerType) |> ignore
 
         match typeof<'ProjectionsStore> with
         //RAVEN DB
@@ -90,11 +91,20 @@ module ServiceCollectionExtensions =
                     sp.GetRequiredService<IProjectionsFactory>(),
                     sp.GetRequiredService<IKurrentDBCustomJSProjectionsFactory>(),
                     sp.GetRequiredService<IHostApplicationLifetime>(),
-                    projectionsAssembly
+                    registration
                 )) |> ignore
         | _ -> raise (Exception("Only types extending `EventRepository` can be used as an Event Repository generic option!"))
 
         services
+
+    /// The projections in projectionsAssembly, subscribed to 'EventRepository and stored in 'ProjectionsStore
+    let AddProjectionsWith<'EventRepository, 'ProjectionsStore
+        when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
+        and 'EventRepository :> EventRepository
+        and 'ProjectionsStore : not struct and 'ProjectionsStore : (new : unit -> 'ProjectionsStore)
+        and 'ProjectionsStore :> ProjectionStore
+        > (services: IServiceCollection) (configuration: IConfiguration) (projectionsAssembly: Assembly) =
+        AddProjections<'EventRepository, 'ProjectionsStore> services configuration (ProjectionsRegistration.OfAssembly projectionsAssembly)
 
 [<AutoOpen>]
 module HostBuilderExtensions =
@@ -120,7 +130,9 @@ module CSharp_HostBuilderExtensions =
         HostBuilderExtensions.UseProjectionsWith<'EventRepository, 'ProjectionsStore> hostBuilder projectionsAssembly
 
 /// Extension methods for IHostApplicationBuilder (Host.CreateApplicationBuilder, WebApplication.CreateBuilder)
-/// and IServiceCollection, from C# or F#, delegating to the F# functions above
+/// and IServiceCollection, from C# or F#, delegating to the F# functions above. The ones that take an
+/// Action<ProjectionsRegistration> name the projections (projections.Projection<…, …>()) or the assemblies to find them
+/// in (projections.FromAssemblyOf<…>()), on IHostBuilder too
 [<Extension; AbstractClass; Sealed>]
 type ProjectionsExtensions =
     [<Extension>]
@@ -142,3 +154,39 @@ type ProjectionsExtensions =
         and 'ProjectionsStore :> ProjectionStore>
         (services: IServiceCollection, configuration: IConfiguration, projectionsAssembly: Assembly) =
         ServiceCollectionExtensions.AddProjectionsWith<'EventRepository, 'ProjectionsStore> services configuration projectionsAssembly
+
+    /// The projections register names, subscribed to 'EventRepository and stored in 'ProjectionsStore
+    [<Extension>]
+    static member UseProjectionsWith<'EventRepository, 'ProjectionsStore
+        when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
+        and 'EventRepository :> EventRepository
+        and 'ProjectionsStore : not struct and 'ProjectionsStore : (new : unit -> 'ProjectionsStore)
+        and 'ProjectionsStore :> ProjectionStore>
+        (builder: IHostApplicationBuilder, register: Action<ProjectionsRegistration>) =
+        ServiceCollectionExtensions.AddProjections<'EventRepository, 'ProjectionsStore>
+            builder.Services builder.Configuration (ProjectionsRegistration.Of register) |> ignore
+        builder
+
+    /// The projections register names, subscribed to 'EventRepository and stored in 'ProjectionsStore
+    [<Extension>]
+    static member UseProjectionsWith<'EventRepository, 'ProjectionsStore
+        when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
+        and 'EventRepository :> EventRepository
+        and 'ProjectionsStore : not struct and 'ProjectionsStore : (new : unit -> 'ProjectionsStore)
+        and 'ProjectionsStore :> ProjectionStore>
+        (hostBuilder: IHostBuilder, register: Action<ProjectionsRegistration>) =
+        // Named now, so a mistake fails here and not when the host is built
+        let registration = ProjectionsRegistration.Of register
+        hostBuilder.ConfigureServices(fun ctx services ->
+            ServiceCollectionExtensions.AddProjections<'EventRepository, 'ProjectionsStore> services ctx.Configuration registration |> ignore)
+
+    /// The projections register names, subscribed to 'EventRepository and stored in 'ProjectionsStore
+    [<Extension>]
+    static member AddProjectionsWith<'EventRepository, 'ProjectionsStore
+        when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
+        and 'EventRepository :> EventRepository
+        and 'ProjectionsStore : not struct and 'ProjectionsStore : (new : unit -> 'ProjectionsStore)
+        and 'ProjectionsStore :> ProjectionStore>
+        (services: IServiceCollection, configuration: IConfiguration, register: Action<ProjectionsRegistration>) =
+        ServiceCollectionExtensions.AddProjections<'EventRepository, 'ProjectionsStore>
+            services configuration (ProjectionsRegistration.Of register)

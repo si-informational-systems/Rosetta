@@ -82,18 +82,16 @@ module CustomProjectionDiscovery =
         
         sourceAggregateStreams
             
+    /// The custom projection of an ICustomProjectionEvents DU, its source streams found from the `{Aggregate}Stream`
+    /// constants in streamConstantsAssembly
+    let DiscoverCustomProjection (streamConstantsAssembly: Assembly) (customProjectionEventsType: Type) : KurrentDBProjectionParameters =
+        let eventTypes = GetProjectionCaseTypes customProjectionEventsType
+        { ProjectionName = GetProjectionName customProjectionEventsType
+          DestinationStreamName = GetStreamName customProjectionEventsType
+          AggregateEventsStreamNames = DiscoverSourceStreams(streamConstantsAssembly, eventTypes)
+          EventsToInclude = eventTypes }
+
+    /// The custom projections of every ICustomProjectionEvents DU in the assembly, which also holds the stream constants
     let DiscoverCustomProjections (assembly: Assembly) : KurrentDBProjectionParameters array =
-        let customProjectionDUTypes = GetCustomProjectionEventsDUTypes assembly
-        let result = 
-            customProjectionDUTypes
-            |> Array.map (fun projType ->
-                let eventTypes = GetProjectionCaseTypes projType
-        
-                let param : KurrentDBProjectionParameters = { 
-                    ProjectionName = GetProjectionName projType
-                    DestinationStreamName = GetStreamName projType
-                    AggregateEventsStreamNames = DiscoverSourceStreams(assembly, eventTypes)
-                    EventsToInclude = eventTypes
-                }
-                param)
-        result
+        GetCustomProjectionEventsDUTypes assembly
+        |> Array.map (DiscoverCustomProjection assembly)

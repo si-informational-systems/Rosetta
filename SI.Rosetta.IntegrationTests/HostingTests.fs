@@ -71,3 +71,33 @@ type HostingTests(databases: Databases) =
             Assert.NotEmpty(listener.Measured "rosetta.projection.events" [ "rosetta.projection", box "Parcel"; "rosetta.outcome", box "handled" ])
             do! host.StopAsync()
         }
+
+    [<Fact>]
+    member this.``An app that names its handlers and projections runs only those``() =
+        task {
+            let builder = Host.CreateApplicationBuilder(HostApplicationBuilderSettings(DisableDefaults = true))
+            builder.Configuration.AddConfiguration(databases.Configuration "Rosetta-HostingTests") |> ignore
+            builder.UseAggregatesWithEventSourcing<SI.Rosetta.Aggregates.HostBuilder.KurrentDB>(fun aggregates ->
+                aggregates.Handler<ParcelAggregateHandler>()) |> ignore
+            builder.UseProjectionsWith<SI.Rosetta.Projections.HostBuilder.KurrentDB, RavenDB>(fun projections ->
+                projections.Projection<ParcelProjection, ParcelEvents>()) |> ignore
+            // ParcelRouteProjection isn't named, so its handler isn't registered
+            Assert.DoesNotContain(builder.Services, fun descriptor -> descriptor.ServiceType = typeof<ParcelRouteProjectionHandler>)
+            use host = builder.Build()
+            do! host.StartAsync()
+
+            let id = sprintf "Parcels-%s" (Guid.NewGuid().ToString("N"))
+            let handler = host.Services.GetRequiredService<IParcelAggregateHandler>()
+            do! handler.ExecuteAsync(ParcelCommands.Register { Id = id; Recipient = "Ada" })
+            do! handler.ExecuteAsync(ParcelCommands.Readdress { Id = id; Recipient = "Grace" })
+
+            let store = host.Services.GetRequiredService<INoSqlStore>()
+            do! Eventually (TimeSpan.FromSeconds 60.0) "the Parcel projection catches up" (fun () ->
+                    task {
+                        let! parcel = store.LoadAsync<Parcel>(id)
+                        return not (isNull (box parcel)) && parcel.Recipient = "Grace"
+                    })
+            let! route = store.LoadAsync<ParcelRoute>(sprintf "Routes-%s" id)
+            Assert.Null(box route)
+            do! host.StopAsync()
+        }

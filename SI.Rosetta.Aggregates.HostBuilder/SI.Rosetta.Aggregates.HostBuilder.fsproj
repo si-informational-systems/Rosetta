@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <Compile Include="AggregateRepositories\AggregateRepositories.fs" />
-    <Compile Include="AggregateInteractorExtractor.fs" />
+    <Compile Include="AggregatesRegistration.fs" />
     <Compile Include="HostBuilderExtensions.fs" />
   </ItemGroup>
 

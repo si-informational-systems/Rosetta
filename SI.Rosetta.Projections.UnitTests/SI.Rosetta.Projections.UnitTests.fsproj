@@ -19,6 +19,7 @@
     <Compile Include="SerializationTests.fs" />
     <Compile Include="EventFormatTests.fs" />
     <Compile Include="HostingTests.fs" />
+    <Compile Include="ProjectionsRegistrationTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

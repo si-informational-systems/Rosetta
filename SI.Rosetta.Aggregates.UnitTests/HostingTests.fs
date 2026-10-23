@@ -1,4 +1,4 @@
-namespace SI.Rosetta.Aggregates.UnitTests
+﻿namespace SI.Rosetta.Aggregates.UnitTests
 
 open System
 open Microsoft.Extensions.Configuration
@@ -69,3 +69,54 @@ type HostingTests() =
         Assert.Empty(typeof<StateBasedAggregateRepository>.GetConstructors())
         for store in [ typeof<KurrentDB>; typeof<RavenDB>; typeof<MongoDB> ] do
             Assert.True(store.IsSealed, sprintf "%s can be inherited" store.Name)
+
+    [<Fact>]
+    member this.``A named handler is the only one registered, under its marker interface``() =
+        let builder = CreateBuilder()
+        let mutable registration = Unchecked.defaultof<AggregatesRegistration>
+
+        builder.UseAggregatesWithEventSourcing<KurrentDB>(fun aggregates ->
+            aggregates.Handler<OrganizationAggregateHandler>()
+            registration <- aggregates) |> ignore
+
+        Assert.Equal<Type>([ typeof<OrganizationAggregateHandler> ], registration.HandlerTypes)
+        let handlers = builder.Services |> Seq.filter (fun descriptor -> typeof<IAggregateHandler>.IsAssignableFrom descriptor.ServiceType)
+        Assert.Equal(typeof<OrganizationAggregateHandler>, (Seq.exactlyOne handlers).ImplementationType)
+        use host = builder.Build()
+        Assert.IsType<OrganizationAggregateHandler>(host.Services.GetRequiredService<IOrganizationAggregateHandler>()) |> ignore
+
+    [<Fact>]
+    member this.``A handler both named and found in an assembly is registered once``() =
+        let services = ServiceCollection()
+        let configuration = CreateBuilder().Configuration
+
+        services.AddAggregatesWithEventSourcing<KurrentDB>(configuration, fun aggregates ->
+            aggregates.Handler<OrganizationAggregateHandler>()
+            aggregates.FromAssemblyOf<OrganizationAggregateHandler>()
+            aggregates.FromAssembly typeof<OrganizationAggregateHandler>.Assembly) |> ignore
+
+        let handlers = services |> Seq.filter (fun descriptor -> descriptor.ServiceType = typeof<IOrganizationAggregateHandler>)
+        Assert.Equal(typeof<OrganizationAggregateHandler>, (Seq.exactlyOne handlers).ImplementationType)
+
+    [<Fact>]
+    member this.``A handler without a marker interface can't be named``() =
+        let builder = CreateBuilder()
+
+        let error =
+            Assert.Throws<InvalidOperationException>(fun () ->
+                builder.UseAggregatesWithEventSourcing<KurrentDB>(fun aggregates ->
+                    aggregates.Handler<AggregateHandler<OrganizationAggregate, OrganizationCommands>>()) |> ignore)
+
+        Assert.Contains("marker interface", error.Message)
+
+    [<Fact>]
+    member this.``Handlers can be named on an IHostBuilder``() =
+        let hostBuilder =
+            Microsoft.Extensions.Hosting.HostBuilder()
+                .ConfigureAppConfiguration(fun configuration ->
+                    configuration.AddInMemoryCollection(dict [ "KurrentDB:ConnectionString", "kurrentdb://localhost:1?tls=false" ]) |> ignore)
+
+        hostBuilder.UseAggregatesWithEventSourcing<KurrentDB>(fun aggregates -> aggregates.Handler<OrganizationAggregateHandler>()) |> ignore
+
+        use host = hostBuilder.Build()
+        Assert.IsType<OrganizationAggregateHandler>(host.Services.GetRequiredService<IOrganizationAggregateHandler>()) |> ignore

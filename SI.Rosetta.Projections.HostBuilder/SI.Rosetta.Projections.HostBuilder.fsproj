@@ -10,10 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="ProjectionsRegistration.fs" />
     <Compile Include="HostedServiceInstances\KurrentDBProjectionsHostedServiceInstance.fs" />
     <Compile Include="ProjectionStores\ProjectionStores.fs" />
     <Compile Include="EventRepositories\EventRepositories.fs" />
-    <Compile Include="ProjectionsExtractor.fs" />
     <Compile Include="HostBuilderExtensions.fs" />
   </ItemGroup>
 

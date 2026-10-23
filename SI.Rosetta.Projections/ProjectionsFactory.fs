@@ -1,4 +1,4 @@
-namespace SI.Rosetta.Projections
+﻿namespace SI.Rosetta.Projections
 
 open System
 open System.Collections.Generic
@@ -11,6 +11,27 @@ type ProjectionInfo = {
     Name: string
     SubscriptionStreamName: string
 }
+
+/// The projection types: the ones that inherit Projection<'TEvent>, as IProjectionInstance<'TEvent> marks them
+module ProjectionTypes =
+    let private ProjectionInstanceOf (t: Type) =
+        t.GetInterfaces()
+        |> Array.tryFind (fun i -> i.IsGenericType && i.GetGenericTypeDefinition() = typedefof<IProjectionInstance<_>>)
+
+    /// Whether the projection runs: it doesn't when it has [<DisabledProjection>]
+    let IsActive (t: Type) =
+        isNull (t.GetCustomAttribute(typeof<DisabledProjection>))
+
+    /// The events DU the projection type projects
+    let EventsTypeOf (t: Type) =
+        match ProjectionInstanceOf t with
+        | Some instance -> instance.GetGenericArguments().[0]
+        | None -> raise (ArgumentException(sprintf "%s isn't a projection: it doesn't inherit Projection<'TEvent>." t.Name))
+
+    /// The active projection types in the assembly
+    let In (assembly: Assembly) =
+        assembly.GetTypes()
+        |> Array.filter (fun t -> (ProjectionInstanceOf t).IsSome && IsActive t)
 
 type ProjectionsFactory(provider: IServiceProvider) =
     let CheckpointsPrefix = "Checkpoints"
@@ -69,82 +90,41 @@ type ProjectionsFactory(provider: IServiceProvider) =
             
         handlers
         
-    member this.IsActive(t: Type) =
-        let attrInfo = t.GetCustomAttribute(typeof<DisabledProjection>)
-        attrInfo = null
+    member this.IsActive(t: Type) = ProjectionTypes.IsActive t
 
     member this.SkipsUnknownEvents(t: Type) =
         not (isNull (t.GetCustomAttribute(typeof<SkipUnknownEvents>)))
 
+    /// Every step typed: the projection of 'TEvent that projectionType declares
+    member private this.CreateOfAsync<'TEvent when 'TEvent :> IAggregateEvents>(projectionType: Type) : Task<IProjection> =
+        task {
+            if not (typeof<IProjectionInstance<'TEvent>>.IsAssignableFrom projectionType) then
+                raise (ArgumentException(sprintf "%s isn't a projection of %s: it doesn't inherit Projection<%s>." projectionType.Name typeof<'TEvent>.Name typeof<'TEvent>.Name))
+            let projection = Projection<'TEvent>()
+            this.SetNameAndStreamName projectionType projection
+            projection.SkipUnknownEvents <- this.SkipsUnknownEvents projectionType
+            do! this.LoadCheckpoint(projection).ConfigureAwait(false)
+            projection.CheckpointStore <- provider.GetRequiredService<ICheckpointStore>()
+            projection.Subscription <- this.CreateSubscription projection
+            projection.Handlers <- this.CreateHandlers<'TEvent> projectionType
+            return projection :> IProjection
+        }
+
     interface IProjectionsFactory with
         member this.CreateFromAssemblyAsync(projectionsAssembly: Assembly) =
             task {
-                let projectionTypes = 
-                    projectionsAssembly.GetTypes()
-                    |> Seq.filter (fun t -> 
-                        t.GetInterfaces()
-                        |> Array.exists (fun i -> 
-                            i.IsGenericType && 
-                            i.GetGenericTypeDefinition() = typedefof<IProjectionInstance<_>>))
-                    |> Seq.filter this.IsActive
-                    |> Seq.toList
-                    
                 let ret = List<IProjection>()
-                
-                for t in projectionTypes do
+                for t in ProjectionTypes.In projectionsAssembly do
                     let! proj = (this :> IProjectionsFactory).CreateAsync(t).ConfigureAwait(false)
                     ret.Add(proj)
-                    
-                return ret
+                return ret :> IList<IProjection>
             }
-            
+
         member this.CreateAsync(t: Type) =
-            task {
-                // Get the event type from the IProjection<T> interface
-                let eventsType = 
-                    t.GetInterfaces()
-                    |> Seq.find (fun i -> 
-                        i.IsGenericType && 
-                        i.GetGenericTypeDefinition() = typedefof<IProjectionInstance<_>>)
-                    |> fun i -> i.GetGenericArguments().[0]
-                
-                // Create the concrete Projection<T> type
-                let projTypeDef = typedefof<Projection<_>>
-                let constructedProj = projTypeDef.MakeGenericType [|eventsType|]
-                let projection = Activator.CreateInstance(constructedProj)
-                let projectionType = projection.GetType()
+            // The one step that needs reflection: the events DU is only known from t
+            typeof<ProjectionsFactory>.GetMethod("CreateOfAsync", BindingFlags.Instance ||| BindingFlags.NonPublic)
+                .MakeGenericMethod(ProjectionTypes.EventsTypeOf t)
+                .Invoke(this, [| t |]) :?> Task<IProjection>
 
-                // Set name and stream name
-                let setNameAndStreamNameMethod =
-                    this.GetType().GetMethod("SetNameAndStreamName")
-                        .MakeGenericMethod(eventsType)
-                setNameAndStreamNameMethod.Invoke(this, [|t; projection|]) |> ignore
-                projectionType.GetProperty("SkipUnknownEvents").SetValue(projection, this.SkipsUnknownEvents t)
-
-                let loadCheckpointMethod = 
-                    this.GetType().GetMethod("LoadCheckpoint")
-                        .MakeGenericMethod(eventsType)
-                do! (loadCheckpointMethod.Invoke(this, [|projection|]) :?> Task).ConfigureAwait(false)
-                
-                // Set checkpoint writer
-                let checkpointStoreProp = projectionType.GetProperty("CheckpointStore")
-                checkpointStoreProp.SetValue(projection, provider.GetRequiredService<ICheckpointStore>())
-                
-                // Create and set subscription
-                let createSubscriptionMethod = 
-                    this.GetType().GetMethod("CreateSubscription")
-                        .MakeGenericMethod(eventsType)
-                let subscription = createSubscriptionMethod.Invoke(this, [|projection|])
-                let subscriptionProp = projectionType.GetProperty("Subscription")
-                subscriptionProp.SetValue(projection, subscription)
-                
-                // Set handlers
-                let createHandlersMethod =
-                    this.GetType().GetMethod("CreateHandlers")
-                        .MakeGenericMethod(eventsType)
-                let handlers = createHandlersMethod.Invoke(this, [|t|])
-                let handlersProp = projectionType.GetProperty("Handlers")
-                handlersProp.SetValue(projection, handlers)
-                
-                return projection :?> IProjection
-            }
+        member this.CreateAsync<'TEvent when 'TEvent :> IAggregateEvents>(projectionType: Type) =
+            this.CreateOfAsync<'TEvent> projectionType
