@@ -121,8 +121,8 @@ type ProjectionsFactory(provider: IServiceProvider) =
             }
 
         member this.CreateAsync(t: Type) =
-            // The one step that needs reflection: the events DU is only known from t
-            typeof<ProjectionsFactory>.GetMethod("CreateOfAsync", BindingFlags.Instance ||| BindingFlags.NonPublic)
+            // The one step that needs reflection: the events DU is only known from t. nameof, so a rename can't break it
+            typeof<ProjectionsFactory>.GetMethod(nameof this.CreateOfAsync, BindingFlags.Instance ||| BindingFlags.NonPublic)
                 .MakeGenericMethod(ProjectionTypes.EventsTypeOf t)
                 .Invoke(this, [| t |]) :?> Task<IProjection>
 
