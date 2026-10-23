@@ -1,4 +1,4 @@
-# 🚀 Rosetta Framework
+﻿# 🚀 Rosetta Framework
 
 **Domain-Driven Design, Event Sourcing, and Projections for .NET & F# — with KurrentDB, RavenDB, MongoDB, and modern HostBuilder integration.**
 
@@ -522,6 +522,7 @@ and PersonProjectionHandler(store: INoSqlStore) =
 ```
 
 - A Projection can be handled by several Handlers - add one `IAmHandledBy<…>` per Handler.
+- The Projection type is only a declaration: Rosetta reads its attributes and `IAmHandledBy<…>`, and never creates it. Its dependencies go in its Handlers, which are resolved from DI as transient services and can take any registered service. An effect after projecting (a command to an Aggregate, a message) is a Handler too.
 - `IAmHandledBy<Handler, Events>` must name the Projection's own events DU: a Handler of another DU doesn't compile (FS0366 "No implementation was given for 'abstract IProjectionOf.EventsType…'" on that line).
 - Checkpoints are stored per Projection (`Checkpoints-{ProjectionName}`), so a restarted service continues where it stopped.
 - Add `[<DisabledProjection>]` to switch a Projection off.
@@ -530,6 +531,7 @@ and PersonProjectionHandler(store: INoSqlStore) =
 
 - Projections run in a `BackgroundService`. The application finishes starting right away, and stopping it (Ctrl+C) cancels every subscription immediately.
 - A Projection's Handlers handle each event in parallel. When any of them fails, the `ProjectionException` holds every Handler's failure, and the checkpoint isn't stored.
+- Events are delivered at least once: after a failure, the event goes to every Handler again, including the ones that succeeded. So a Handler's effects must be idempotent, and an effect that has to follow the read model belongs in the same Handler, after the store.
 - When a subscription drops (KurrentDB is unavailable, or a Handler throws because, say, the read store is down), it resubscribes from its last checkpoint **up to 5 times**, waiting **1, 2, 4, 8 and 16 s**. Only progress resets the count: a handled event, or catching up with the stream. A Handler that keeps failing on the same event therefore doesn't retry forever.
 - If a Projection still fails, **the whole application stops**: Rosetta logs it as Critical, sets `Environment.ExitCode` to 1 and stops the host. The same happens when the Projections can't start, e.g. when KurrentDB is down at startup.
 - An event the Projection's events DU has no case for stops it **at once**, without resubscribing, since retrying can't help (see [Evolving events](#-evolving-events-upcasting-and-unknown-events)).
