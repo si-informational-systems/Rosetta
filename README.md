@@ -731,7 +731,7 @@ The TestKits are built for **xUnit v3**. A test project that uses them reference
   <OutputType>Exe</OutputType>
 </PropertyGroup>
 <ItemGroup>
-  <PackageReference Include="xunit.v3" Version="4.0.2" />
+  <PackageReference Include="xunit.v3" Version="4.0.3" />
   <PackageReference Include="SI.Rosetta.Aggregates.TestKit" Version="..." />
 </ItemGroup>
 ```

@@ -24,7 +24,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0" />
-    <PackageReference Include="xunit.v3.assert" Version="4.0.2" />
+    <PackageReference Include="xunit.v3.assert" Version="4.0.3" />
   </ItemGroup>
 
 </Project>

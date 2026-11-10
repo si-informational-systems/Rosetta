@@ -26,7 +26,7 @@
     <ProjectReference Include="..\SI.Rosetta.Projections\SI.Rosetta.Projections.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.TestKit.ObjectComparer\SI.Rosetta.TestKit.ObjectComparer.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.TestKit.Upcasting\SI.Rosetta.TestKit.Upcasting.fsproj" />
-    <PackageReference Include="xunit.v3.assert" Version="4.0.2" />
+    <PackageReference Include="xunit.v3.assert" Version="4.0.3" />
   </ItemGroup>
 
 </Project>
