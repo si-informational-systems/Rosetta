@@ -3,6 +3,7 @@ namespace SI.Rosetta.IntegrationTests
 open System
 open System.Collections.Generic
 open System.Threading.Tasks
+open Docker.DotNet.Models
 open DotNet.Testcontainers.Containers
 open Microsoft.Extensions.Configuration
 open MongoDB.Bson
@@ -21,6 +22,16 @@ type Databases() =
             .WithEnvironment("KURRENTDB_RUN_PROJECTIONS", "All")
             .WithEnvironment("KURRENTDB_START_STANDARD_PROJECTIONS", "true")
             .WithEnvironment("KURRENTDB_TELEMETRY_OPTOUT", "true")
+            // Testcontainers gives up after 3 failed health checks (15 seconds), which a busy Docker host can exceed while KurrentDB starts.
+            // Docker doesn't count failures during the start period, so KurrentDB gets a minute first.
+            .WithCreateParameterModifier(fun parameters ->
+                parameters.Healthcheck <-
+                    HealthcheckConfig(
+                        Test = ResizeArray [ "CMD-SHELL"; "curl --fail http://localhost:2113/health/live || exit 1" ],
+                        Interval = TimeSpan.FromSeconds 5.,
+                        Timeout = TimeSpan.FromSeconds 5.,
+                        StartPeriod = TimeSpan.FromMinutes 1.,
+                        Retries = 24L))
             .Build()
 
     let RavenDBContainer =
