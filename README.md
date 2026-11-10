@@ -68,7 +68,7 @@ graph TD
 
 ### 1. Install NuGet Packages
 
-Rosetta targets **.NET 10**.
+Rosetta targets **.NET 11**.
 
 ```shell
 # Aggregates (registers the KurrentDB, RavenDB and MongoDB repositories)
@@ -736,7 +736,7 @@ The TestKits are built for **xUnit v3**. A test project that uses them reference
 </ItemGroup>
 ```
 
-xUnit v3 runs on the Microsoft Testing Platform. With the .NET 10 SDK, `dotnet test` only runs it after you opt in from `global.json`:
+xUnit v3 runs on the Microsoft Testing Platform. With the .NET 11 SDK, `dotnet test` only runs it after you opt in from `global.json`:
 
 ```json
 { "test": { "runner": "Microsoft.Testing.Platform" } }
@@ -871,7 +871,7 @@ dotnet build SI.Rosetta.sln
 dotnet test SI.Rosetta.sln
 ```
 
-`global.json` pins the .NET 10 SDK. Every library project produces its NuGet package on build. `SI.Rosetta.Aggregates.Template` is a Visual Studio item template and is excluded from the solution build (see its own README).
+`global.json` pins the .NET 11 SDK. Every library project produces its NuGet package on build. `SI.Rosetta.Aggregates.Template` is a Visual Studio item template and is excluded from the solution build (see its own README).
 
 `dotnet test` also runs `SI.Rosetta.IntegrationTests`, which start KurrentDB, RavenDB and MongoDB in Docker with [Testcontainers](https://dotnet.testcontainers.org/), so Docker must be running. To run only the unit tests, pass `--project SI.Rosetta.Aggregates.UnitTests` or `--project SI.Rosetta.Projections.UnitTests`. CI (`.github/workflows/ci.yml`) builds and runs every test on each push to `master` and on pull requests.
 
