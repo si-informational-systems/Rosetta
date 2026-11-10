@@ -19,6 +19,7 @@
     <Compile Include="StateBasedAggregateRepositoryTests.fs" />
     <Compile Include="OutboxTests.fs" />
     <Compile Include="KurrentDBSubscriptionTests.fs" />
+    <Compile Include="KurrentDBCustomProjectionsTests.fs" />
     <Compile Include="HostingTests.fs" />
   </ItemGroup>
 
