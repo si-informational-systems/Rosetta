@@ -17,7 +17,8 @@ recorded until something listens. See [Observability](../concepts/observability.
 | `{Aggregate} {EventType} publish` (`Person PersonRegistered publish`) | Producer | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.event`, `rosetta.outbox.event.id`, `rosetta.event.case` (the union case, once decoded) | Error with the exception when `PublishAsync` throws, or when the event can't be decoded |
 
 - `{Command}` is the command's record type name; `{Event}` and `{EventType}` are the event's stored name.
-- A projection span's parent is the `traceparent` stored in the event's metadata, so a trace runs from the request,
+- A projection span's parent is the trace stored in the event's metadata (`$traceId`/`$spanId`, which KurrentDB.Client
+  writes on an append made inside a trace; taken as sampled, since the client doesn't store the flag), so a trace runs from the request,
   through the command, to every Projection, across services.
 - A conflict retried at once ([commands](../concepts/aggregates.md#conflicts),
   [events](../concepts/projections.md#conflicts-are-retried-at-once)) adds the span event `rosetta.conflict.retry` and

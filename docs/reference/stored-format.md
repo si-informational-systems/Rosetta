@@ -12,23 +12,23 @@ description: How Rosetta writes events to KurrentDB and the Outbox — data, met
 | Stream | the Aggregate's `Id` (`People-1`) |
 | Event type | the record's stored name: its `[<EventType>]` name, or its type name (`PersonRegistered`) |
 | Data | the case's **record** as compact JSON (not the union case) |
-| Metadata | the command's trace context, as JSON; empty when the command ran outside a trace |
+| Metadata | none from Rosetta; KurrentDB.Client adds the trace when the command ran inside one |
 
 ```json title="data"
 {"Id":"People-1","Name":"Ada"}
 ```
 
-```json title="metadata"
-{"traceparent":"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}
+```json title="metadata (inside a trace, written by KurrentDB.Client)"
+{"$traceId":"4bf92f3577b34da6a3ce929d0e0e4736","$spanId":"00f067aa0ba902b7"}
 ```
 
 - **The event type** is all Rosetta needs to read an event: it finds the DU case whose record is stored under that name.
-- **`traceparent`/`tracestate`** are written when the command ran inside a trace, so the projections handling the event
-  continue it. Outside a trace the metadata is empty.
-- **Before 1.38** the metadata also held `DiscriminatedUnionCaseType` (the stored name again, always equal to the event
-  type) and the CLR type names `EventClrTypeName`, `EventsDiscriminatedUnionClrTypeName` and `AggregateClrTypeName`,
-  with their assemblies' versions: often more bytes than the event's data. Nothing read them, so 1.38 stopped writing
-  them. Events stored before keep them (KurrentDB events are immutable) and read the same.
+- **Rosetta writes no metadata.** KurrentDB.Client adds `$traceId` and `$spanId` to an append made inside a trace (the
+  command's span, or the client's own append span when the app traces the client too), and the projections handling
+  the event continue that trace, taking it as sampled (the client doesn't store the flag, nor `tracestate`). Outside a
+  trace the metadata is empty.
+- **Before 1.38** the metadata held `DiscriminatedUnionCaseType` (the stored name again), CLR type names and
+  `traceparent`: often more bytes than the event's data, and nothing but `traceparent` was read.
 
 ## JSON shapes
 

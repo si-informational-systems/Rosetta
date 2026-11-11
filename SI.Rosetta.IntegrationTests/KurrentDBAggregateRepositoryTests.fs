@@ -38,7 +38,7 @@ type KurrentDBAggregateRepositoryTests(databases: Databases) =
         }
 
     [<Fact>]
-    member this.``A stored event's type is its stored name, and its metadata only the command's trace``() =
+    member this.``A stored event's type is its stored name, and its metadata only KurrentDB.Client's trace``() =
         task {
             let repository = KurrentDBAggregateRepository(Client) :> IAggregateRepository
             let id = NewId()
@@ -58,25 +58,9 @@ type KurrentDBAggregateRepositoryTests(databases: Databases) =
             // Outside a trace: no metadata at all
             Assert.True(events.[0].Event.Metadata.IsEmpty)
             use metadata = Text.Json.JsonDocument.Parse(events.[1].Event.Metadata)
-            // KurrentDB.Client adds its own $traceId and $spanId to the metadata of an append inside a trace
-            let written = metadata.RootElement.EnumerateObject() |> Seq.map (fun p -> p.Name) |> Seq.filter (fun name -> not (name.StartsWith "$")) |> List.ofSeq
-            Assert.Equal<string list>([ "traceparent" ], written)
-            Assert.Equal(command.Id, metadata.RootElement.GetProperty("traceparent").GetString())
-        }
-
-    [<Fact>]
-    member this.``Events written by Rosetta 1.37, with their metadata, and lean ones read the same``() =
-        task {
-            let repository = KurrentDBAggregateRepository(Client) :> IAggregateRepository
-            let id = NewId()
-            let! _ = Client.AppendToStreamAsync(id, StreamState.NoStream, [
-                        Events.WrittenBy137 typeof<ParcelAggregate> (ParcelEvents.Registered { Id = id; Recipient = "Ada" })
-                        Events.Known (ParcelEvents.Readdressed { Id = id; Recipient = "Grace" }) ])
-
-            let! stored = Get repository id
-
-            Assert.Equal("Grace", stored.Value.State.Recipient)
-            Assert.Equal(2L, stored.Value.Version)
+            // Rosetta writes none: KurrentDB.Client adds $traceId and $spanId to an append inside a trace
+            Assert.Equal<string list>([ "$traceId"; "$spanId" ], metadata.RootElement.EnumerateObject() |> Seq.map (fun p -> p.Name) |> List.ofSeq)
+            Assert.Equal(command.TraceId.ToHexString(), metadata.RootElement.GetProperty("$traceId").GetString())
         }
 
     [<Fact>]

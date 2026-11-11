@@ -36,13 +36,6 @@ module RosettaTelemetry =
     /// error retrying can't heal), by projection and state (faulted, stopped)
     let ProjectionFaults = Meter.CreateCounter<int64>("rosetta.projection.faults", "{fault}", "Projections that faulted or stopped")
 
-    /// The W3C trace context of the command that stored an event, kept in the event's metadata, so the projections
-    /// handling it continue that trace
-    [<Literal>]
-    let TraceParentHeader = "traceparent"
-    [<Literal>]
-    let TraceStateHeader = "tracestate"
-
     let Tag (key: string) (value: obj) = KeyValuePair<string, obj>(key, value)
 
     /// Seconds since a Stopwatch.GetTimestamp()

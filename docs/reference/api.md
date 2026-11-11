@@ -95,8 +95,8 @@ see [Conflicts](../concepts/aggregates.md#conflicts)) and by every Projection (o
 
 ### `RosettaTelemetry` (module)
 
-`Name = "SI.Rosetta"`, `ActivitySource`, `Meter`, the instruments (see [Telemetry](telemetry.md)),
-`TraceParentHeader = "traceparent"`, `TraceStateHeader = "tracestate"`.
+`Name = "SI.Rosetta"`, `ActivitySource`, `Meter`, the instruments (see [Telemetry](telemetry.md)).
+`KurrentDBSerialization.TraceContextOf` reads an event's trace from KurrentDB.Client's `$traceId`/`$spanId`.
 
 ### Helpers
 

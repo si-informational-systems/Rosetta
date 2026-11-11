@@ -2,8 +2,8 @@
 
 open SI.Rosetta.Common
 
-/// EventEncoding as KurrentDB events: the event type is the record's stored name, the record JSON is the event data,
-/// and the metadata holds only the command's trace context (nothing when there's none)
+/// EventEncoding as KurrentDB events: the event type is the record's stored name, and the record JSON is the event data.
+/// Rosetta writes no metadata: KurrentDB.Client adds the command's trace ($traceId, $spanId) to an append made inside one
 module KurrentDBSerialization =
     open System
     open System.Diagnostics
@@ -18,26 +18,21 @@ module KurrentDBSerialization =
         /// The KurrentDB event type: the record's stored name ([<EventType>] or its type name)
         EventClrName: string
         Data: byte[]
-        /// The headers as JSON; empty when there are none
+        /// The headers given, as JSON; empty when there are none
         Metadata: byte[]
     }
 
-    /// The event's stored name as its event type, its record as data, and as metadata the headers given plus the
-    /// command's W3C trace context (traceparent, tracestate), which the projections handling it continue. Nothing else
-    /// goes in the metadata: reading an event needs only its event type. Since Rosetta 1.38: before, the metadata also
-    /// held the stored name (DiscriminatedUnionCaseType) and CLR type names, which nothing read
+    /// KurrentDB.Client's names for the trace and span of the activity an event was appended in
+    let TraceIdHeader = "$traceId"
+    let SpanIdHeader = "$spanId"
+
+    /// The event's stored name as its event type, its record as data, and the headers given (none, from Rosetta) as
+    /// metadata. Reading an event needs only its event type
     let Serialize(event: IAggregateEvents, headers: IDictionary<string, obj>) : KurrentDBSerializedEvent =
         let typeName, json = EventEncoding.Encode event
-        let eventHeaders = Dictionary<string, obj> headers
-        match Activity.Current with
-        | null -> ()
-        | activity ->
-            eventHeaders.[RosettaTelemetry.TraceParentHeader] <- activity.Id
-            if not (String.IsNullOrEmpty activity.TraceStateString) then
-                eventHeaders.[RosettaTelemetry.TraceStateHeader] <- activity.TraceStateString
         { EventClrName = typeName
           Data = Encoding.UTF8.GetBytes json
-          Metadata = if eventHeaders.Count = 0 then Array.Empty<byte>() else JsonSerializer.SerializeToUtf8Bytes(eventHeaders, JsonOptions) }
+          Metadata = if headers.Count = 0 then Array.Empty<byte>() else JsonSerializer.SerializeToUtf8Bytes(headers, JsonOptions) }
 
     /// The event as the eventsType case its event type names, after the upcasters, or the stored name eventsType has
     /// no case for. The event type is the record's stored name, as every Rosetta version wrote it
@@ -45,21 +40,25 @@ module KurrentDBSerialization =
         let json = Encoding.UTF8.GetString(resolvedEvent.Event.Data.Span)
         EventEncoding.DecodeAs eventsType upcasters resolvedEvent.Event.EventType json
 
-    /// The trace context of the command that stored the event, or the default (no parent) when it has none
+    /// The trace the event was appended in, from the $traceId and $spanId KurrentDB.Client wrote in its metadata, or the
+    /// default (no parent) when it has none. The client doesn't store the sampled flag: the trace is taken as sampled,
+    /// so a sampler that follows its parent records the projections' spans
     let TraceContextOf (resolvedEvent: ResolvedEvent) : ActivityContext =
         if resolvedEvent.Event.Metadata.IsEmpty then ActivityContext()
         else
             try
                 use metadata = JsonDocument.Parse(resolvedEvent.Event.Metadata)
-                let mutable traceParent = Unchecked.defaultof<JsonElement>
-                let mutable traceState = Unchecked.defaultof<JsonElement>
+                let mutable traceId = Unchecked.defaultof<JsonElement>
+                let mutable spanId = Unchecked.defaultof<JsonElement>
                 if metadata.RootElement.ValueKind = JsonValueKind.Object
-                   && metadata.RootElement.TryGetProperty(RosettaTelemetry.TraceParentHeader, &traceParent) then
-                    let state =
-                        if metadata.RootElement.TryGetProperty(RosettaTelemetry.TraceStateHeader, &traceState) then traceState.GetString()
-                        else null
-                    let mutable context = Unchecked.defaultof<ActivityContext>
-                    if ActivityContext.TryParse(traceParent.GetString(), state, &context) then context else ActivityContext()
+                   && metadata.RootElement.TryGetProperty(TraceIdHeader, &traceId)
+                   && metadata.RootElement.TryGetProperty(SpanIdHeader, &spanId) then
+                    ActivityContext(
+                        ActivityTraceId.CreateFromString(traceId.GetString()),
+                        ActivitySpanId.CreateFromString(spanId.GetString()),
+                        ActivityTraceFlags.Recorded,
+                        null,
+                        true)
                 else ActivityContext()
             with _ -> ActivityContext()
 

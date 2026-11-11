@@ -882,7 +882,7 @@ An event is stored under the **name of its record type**, and read back into the
 
 ### The stored format
 
-An event's data is its record as plain JSON (System.Text.Json), and its event type names the record it's stored under (its metadata holds only the command's trace context), so the events don't depend on F#: a C# service can read them into C# records. F# options are written as their value, or `null` for `None`. DUs inside a record keep the `{"Case": …, "Fields": […]}` shape, so they're F#-only.
+An event's data is its record as plain JSON (System.Text.Json), and its event type names the record it's stored under (Rosetta writes no metadata), so the events don't depend on F#: a C# service can read them into C# records. F# options are written as their value, or `null` for `None`. DUs inside a record keep the `{"Case": …, "Fields": […]}` shape, so they're F#-only.
 
 ### Stable event type names
 
@@ -959,7 +959,7 @@ builder.Services
 | `{Projection} {Event}`, e.g. `Person PersonRegistered` | Consumer | `rosetta.projection`, `rosetta.stream`, `rosetta.event`, `rosetta.checkpoint`, `rosetta.outcome` (`skipped`) |
 | `{Aggregate} {EventType} publish`, e.g. `Person PersonRegistered publish` | Producer | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.event`, `rosetta.outbox.event.id`, `rosetta.event.case` (the union case, once decoded) |
 
-A command's trace context (W3C `traceparent`/`tracestate`) is stored in the metadata of the events it produces, and the projections handling those events continue it, as does the Outbox publisher for its PublishedEvents. So one trace runs from the request, through the command, to every read model it updates, even across services. A rejected command (`DomainException`) or a failing projection marks its span as an error. A conflict retried at once adds the span event `rosetta.conflict.retry` and the tag `rosetta.attempts`. Spans of your own code and of instrumented clients nest inside Rosetta's.
+A command's trace (its trace and span ids) is stored in the metadata of the events it produces (KurrentDB.Client writes `$traceId` and `$spanId` on every append made inside a trace), and the projections handling those events continue it, as does the Outbox publisher for its PublishedEvents. So one trace runs from the request, through the command, to every read model it updates, even across services. A rejected command (`DomainException`) or a failing projection marks its span as an error. A conflict retried at once adds the span event `rosetta.conflict.retry` and the tag `rosetta.attempts`. Spans of your own code and of instrumented clients nest inside Rosetta's.
 
 **Metrics**
 

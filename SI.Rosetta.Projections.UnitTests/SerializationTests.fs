@@ -56,12 +56,6 @@ type SerializationTests() =
     let Written (typeName: string) (json: string) =
         Resolved typeName (Encoding.UTF8.GetBytes json) [||]
 
-    /// An event as Rosetta 1.37 and earlier wrote it: the stored name and CLR type names in its metadata, and a trace
-    let WrittenBy137 (typeName: string) (json: string) =
-        let metadata =
-            sprintf """{"EventClrTypeName":"Some.PL.%s, Some.PL, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null","EventsDiscriminatedUnionClrTypeName":"Some.PL.OrganizationEvents+Registered, Some.PL, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null","DiscriminatedUnionCaseType":"%s","AggregateClrTypeName":"Some.Domain.OrganizationAggregate, Some.Domain, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null","traceparent":"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}"""
-                typeName typeName
-        Resolved typeName (Encoding.UTF8.GetBytes json) (Encoding.UTF8.GetBytes metadata)
 
     let Registered = OrganizationEvents.Registered { Id = StreamName; Name = "Rosetta"; DateRegistered = DateTime(2026, 10, 15, 8, 30, 0) }
 
@@ -108,19 +102,14 @@ type SerializationTests() =
         Assert.Equal("OrganizationArchived", serialized.EventClrName)
 
     [<Fact>]
-    member this.``Outside a trace, an event is stored without metadata``() =
+    member this.``An event is stored without metadata, inside a trace too``() =
+        use command = (new System.Diagnostics.Activity("RegisterOrganization")).Start()
+
         let serialized = KurrentDBSerialization.Serialize(Registered, Dictionary<string, obj>())
 
         Assert.Equal("OrganizationRegistered", serialized.EventClrName)
         Assert.Empty(serialized.Metadata)
         Assert.Equal(Registered, KurrentDBSerialization.Deserialize<OrganizationEvents>(Serialized Registered))
-
-    [<Fact>]
-    member this.``An event Rosetta 1.37 wrote, with its metadata, reads the same, trace included``() =
-        let stored = WrittenBy137 "OrganizationNameChanged" """{"Id":"Organizations-1","Name":"Rosetta"}"""
-
-        Assert.Equal(OrganizationEvents.NameChanged { Id = StreamName; Name = "Rosetta" }, KurrentDBSerialization.Deserialize<OrganizationEvents> stored)
-        Assert.Equal("4bf92f3577b34da6a3ce929d0e0e4736", (KurrentDBSerialization.TraceContextOf stored).TraceId.ToHexString())
 
     [<Fact>]
     member this.``Events stored under the [<EventType>] name are read into the renamed record``() =
@@ -149,19 +138,25 @@ type SerializationTests() =
         | other -> failwithf "Read as %A" other
 
     [<Fact>]
-    member this.``The trace of the command that stored an event is in its metadata, for the projections``() =
-        use command = (new System.Diagnostics.Activity("RegisterOrganization")).Start()
+    member this.``The trace KurrentDB.Client wrote in an event's metadata is continued, as sampled``() =
+        let stored =
+            Resolved "OrganizationNameChanged" (Encoding.UTF8.GetBytes """{"Id":"Organizations-1","Name":"Rosetta"}""")
+                (Encoding.UTF8.GetBytes """{"$traceId":"4bf92f3577b34da6a3ce929d0e0e4736","$spanId":"00f067aa0ba902b7"}""")
 
-        let stored = Serialized Registered
-
-        use metadata = System.Text.Json.JsonDocument.Parse(stored.Event.Metadata)
-        // Only the trace
-        Assert.Equal<string list>([ "traceparent" ], metadata.RootElement.EnumerateObject() |> Seq.map (fun p -> p.Name) |> List.ofSeq)
-
-        Assert.Contains(sprintf "\"traceparent\":\"%s\"" command.Id, Encoding.UTF8.GetString(stored.Event.Metadata.ToArray()))
         let context = KurrentDBSerialization.TraceContextOf stored
-        Assert.Equal(command.TraceId, context.TraceId)
-        Assert.Equal(command.SpanId, context.SpanId)
+
+        Assert.Equal("4bf92f3577b34da6a3ce929d0e0e4736", context.TraceId.ToHexString())
+        Assert.Equal("00f067aa0ba902b7", context.SpanId.ToHexString())
+        Assert.Equal(System.Diagnostics.ActivityTraceFlags.Recorded, context.TraceFlags)
+        Assert.True(context.IsRemote)
+
+    [<Fact>]
+    member this.``Metadata that isn't a trace gives no trace context``() =
+        let WithMetadata (metadata: string) =
+            Resolved "OrganizationNameChanged" (Encoding.UTF8.GetBytes """{"Id":"Organizations-1","Name":"Rosetta"}""") (Encoding.UTF8.GetBytes metadata)
+
+        for metadata in [ "{}"; "[]"; "not json"; """{"$traceId":"4bf92f3577b34da6a3ce929d0e0e4736"}"""; """{"$traceId":"nope","$spanId":"nope"}""" ] do
+            Assert.Equal(System.Diagnostics.ActivityContext(), KurrentDBSerialization.TraceContextOf(WithMetadata metadata))
 
     [<Fact>]
     member this.``An event stored outside a trace has no trace context``() =

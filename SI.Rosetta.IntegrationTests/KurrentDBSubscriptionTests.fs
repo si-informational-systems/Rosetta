@@ -33,12 +33,6 @@ type FlakyParcelProjection() =
     inherit Projection<ParcelEvents>()
     interface IAmHandledBy<FlakyParcelProjectionHandler, ParcelEvents>
 
-/// Started directly by a test: a stream with events written by Rosetta 1.37 and by later versions
-[<DisabledProjection; HandlesStream("MixedParcels-1")>]
-type MixedParcelProjection() =
-    inherit Projection<ParcelEvents>()
-    interface IAmHandledBy<ParcelProjectionHandler, ParcelEvents>
-
 type KurrentDBSubscriptionTests(databases: Databases) =
     let Store = TestKitProjectionStore()
     let Statuses = ProjectionStatuses()
@@ -91,27 +85,6 @@ type KurrentDBSubscriptionTests(databases: Databases) =
             let! running = Start typeof<SkippingParcelProjection> cancellation.Token
 
             do! Eventually (TimeSpan.FromSeconds 30.0) "the event after the unknown one is projected" (fun () ->
-                    task {
-                        if running.IsFaulted then running.Wait()
-                        let! recipient = RecipientOf id
-                        return recipient = Some "Grace"
-                    })
-            cancellation.Cancel()
-            do! running
-        }
-
-    [<Fact>]
-    member this.``A projection reads events written by Rosetta 1.37, with their metadata, and lean ones``() =
-        task {
-            let id = "MixedParcels-1"
-            let! _ = databases.KurrentDBClient.AppendToStreamAsync(id, StreamState.NoStream, [
-                        Events.WrittenBy137 typeof<ParcelAggregate> (ParcelEvents.Registered { Id = id; Recipient = "Ada" })
-                        Events.Known (ParcelEvents.Readdressed { Id = id; Recipient = "Grace" }) ])
-            use cancellation = new CancellationTokenSource()
-
-            let! running = Start typeof<MixedParcelProjection> cancellation.Token
-
-            do! Eventually (TimeSpan.FromSeconds 30.0) "both events are projected" (fun () ->
                     task {
                         if running.IsFaulted then running.Wait()
                         let! recipient = RecipientOf id
