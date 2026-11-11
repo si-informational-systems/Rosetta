@@ -20,11 +20,14 @@ type IRecognizeConflicts =
 
 /// The read model store's transactions, one per event
 type IProjectionsUnitOfWork =
-    /// Run for each projection when it starts, before its checkpoint is read, with the read model types it declares
-    /// (IProjectInto): it fails when the store can't commit an event atomically (MongoDB without a replica set), or
-    /// when a read model's table doesn't match it (PostgreSQL)
-    abstract member PrepareAsync: readModels: Type[] -> Task
-    abstract member BeginAsync: unit -> Task<IProjectionTransaction>
+    /// Run for each projection when it starts, before its checkpoint is read, with its type and the read model types it
+    /// declares (IProjectInto): it fails when the store can't commit an event atomically (MongoDB without a replica set),
+    /// when a read model's table doesn't match it (PostgreSQL), or when the projection asks for a transaction the store
+    /// doesn't have ([<ClusterWideTransaction>] outside RavenDB)
+    abstract member PrepareAsync: projectionType: Type * readModels: Type[] -> Task
+    /// Begins an event's transaction for the projection type, whose attributes may choose its kind
+    /// ([<ClusterWideTransaction>]); null for a projection created without one
+    abstract member BeginAsync: projectionType: Type -> Task<IProjectionTransaction>
     /// Empties the read models' tables (PostgreSQL) or collections (RavenDB, MongoDB), for a projection that's rebuilt
     abstract member ClearAsync: readModels: Type[] -> Task
 

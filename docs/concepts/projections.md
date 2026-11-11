@@ -58,6 +58,7 @@ Other attributes on the Projection type:
 | `[<RebuildWithoutClearing>]` | A [rebuild](#rebuilding-a-projection) empties nothing: every Handler overwrites whole documents or rows. Lets a Projection that can be rebuilt declare no `IProjectInto`. |
 | `[<SkipUnknownEvents>]` | An event its DU has no case for is logged and skipped instead of stopping the Projection. See [Event evolution](event-evolution.md#unknown-events). |
 | `[<DisabledProjection>]` | The Projection doesn't run, even when registered by name. |
+| `[<ClusterWideTransaction>]` | RavenDB only: each event's transaction is [cluster-wide](#cluster-wide-transactions-ravendb), so its Handlers can change compare-exchange values with its documents and checkpoint. |
 
 The **Projection's name** is its type name without "Projection" (`PersonProjection` → `Person`). It names the
 checkpoint (`Checkpoints-Person`), the logs, the traces, the metrics and the health check data.
@@ -131,6 +132,45 @@ Each retry is counted in `rosetta.conflicts.retried` and marked on the event's s
 // ConflictRetries.None turns it off
 services.AddSingleton<ConflictRetries>({ Retries = 5; MaxJitter = TimeSpan.FromMilliseconds 100.0 }) |> ignore
 ```
+
+### Cluster-wide transactions (RavenDB)
+
+A Projection marked `[<ClusterWideTransaction>]` handles each event in a RavenDB **cluster-wide** session
+(`TransactionMode.ClusterWide`). What its Handlers write, the compare-exchange values they change in the event's
+session, and the checkpoint are then one transaction: all of them, or none. Use it when a read model and a lock (a
+compare-exchange value the write side took) must change together, so a reservation is either locked or visible,
+never neither.
+
+```fsharp
+[<HandlesStream(StreamNames.ReservationStream); ClusterWideTransaction>]
+type ReservationProjection() =
+    inherit Projection<ReservationEvents>()
+    interface IAmHandledBy<ReservationProjectionHandler, ReservationEvents>
+
+// In the Handler: the store as usual, and the event's session for what INoSqlStore can't say
+match RavenDbProjectionTransaction.Current with
+| Some session ->
+    let! lock = session.Advanced.ClusterTransaction.GetCompareExchangeValueAsync<HubHourLock>(key)
+    session.Advanced.ClusterTransaction.DeleteCompareExchangeValue(lock)
+| None -> ()   // not on RavenDB (the TestKit)
+```
+
+- **A value changed in between** (another writer changed a compare-exchange value or a document since the session read
+  it) fails the commit with RavenDB's `ClusterTransactionConcurrencyException`: the event is
+  [handled again at once](#conflicts-are-retried-at-once) on what's there now. For keys many writers share, register a
+  `ConflictRetries` with more retries.
+- **Every document a cluster-wide transaction writes gets an atomic guard**, and RavenDB writes over it only from the
+  version the session loaded. The store takes care of it: it loads each document before writing it, writes a new
+  object's values (an F# record copied with `with`) onto the loaded one, so the object you loaded takes the stored
+  values, and keeps a delete until the commit, so the same Id can be stored again in the event. The checkpoint is
+  updated the same way.
+- **In the session yourself**, load a document before changing it, and change the loaded object: a new object stored
+  under an existing Id is refused (its guard expects the document to be new).
+- A [rebuild](#rebuilding-a-projection) deletes the read models by query, which leaves their guards behind; the replay
+  loads before it writes, so writing the same Ids again passes them.
+- `RavenDbProjectionTransaction.Current` is the event's session in any RavenDB Projection, cluster-wide or not.
+- MongoDB and PostgreSQL refuse the attribute when the Projection starts (`InvalidOperationException`: it's Stopped).
+  The TestKit runs such a Projection in memory, where `Current` is `None`.
 
 ### Checkpoints
 

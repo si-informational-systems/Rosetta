@@ -87,8 +87,9 @@ type PostgreSqlProjectionsUnitOfWork(database: PostgreSqlDatabase) =
             | _ -> false
 
     interface IProjectionsUnitOfWork with
-        member this.PrepareAsync(readModels: Type[]) =
+        member this.PrepareAsync(projectionType: Type, readModels: Type[]) =
             task {
+                ClusterWideTransaction.Refuse("PostgreSQL", projectionType)
                 do! Gate.WaitAsync().ConfigureAwait(false)
                 try
                     let mutable delays = PrepareDelays
@@ -107,7 +108,7 @@ type PostgreSqlProjectionsUnitOfWork(database: PostgreSqlDatabase) =
                         do! PostgreSqlProjectionsUnitOfWork.CheckAsync(connection, PostgreSqlTables.Of database.Schema readModel)
             } :> Task
 
-        member this.BeginAsync() =
+        member this.BeginAsync(_projectionType) =
             task {
                 let! connection = database.DataSource.OpenConnectionAsync().ConfigureAwait(false)
                 try

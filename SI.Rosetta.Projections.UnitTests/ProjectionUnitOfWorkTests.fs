@@ -23,9 +23,9 @@ type ProjectionUnitOfWorkTests() =
     // The TestKit's own transaction, so the store writes in it, committing through a failure when one is set
     let UnitOfWork =
         { new IProjectionsUnitOfWork with
-            member _.PrepareAsync(_) = Task.CompletedTask
+            member _.PrepareAsync(_, _) = Task.CompletedTask
             member _.ClearAsync(_) = Task.CompletedTask
-            member _.BeginAsync() =
+            member _.BeginAsync(_) =
                 let commit changes (checkpoint: Checkpoint) =
                     match FailNextCommit.Value with
                     | Some false ->
@@ -223,8 +223,8 @@ type ProjectionVersionTests() =
             .AddSingleton<INoSqlStore>(store)
             .AddSingleton<IProjectionsUnitOfWork>(
                 { new IProjectionsUnitOfWork with
-                    member _.PrepareAsync(_) = Task.CompletedTask
-                    member _.BeginAsync() = (store :> IProjectionsUnitOfWork).BeginAsync()
+                    member _.PrepareAsync(_, _) = Task.CompletedTask
+                    member _.BeginAsync(projectionType) = (store :> IProjectionsUnitOfWork).BeginAsync(projectionType)
                     member _.ClearAsync(readModels) =
                         Cleared.AddRange(readModels |> Array.map (fun readModel -> readModel.Name))
                         Task.CompletedTask })
@@ -317,8 +317,8 @@ type ReplacedStreamTests() =
             .AddSingleton<INoSqlStore>(store)
             .AddSingleton<IProjectionsUnitOfWork>(
                 { new IProjectionsUnitOfWork with
-                    member _.PrepareAsync(_) = Task.CompletedTask
-                    member _.BeginAsync() = (store :> IProjectionsUnitOfWork).BeginAsync()
+                    member _.PrepareAsync(_, _) = Task.CompletedTask
+                    member _.BeginAsync(projectionType) = (store :> IProjectionsUnitOfWork).BeginAsync(projectionType)
                     member _.ClearAsync(readModels) =
                         Cleared.AddRange(readModels |> Array.map (fun readModel -> readModel.Name))
                         Task.CompletedTask })

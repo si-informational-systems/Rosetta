@@ -163,6 +163,7 @@ type ProjectionsFactory(provider: IServiceProvider) =
             let projection = Projection<'TEvent>()
             this.SetNameAndStreamName projectionType projection
             projection.SkipUnknownEvents <- this.SkipsUnknownEvents projectionType
+            projection.ProjectionType <- projectionType
             // The store its handlers write to: its transactions and its checkpoints
             let kind = ProjectionStoreKinds.Of projectionType
             projection.CheckpointStore <- this.OfStore<ICheckpointStore> kind
@@ -175,7 +176,7 @@ type ProjectionsFactory(provider: IServiceProvider) =
             | :? ConflictRetries as retries -> projection.ConflictRetries <- retries
             | _ -> ()
             if not (isNull (box projection.UnitOfWork)) then
-                do! projection.UnitOfWork.PrepareAsync(ProjectionReadModels.Of projectionType).ConfigureAwait(false)
+                do! projection.UnitOfWork.PrepareAsync(projectionType, ProjectionReadModels.Of projectionType).ConfigureAwait(false)
             do! this.LoadCheckpoint(projection).ConfigureAwait(false)
             do! this.RebuildIfVersioned(projectionType, projection).ConfigureAwait(false)
             projection.Subscription <- this.CreateSubscription projection

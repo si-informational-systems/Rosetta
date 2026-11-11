@@ -56,8 +56,9 @@ type MongoDbProjectionsUnitOfWork(client: IMongoClient, db: IMongoDatabase) =
             | _ -> false
 
     interface IProjectionsUnitOfWork with
-        member this.PrepareAsync(_readModels) =
+        member this.PrepareAsync(projectionType, _readModels) =
             task {
+                ClusterWideTransaction.Refuse("MongoDB", projectionType)
                 if not Prepared then
                     let! hello = db.RunCommandAsync<BsonDocument>(BsonDocumentCommand<BsonDocument>(BsonDocument("hello", BsonInt32 1))).ConfigureAwait(false)
                     // A replica set member names its set; mongos (a sharded cluster) says isdbgrid
@@ -68,7 +69,7 @@ type MongoDbProjectionsUnitOfWork(client: IMongoClient, db: IMongoDatabase) =
                     Prepared <- true
             } :> Task
 
-        member this.BeginAsync() =
+        member this.BeginAsync(_projectionType) =
             task {
                 let! session = client.StartSessionAsync().ConfigureAwait(false)
                 session.StartTransaction(TransactionOptions(writeConcern = WriteConcern.WMajority))

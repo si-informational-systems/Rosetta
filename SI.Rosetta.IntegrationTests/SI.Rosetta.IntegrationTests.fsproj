@@ -15,6 +15,7 @@
     <Compile Include="RavenDbProjectionsStoreTests.fs" />
     <Compile Include="MongoDbProjectionsStoreTests.fs" />
     <Compile Include="ProjectionsUnitOfWorkTests.fs" />
+    <Compile Include="RavenDbClusterWideTests.fs" />
     <Compile Include="MongoConfigTests.fs" />
     <Compile Include="KurrentDBAggregateRepositoryTests.fs" />
     <Compile Include="KurrentDBSnapshotsTests.fs" />

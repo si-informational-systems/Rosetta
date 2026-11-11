@@ -26,6 +26,7 @@
     <Compile Include="SkipUnknownEventsAttribute.fs" />
     <Compile Include="ProjectionVersionAttribute.fs" />
     <Compile Include="RebuildWithoutClearingAttribute.fs" />
+    <Compile Include="ClusterWideTransactionAttribute.fs" />
     <Compile Include="CustomProjectionStreamAttribute.fs" />
     <Compile Include="ISubscription.fs" />
     <Compile Include="ISubscriptionFactory.fs" />

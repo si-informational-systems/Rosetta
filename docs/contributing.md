@@ -99,8 +99,8 @@ type IProjectionTransaction =
     abstract CommitAsync: checkpoint: Checkpoint -> Task         // writes the checkpoint in it, and commits
 
 type IProjectionsUnitOfWork =
-    abstract PrepareAsync: readModels: Type[] -> Task           // once per Projection at startup, with its IProjectInto types
-    abstract BeginAsync: unit -> Task<IProjectionTransaction>
+    abstract PrepareAsync: projectionType: Type * readModels: Type[] -> Task   // once per Projection at startup, with its IProjectInto types
+    abstract BeginAsync: projectionType: Type -> Task<IProjectionTransaction>  // its attributes may pick the kind ([<ClusterWideTransaction>])
     abstract ClearAsync: readModels: Type[] -> Task             // a rebuilt Projection's read models
 
 // ...and, when the store has conflicts of its own (a write conflict, a deadlock), IRecognizeConflicts on the same

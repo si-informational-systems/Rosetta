@@ -101,9 +101,10 @@ type TestKitProjectionStore() =
     interface ISqlStore
 
     interface IProjectionsUnitOfWork with
-        member this.PrepareAsync(_readModels) = Task.CompletedTask
+        // Any projection, [<ClusterWideTransaction>] too: the TestKit runs its handlers in memory
+        member this.PrepareAsync(_projectionType, _readModels) = Task.CompletedTask
 
-        member this.BeginAsync() =
+        member this.BeginAsync(_projectionType) =
             // The checkpoint isn't kept: the TestKit replays its Given events from the start
             Task.FromResult(new TestKitProjectionTransaction(fun changes _ -> ApplyChanges changes) :> IProjectionTransaction)
 

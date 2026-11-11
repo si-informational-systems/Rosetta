@@ -16,11 +16,17 @@ open SI.Rosetta.Projections.RavenDB
 [<CLIMutable>]
 type ParcelTally = { Id: string; Count: int }
 
-/// One store's read model store, checkpoint store and unit of work
+/// One store's read model store, checkpoint store and unit of work, and the projection type its events are begun for
 type StoreUnderTest =
     { Store: IProjectionsStore
       Checkpoints: ICheckpointStore
-      UnitOfWork: IProjectionsUnitOfWork }
+      UnitOfWork: IProjectionsUnitOfWork
+      ProjectionType: Type }
+
+/// A projection whose events are handled in RavenDB cluster-wide transactions
+[<ClusterWideTransaction; DisabledProjection; HandlesStream(ParcelStreams.Parcels)>]
+type ClusterWideUnitOfWorkProjection() =
+    inherit Projection<ParcelEvents>()
 
 /// What the document stores' transactions guarantee, against the real databases (PostgreSQL: PostgreSqlProjectionsTests)
 type ProjectionsUnitOfWorkTests(databases: Databases) =
@@ -38,20 +44,21 @@ type ProjectionsUnitOfWorkTests(databases: Databases) =
     member private this.Create(storeName: string) =
         task {
             let store = this.Stores storeName
-            do! store.UnitOfWork.PrepareAsync([||])
+            do! store.UnitOfWork.PrepareAsync(store.ProjectionType, [||])
             return store
         }
 
     member private this.Stores(storeName: string) =
         match storeName with
-        | "RavenDB" ->
+        | "RavenDB" | "RavenDB cluster-wide" ->
             let documentStore =
                 RavenDocumentStoreFactory.CreateAndInitializeDocumentStore
                     (RavenConfig.FromConfiguration(databases.Configuration "Rosetta-ProjectionsUnitOfWorkTests")) None
             Disposables.Add documentStore
             { Store = RavenDbProjectionsStore(documentStore)
               Checkpoints = RavenDbCheckpointStore(documentStore)
-              UnitOfWork = RavenDbProjectionsUnitOfWork(documentStore) }
+              UnitOfWork = RavenDbProjectionsUnitOfWork(documentStore)
+              ProjectionType = (if storeName = "RavenDB" then null else typeof<ClusterWideUnitOfWorkProjection>) }
         | "MongoDB" ->
             MongoConventions.Register()
             let client = new MongoClient(databases.MongoReplicaSetUrl)
@@ -59,7 +66,8 @@ type ProjectionsUnitOfWorkTests(databases: Databases) =
             let database = client.GetDatabase("Rosetta-ProjectionsUnitOfWorkTests")
             { Store = MongoDbProjectionsStore(client, database)
               Checkpoints = MongoDbCheckpointStore(database)
-              UnitOfWork = MongoDbProjectionsUnitOfWork(client, database) }
+              UnitOfWork = MongoDbProjectionsUnitOfWork(client, database)
+              ProjectionType = null }
         | _ -> invalidArg (nameof storeName) storeName
 
     /// A projection with its own checkpoint, prepared as ProjectionsFactory prepares it
@@ -74,6 +82,7 @@ type ProjectionsUnitOfWorkTests(databases: Databases) =
                     Checkpoint = checkpoint,
                     CheckpointStore = store.Checkpoints,
                     UnitOfWork = store.UnitOfWork,
+                    ProjectionType = store.ProjectionType,
                     Handlers = (handlers :> seq<_>))
         }
 
@@ -82,7 +91,7 @@ type ProjectionsUnitOfWorkTests(databases: Databases) =
             for disposable in Disposables do
                 disposable.Dispose()
 
-    [<Theory; InlineData("RavenDB"); InlineData("MongoDB")>]
+    [<Theory; InlineData("RavenDB"); InlineData("RavenDB cluster-wide"); InlineData("MongoDB")>]
     member this.``An event's writes and its checkpoint are committed together``(storeName: string) =
         task {
             let! store = this.Create storeName
@@ -111,7 +120,7 @@ type ProjectionsUnitOfWorkTests(databases: Databases) =
             Assert.Equal(5UL, checkpoint.Value)
         }
 
-    [<Theory; InlineData("RavenDB"); InlineData("MongoDB")>]
+    [<Theory; InlineData("RavenDB"); InlineData("RavenDB cluster-wide"); InlineData("MongoDB")>]
     member this.``When a handler fails, nothing is written and the checkpoint stays``(storeName: string) =
         task {
             let! store = this.Create storeName
@@ -129,7 +138,7 @@ type ProjectionsUnitOfWorkTests(databases: Databases) =
             Assert.Equal(0UL, checkpoint.Value)
         }
 
-    [<Theory; InlineData("RavenDB"); InlineData("MongoDB")>]
+    [<Theory; InlineData("RavenDB"); InlineData("RavenDB cluster-wide"); InlineData("MongoDB")>]
     member this.``An event retried after a handler failed adds one only once``(storeName: string) =
         task {
             let! store = this.Create storeName
@@ -156,7 +165,7 @@ type ProjectionsUnitOfWorkTests(databases: Databases) =
             Assert.Equal(1, tally.Count)
         }
 
-    [<Theory; InlineData("RavenDB"); InlineData("MongoDB")>]
+    [<Theory; InlineData("RavenDB"); InlineData("RavenDB cluster-wide"); InlineData("MongoDB")>]
     member this.``A handler loads what its event stored and deleted, before the commit``(storeName: string) =
         task {
             let! store = this.Create storeName
@@ -186,7 +195,7 @@ type ProjectionsUnitOfWorkTests(databases: Databases) =
             Assert.Equal<obj list>([ box stored; null; box deleted ], List.ofSeq loaded)
         }
 
-    [<Theory; InlineData("RavenDB"); InlineData("MongoDB")>]
+    [<Theory; InlineData("RavenDB"); InlineData("RavenDB cluster-wide"); InlineData("MongoDB")>]
     member this.``A handler stores a changed copy of a document it loaded``(storeName: string) =
         task {
             let! store = this.Create storeName
@@ -207,7 +216,7 @@ type ProjectionsUnitOfWorkTests(databases: Databases) =
             Assert.Equal("Grace", stored.Recipient)
         }
 
-    [<Theory; InlineData("RavenDB"); InlineData("MongoDB")>]
+    [<Theory; InlineData("RavenDB"); InlineData("RavenDB cluster-wide"); InlineData("MongoDB")>]
     member this.``A handler deletes a document and stores it again``(storeName: string) =
         task {
             let! store = this.Create storeName
@@ -233,7 +242,7 @@ type ProjectionsUnitOfWorkTests(databases: Databases) =
             Assert.Equal("Grace", stored.[unloaded.Id].Recipient)
         }
 
-    [<Theory; InlineData("RavenDB"); InlineData("MongoDB")>]
+    [<Theory; InlineData("RavenDB"); InlineData("RavenDB cluster-wide"); InlineData("MongoDB")>]
     member this.``A handler sees what the handler before it wrote``(storeName: string) =
         task {
             let! store = this.Create storeName
@@ -259,7 +268,7 @@ type ProjectionsUnitOfWorkTests(databases: Databases) =
             use client = new MongoClient(databases.MongoStandaloneUrl)
             let unitOfWork = MongoDbProjectionsUnitOfWork(client, client.GetDatabase("Rosetta-ProjectionsUnitOfWorkTests")) :> IProjectionsUnitOfWork
 
-            let! ex = Assert.ThrowsAsync<InvalidOperationException>(fun () -> unitOfWork.PrepareAsync([||]))
+            let! ex = Assert.ThrowsAsync<InvalidOperationException>(fun () -> unitOfWork.PrepareAsync(null, [||]))
 
             Assert.Contains("replica set", ex.Message)
         }

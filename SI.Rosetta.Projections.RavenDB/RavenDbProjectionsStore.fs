@@ -21,18 +21,22 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
         with
         | ex -> raise (InvalidOperationException("Failed to convert id to string", ex))
 
+    static member private StringIds(ids: obj[]) =
+        try
+            ids |> Array.map (fun id -> id.ToString())
+        with
+        | ex -> raise (InvalidOperationException("Failed to convert ids to string array", ex))
+
+    static member private ByObjectKey(loaded: IDictionary<string, 'T>) =
+        let result = Dictionary<obj, 'T>()
+        for kvp in loaded do
+            result.[kvp.Key :> obj] <- kvp.Value
+        result
+
     static member private LoadMany<'T>(session: IAsyncDocumentSession, ids: obj[]) : Task<Dictionary<obj, 'T>> =
         task {
-            let stringIds =
-                try
-                    ids |> Array.map (fun id -> id.ToString())
-                with
-                | ex -> raise (InvalidOperationException("Failed to convert ids to string array", ex))
-            let! ravenResult = session.LoadAsync<'T>(stringIds).ConfigureAwait(false)
-            let result = Dictionary<obj, 'T>()
-            for kvp in ravenResult do
-                result.[kvp.Key :> obj] <- kvp.Value
-            return result
+            let! ravenResult = session.LoadAsync<'T>(RavenDbProjectionsStore.StringIds ids).ConfigureAwait(false)
+            return RavenDbProjectionsStore.ByObjectKey ravenResult
         }
 
     interface IProjectionsStore with
@@ -51,6 +55,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
             match ProjectionTransaction.Current with
             | :? RavenDbProjectionTransaction as transaction ->
                 task {
+                    do! transaction.PreloadAsync<'T>(docs |> Seq.map RavenDbProjectionTransaction.IdOf).ConfigureAwait(false)
                     for doc in docs do
                         do! transaction.StoreAsync(doc).ConfigureAwait(false)
                 } :> Task
@@ -65,7 +70,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
 
         member this.LoadAsync<'T when 'T : not struct>(id: obj): Task<'T> =
             match ProjectionTransaction.Current with
-            | :? RavenDbProjectionTransaction as transaction -> transaction.Session.LoadAsync<'T>(ToStringId id)
+            | :? RavenDbProjectionTransaction as transaction -> transaction.LoadAsync<'T>(ToStringId id)
             | _ ->
                 DefensivelyLoad (fun () ->
                     task {
@@ -75,7 +80,11 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
 
         member this.LoadManyAsync<'T when 'T : not struct>(ids: obj[]) =
             match ProjectionTransaction.Current with
-            | :? RavenDbProjectionTransaction as transaction -> RavenDbProjectionsStore.LoadMany<'T>(transaction.Session, ids)
+            | :? RavenDbProjectionTransaction as transaction ->
+                task {
+                    let! loaded = transaction.LoadManyAsync<'T>(RavenDbProjectionsStore.StringIds ids).ConfigureAwait(false)
+                    return RavenDbProjectionsStore.ByObjectKey loaded
+                }
             | _ ->
                 DefensivelyLoad (fun () ->
                     task {
@@ -99,8 +108,10 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
             match ProjectionTransaction.Current with
             | :? RavenDbProjectionTransaction as transaction ->
                 task {
-                    for id in ids do
-                        do! transaction.DeleteAsync<'T>(ToStringId id).ConfigureAwait(false)
+                    let stringIds = RavenDbProjectionsStore.StringIds ids
+                    do! transaction.PreloadAsync<'T>(stringIds).ConfigureAwait(false)
+                    for id in stringIds do
+                        do! transaction.DeleteAsync<'T>(id).ConfigureAwait(false)
                 } :> Task
             | _ ->
                 DefensivelyStore (fun () ->

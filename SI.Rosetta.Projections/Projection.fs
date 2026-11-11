@@ -19,14 +19,14 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
     member val CheckpointStore = Unchecked.defaultof<ICheckpointStore> with get, set
     member val Checkpoint = Unchecked.defaultof<Checkpoint> with get, set
     member val SkipUnknownEvents = false with get, set
-    /// Commits each event's writes with its checkpoint. Without one, the handlers write straight to the store and the
-    /// checkpoint is stored after them, in its own write
     /// Begins each event's transaction, which its handlers write in and its checkpoint is committed with. Without one,
     /// the handlers write straight to the store and the checkpoint is stored after them, in its own write
     member val UnitOfWork = Unchecked.defaultof<IProjectionsUnitOfWork> with get, set
     /// How an event that failed on a conflict is retried at once (3 times, after up to 50 ms each, unless the
     /// application registers its own ConflictRetries); only in a transaction (with a UnitOfWork)
     member val ConflictRetries = ConflictRetries.Default with get, set
+    /// The projection type (the one that declares the handlers), given to the unit of work for each event's transaction
+    member val ProjectionType: Type = null with get, set
 
     member this.CreateProjectionException (ev: obj) (checkpoint: uint64) (ae: AggregateException) =
         let msg = sprintf "PROJECTION FAILURE: Projection %s on Stream %s FAILED on Checkpoint %d during %s" 
@@ -63,7 +63,7 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
 
     member private this.HandleInTransaction (ev: 'TEvent) (c: uint64) (checkpoint: Checkpoint) =
         task {
-            let! transaction = this.UnitOfWork.BeginAsync().ConfigureAwait(false)
+            let! transaction = this.UnitOfWork.BeginAsync(this.ProjectionType).ConfigureAwait(false)
             let mutable failure: exn = null
             try
                 do! ProjectionTransaction.Within(transaction, fun () -> this.RunHandlers ev c).ConfigureAwait(false)

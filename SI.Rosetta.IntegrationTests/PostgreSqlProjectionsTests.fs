@@ -125,7 +125,7 @@ type PostgreSqlProjectionsTests(databases: Databases) =
 
     member private this.Projection(handlers: IProjectionHandler<ParcelEvents> list) =
         task {
-            do! UnitOfWork.PrepareAsync([| typeof<ParcelRow>; typeof<ParcelEventCount> |])
+            do! UnitOfWork.PrepareAsync(null, [| typeof<ParcelRow>; typeof<ParcelEventCount> |])
             let name = NewId "Sql"
             let! checkpoint = Checkpoints.ReadAsync(sprintf "Checkpoints-%s" name)
             return
@@ -263,10 +263,10 @@ type PostgreSqlProjectionsTests(databases: Databases) =
     [<Fact>]
     member this.``A projection whose table is missing, lacks a column or has no key doesn't start``() =
         task {
-            let! missing = Assert.ThrowsAsync<ReadModelTableException>(fun () -> UnitOfWork.PrepareAsync([| typeof<LostParcel> |]))
-            let! column = Assert.ThrowsAsync<ReadModelTableException>(fun () -> UnitOfWork.PrepareAsync([| typeof<WeighedParcel> |]))
-            let! key = Assert.ThrowsAsync<ReadModelTableException>(fun () -> UnitOfWork.PrepareAsync([| typeof<UnkeyedParcel> |]))
-            do! UnitOfWork.PrepareAsync([| typeof<ParcelRow>; typeof<ParcelEventCount>; typeof<ParcelStop> |])
+            let! missing = Assert.ThrowsAsync<ReadModelTableException>(fun () -> UnitOfWork.PrepareAsync(null, [| typeof<LostParcel> |]))
+            let! column = Assert.ThrowsAsync<ReadModelTableException>(fun () -> UnitOfWork.PrepareAsync(null, [| typeof<WeighedParcel> |]))
+            let! key = Assert.ThrowsAsync<ReadModelTableException>(fun () -> UnitOfWork.PrepareAsync(null, [| typeof<UnkeyedParcel> |]))
+            do! UnitOfWork.PrepareAsync(null, [| typeof<ParcelRow>; typeof<ParcelEventCount>; typeof<ParcelStop> |])
 
             Assert.Contains("\"parcels\".\"lost_parcels\" (for LostParcel) doesn't exist", missing.Message)
             Assert.Contains("has no column weight (Weight)", column.Message)
