@@ -21,10 +21,10 @@ description: Every configuration key Rosetta reads, with defaults, and every def
 | `MongoDB:AuthSource` | no | — | |
 | `MongoDB:DatabaseName` | with MongoDB | the connection string's path | |
 | `PostgreSQL:ConnectionString` | with PostgreSQL | — | Npgsql format |
-| `PostgreSQL:Schema` | no | `public` | for tables without `[<Table(Schema = …)>]` |
-| `Outbox:CollectionName` | no | `Outbox` | |
+| `PostgreSQL:Schema` | no | `public` | for read model and Aggregate state tables without `[<Table(Schema = …)>]` |
+| `Outbox:CollectionName` | no | `Outbox` | in PostgreSQL, the table `rosetta.{snake_case}` |
 | `Outbox:EventTTLMinutes` | no | kept until deleted | positive number |
-| `Outbox:ExpirationFrequencyMinutes` | no | `2160` (36 h) | RavenDB only |
+| `Outbox:ExpirationFrequencyMinutes` | no | `2160` (36 h) | RavenDB and PostgreSQL |
 
 ## Defaults in code
 
@@ -48,11 +48,13 @@ description: Every configuration key Rosetta reads, with defaults, and every def
 | Missing-Aggregate error | `{Aggregate}DoesNotExist` | `PersonDoesNotExist` |
 | KurrentDB stream | the Aggregate's `Id` | `People-1` |
 | State-based collection (MongoDB) | pluralized state type name | `PersonAggregateState` → `PersonAggregateStates` |
+| State-based table (PostgreSQL) | snake_case plural of the state type, or `[<Table>]` | `PersonAggregateState` → `person_aggregate_states` |
 | Projection name | Projection type name without "Projection" | `PersonProjection` → `Person` |
 | Checkpoint id | `Checkpoints-{Projection}` | `Checkpoints-Person` |
 | Document read model collection (MongoDB) | pluralized type name | `Person` → `People` |
 | PostgreSQL table | snake_case plural of the type, or `[<Table>]` | `AreaHour` → `area_hours` |
 | PostgreSQL column | snake_case of the field, or `[<Column>]` | `SessionDate` → `session_date` |
 | PostgreSQL checkpoints | `rosetta.checkpoints` | |
+| PostgreSQL Outbox | `rosetta.` + snake_case of `Outbox:CollectionName` | `Outbox` → `rosetta.outbox` |
 | Custom Projection in KurrentDB | stream without `cp-` + `CustomProjection` | `cp-Totals` → `TotalsCustomProjection` |
 | Stream constant for a Custom Projection | `{Aggregate}Stream` | `PersonStream` |

@@ -137,7 +137,7 @@ full_output = "llms-full.txt"
 markdown_description = """
 Rosetta is an opinionated F# framework for DDD + Event Sourcing + CQRS projections on .NET 11, published as the
 SI.Rosetta.* NuGet packages. Commands and events are F# discriminated unions whose cases each wrap one record.
-Aggregates are event-sourced in KurrentDB or state-based in RavenDB/MongoDB; projections subscribe to KurrentDB
+Aggregates are event-sourced in KurrentDB or state-based in RavenDB, MongoDB or PostgreSQL; projections subscribe to KurrentDB
 streams and write read models to RavenDB, MongoDB or PostgreSQL. Read llms-full.txt for the whole documentation.
 """
 

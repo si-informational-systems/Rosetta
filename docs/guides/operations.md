@@ -100,10 +100,14 @@ These settings are **unsecured, for development only**.
 
 ## PostgreSQL
 
-- The connection's user needs `CREATE` on the database (for the `rosetta` schema and `rosetta.checkpoints`), and
-  `CREATEDB` if Rosetta should create the database.
-- Run the app's migrations before the Projections; until the tables match, Projections retry and log what's missing.
-- Rosetta keeps its own connection pool: size `Maximum Pool Size` for the Projections running at once.
+- The connection's user needs `CREATE` on the database (for the `rosetta` schema, `rosetta.checkpoints` and
+  `rosetta.outbox`), and `CREATEDB` if Rosetta should create the database.
+- Run the app's migrations before the Projections and the Aggregates; until the tables match, Projections retry and
+  log what's missing, and commands on a state-based Aggregate fail with what's missing.
+- Rosetta keeps its own connection pool, one per host: size `Maximum Pool Size` for the Projections running at once
+  and the commands in flight.
+- **Outbox expiry**: PostgreSQL has no TTL, so the Outbox deletes its expired rows itself, at most every
+  `ExpirationFrequencyMinutes`. See [Outbox](../concepts/outbox.md#expiry).
 
 ## Health and alerting
 

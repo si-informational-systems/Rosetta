@@ -1,4 +1,4 @@
-namespace SI.Rosetta.Projections.PostgreSQL
+namespace SI.Rosetta.Persistence.PostgreSQL
 
 open System
 open System.Collections
@@ -8,11 +8,11 @@ open System.Data.Common
 open System.Reflection
 open System.Text.Json
 open System.Text.RegularExpressions
+open System.Threading.Tasks
 open Microsoft.FSharp.Reflection
 open Npgsql
 open NpgsqlTypes
 open SI.Rosetta.Common
-open SI.Rosetta.Projections
 
 /// How a property's values go to its column and come back
 [<RequireQualifiedAccess>]
@@ -30,7 +30,7 @@ type internal ColumnKind =
 
 type internal PostgreSqlColumn = { Name: string; Property: PropertyInfo; Kind: ColumnKind }
 
-/// A read model type's table: its columns, its key, and the SQL to upsert, load and delete its rows
+/// A stored type's table (a read model, or an aggregate's state): its columns, its key, and the SQL to write, load and delete its rows
 type internal PostgreSqlTable =
     { Type: Type
       Schema: string
@@ -43,7 +43,7 @@ type internal PostgreSqlTable =
 
     static member Quote(identifier: string) = "\"" + identifier.Replace("\"", "\"\"") + "\""
 
-/// The mapping from read model types to tables, and the conversions between their values and the columns'
+/// The mapping from stored types (read models, aggregate states) to tables, and the conversions between their values and the columns'
 module internal PostgreSqlTables =
     let private PlainTypes =
         Collections.Generic.HashSet<Type>(
@@ -111,11 +111,11 @@ module internal PostgreSqlTables =
     let Of (defaultSchema: string) (readModelType: Type) : PostgreSqlTable =
         Tables.GetOrAdd(struct (readModelType, defaultSchema), fun _ ->
             let properties =
-                ProjectionKeys.PropertiesOf readModelType
+                TypeKeys.PropertiesOf readModelType
                 |> Array.filter (fun property -> FSharpType.IsRecord(readModelType, true) || property.CanWrite)
             let columns = properties |> Array.map ColumnOf
             let keys =
-                ProjectionKeys.KeyPropertiesOf readModelType
+                TypeKeys.KeyPropertiesOf readModelType
                 |> Array.map (fun key -> columns |> Array.find (fun column -> column.Property.Name = key.Name))
             let table = readModelType.GetCustomAttribute<TableAttribute>() |> Option.ofObj
             { Type = readModelType
@@ -225,6 +225,35 @@ module internal PostgreSqlTables =
         command.Parameters.AddRange values
         command
 
+    /// insert … on conflict (key) do nothing: the row, unless one has its key. Affects no row when one has
+    let Insert (table: PostgreSqlTable) (row: obj) =
+        let values = table.Columns |> Array.map (fun column -> Parameter column.Kind (column.Property.GetValue row))
+        let placeholders = String.Join(", ", values |> Array.mapi (fun i _ -> sprintf "$%d" (i + 1)))
+        let keys = String.Join(", ", table.Keys |> Array.map (fun key -> PostgreSqlTable.Quote key.Name))
+        let command =
+            NpgsqlBatchCommand(sprintf "insert into %s (%s) values (%s) on conflict (%s) do nothing" table.Qualified (ColumnList table) placeholders keys)
+        command.Parameters.AddRange values
+        command
+
+    /// update … set every column but the key's where (key = …) and column = expected: affects no row when the row is
+    /// gone or its column no longer holds expected
+    let UpdateWhen (table: PostgreSqlTable) (row: obj) (column: PostgreSqlColumn) (expected: obj) =
+        let parameters = Collections.Generic.List<NpgsqlParameter>()
+        let add (kind: ColumnKind) (value: obj) =
+            parameters.Add(Parameter kind value)
+            sprintf "$%d" parameters.Count
+        let others = table.Columns |> Array.filter (fun column -> not (table.Keys |> Array.contains column))
+        let sets =
+            others |> Array.map (fun other -> sprintf "%s = %s" (PostgreSqlTable.Quote other.Name) (add other.Kind (other.Property.GetValue row)))
+        let keys =
+            table.Keys |> Array.map (fun key -> sprintf "%s = %s" (PostgreSqlTable.Quote key.Name) (add key.Kind (key.Property.GetValue row)))
+        let condition = sprintf "%s = %s" (PostgreSqlTable.Quote column.Name) (add column.Kind expected)
+        let command =
+            NpgsqlBatchCommand(
+                sprintf "update %s set %s where %s and %s" table.Qualified (String.Join(", ", sets)) (String.Join(" and ", keys)) condition)
+        command.Parameters.AddRange(parameters.ToArray())
+        command
+
     /// where (key = …) [or (key = …)…], with its parameters
     let private WhereKeys (table: PostgreSqlTable) (ids: obj[]) =
         let parameters = Collections.Generic.List<NpgsqlParameter>()
@@ -236,7 +265,7 @@ module internal PostgreSqlTables =
             "(" + String.Join(" and ", equals) + ")"
         let conditions =
             ids |> Array.map (fun id ->
-                let values = ProjectionKeys.ValuesOf id
+                let values = TypeKeys.ValuesOf id
                 KeyText table values |> ignore
                 condition values)
         String.Join(" or ", conditions), parameters.ToArray()
@@ -253,3 +282,57 @@ module internal PostgreSqlTables =
         let command = new NpgsqlCommand(sprintf "select %s from %s where %s" (ColumnList table) table.Qualified where, connection, transaction)
         command.Parameters.AddRange parameters
         command
+
+/// Checks a table against the type stored in it: it exists, has a column for each property, and a primary key or
+/// unique index on exactly the key's columns, which writes rely on. The tables are the app's: Rosetta doesn't create
+/// or change them. Static members, not closures: a nested task in a let-bound closure made the compiler emit an
+/// invalid program
+type internal PostgreSqlTableCheck =
+    /// The values of the first column the query returns, for the table's schema and name ($1, $2)
+    static member private ReadAllAsync<'T>(connection: NpgsqlConnection, sql: string, table: PostgreSqlTable) : Task<Generic.List<'T>> =
+        task {
+            use query = new NpgsqlCommand(sql, connection)
+            query.Parameters.Add(NpgsqlParameter(Value = table.Schema)) |> ignore
+            query.Parameters.Add(NpgsqlParameter(Value = table.Name)) |> ignore
+            let values = Generic.List<'T>()
+            use! reader = query.ExecuteReaderAsync().ConfigureAwait(false)
+            let mutable reading = true
+            while reading do
+                let! read = reader.ReadAsync().ConfigureAwait(false)
+                if read then values.Add(reader.GetFieldValue<'T> 0) else reading <- false
+            return values
+        }
+
+    /// The problem with the table, if any: missing, a column missing, or no unique key. createItBefore ends the
+    /// message of a missing table ("the projections start")
+    static member private Problem(table: PostgreSqlTable, columns: Generic.HashSet<string>, uniques: Generic.List<string[]>, createItBefore: string) : string option =
+        let where = sprintf "%s (for %s)" table.Qualified table.Type.Name
+        let missing = table.Columns |> Array.filter (fun column -> not (columns.Contains column.Name))
+        let key = table.Keys |> Array.map (fun key -> key.Name) |> Array.sort
+        if columns.Count = 0 then
+            Some (sprintf "The table %s doesn't exist: create it before %s." where createItBefore)
+        elif missing.Length > 0 then
+            Some (sprintf "The table %s has no column %s." where
+                    (String.Join(", ", missing |> Array.map (fun column -> sprintf "%s (%s)" column.Name column.Property.Name))))
+        elif not (uniques |> Seq.exists (fun unique -> Array.sort unique = key)) then
+            Some (sprintf "The table %s has no primary key or unique index on (%s): rows are written by their key." where (String.Join(", ", key)))
+        else None
+
+    /// What's wrong with the table, or None when it matches its type
+    static member ProblemAsync(connection: NpgsqlConnection, table: PostgreSqlTable, createItBefore: string) : Task<string option> =
+        task {
+            let! columns =
+                PostgreSqlTableCheck.ReadAllAsync<string>(
+                    connection, "select column_name::text from information_schema.columns where table_schema = $1 and table_name = $2", table)
+            let! uniques =
+                PostgreSqlTableCheck.ReadAllAsync<string[]>(
+                    connection,
+                    """select array_agg(a.attname::text order by a.attname) from pg_index i
+                       join pg_class c on c.oid = i.indrelid
+                       join pg_namespace n on n.oid = c.relnamespace
+                       join pg_attribute a on a.attrelid = c.oid and a.attnum = any(i.indkey)
+                       where n.nspname = $1 and c.relname = $2 and i.indisunique
+                       group by i.indexrelid""",
+                    table)
+            return PostgreSqlTableCheck.Problem(table, Generic.HashSet<string>(columns), uniques, createItBefore)
+        }

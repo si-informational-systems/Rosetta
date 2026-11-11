@@ -73,6 +73,8 @@ A DU with two cases under one stored name throws `InvalidOperationException` on 
 ### Helpers
 
 `PluralizeName: string -> string` (Pluralize.NET; used for MongoDB collection names), `IsUnion`, `GetUnionCaseType`.
+`TypeKeys` (`PropertiesOf`, `KeyPropertiesOf`, `KeyOf`, `ValuesOf`): the properties a type is stored by and its key
+(its `[<Key>]` properties in order, or `Id`), for read models and PostgreSQL Aggregate states.
 
 ## SI.Rosetta.Aggregates
 
@@ -134,7 +136,7 @@ type IAggregateRepository =
     abstract GetAsync<'TState> : id: string * ?version: int64 -> Task<'TState option>   // None when missing
 
 type IEventSourcedAggregateRepository = inherit IAggregateRepository   // KurrentDB
-type IStateBasedAggregateRepository = inherit IAggregateRepository     // RavenDB, MongoDB
+type IStateBasedAggregateRepository = inherit IAggregateRepository     // RavenDB, MongoDB, PostgreSQL
 ```
 
 Only the two marker interfaces are registered in DI. `GetAsync` with a `version` rebuilds an event-sourced state up to
@@ -148,7 +150,13 @@ type DomainException(?message: string) =
     member Name: string                                   // "" unless created with Named
     static member Named: name: string * message: string -> DomainException
 
-type ConcurrencyException(message: string) = inherit Exception   // KurrentDB: another write came first
+type ConcurrencyException(message: string, inner: exn) =        // every store: another write came first
+    inherit Exception
+    new: message: string -> ConcurrencyException
+    static member Created: stateType: Type * id: string * ?inner: exn -> ConcurrencyException
+    static member Changed: stateType: Type * id: string * loaded: int64 * ?inner: exn -> ConcurrencyException
+
+val LoadedVersionOf: aggregate: IAggregate -> int64   // Version - Changes.Count: the version it was loaded at
 ```
 
 ### Outbox
@@ -157,7 +165,7 @@ type ConcurrencyException(message: string) = inherit Exception   // KurrentDB: a
 type OutboxOptions() =
     member CollectionName: string with get, set          // "Outbox"
     member EventTTL: Nullable<TimeSpan> with get, set     // null: kept until deleted
-    member ExpirationFrequency: TimeSpan with get, set    // 36 h; RavenDB only
+    member ExpirationFrequency: TimeSpan with get, set    // 36 h; RavenDB and PostgreSQL
     member Validate: unit -> unit
 
 type OutboxEvent =
@@ -231,7 +239,7 @@ type ProjectionException(message, innerException) =   // a Handler failed; inner
 For custom stores and tests: `Checkpoint` (`Id`, `Value` one-based, `Version`), `ICheckpointStore`,
 `IProjectionTransaction` (`CommitAsync checkpoint`, dispose = rollback), `IProjectionsUnitOfWork` (`PrepareAsync`,
 `BeginAsync`, `ClearAsync`), `ProjectionTransaction.Current` (the event's transaction, an `AsyncLocal`),
-`ProjectionKeys` (`KeyPropertiesOf`, `KeyOf`, `ValuesOf`), `ProjectionStoreKinds` (`Documents`, `Sql`, `Of`),
+`ProjectionKeys` (`KeyPropertiesOf`, `KeyOf`, `ValuesOf`; delegates to `TypeKeys`), `ProjectionStoreKinds` (`Documents`, `Sql`, `Of`),
 `ProjectionReadModels`, `IProjectionsFactory`/`ProjectionsFactory`, `ISubscription`, `ISubscriptionFactory`.
 See [Extending Rosetta](../contributing.md#extending-rosetta).
 
@@ -269,9 +277,9 @@ to show the Projections' state in your own UI.
 | Member | On | |
 |---|---|---|
 | `UseAggregatesWithEventSourcing<KurrentDB>` | `IHostApplicationBuilder`, `IHostBuilder` | every Aggregate event-sourced |
-| `UseAggregatesWithoutEventSourcing<RavenDB \| MongoDB>` | same | every Aggregate state-based |
-| `UseAggregatesWith<KurrentDB, RavenDB \| MongoDB>` | same | both |
-| `UseOutboxWith<RavenDB \| MongoDB>(?configure)` | same | the Outbox |
+| `UseAggregatesWithoutEventSourcing<RavenDB \| MongoDB \| PostgreSQL>` | same | every Aggregate state-based |
+| `UseAggregatesWith<KurrentDB, RavenDB \| MongoDB \| PostgreSQL>` | same | both |
+| `UseOutboxWith<RavenDB \| MongoDB \| PostgreSQL>(?configure)` | same | the Outbox |
 | `AddAggregatesWith…(configuration, …)`, `AddOutboxWith<…>(configuration, ?configure)` | `IServiceCollection` | the same |
 
 Each takes an `Assembly` or an `Action<AggregatesRegistration>`:

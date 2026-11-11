@@ -201,8 +201,8 @@ let main args =
 ```
 
 !!! note "Store marker types"
-    `SI.Rosetta.Aggregates.HostBuilder` and `SI.Rosetta.Projections.HostBuilder` both define `KurrentDB`, `RavenDB`
-    and `MongoDB`. A host that registers both qualifies them, as above. A host with only one of them can
+    `SI.Rosetta.Aggregates.HostBuilder` and `SI.Rosetta.Projections.HostBuilder` both define `KurrentDB`, `RavenDB`,
+    `MongoDB` and `PostgreSQL`. A host that registers both qualifies them, as above. A host with only one of them can
     `open SI.Rosetta.Aggregates.HostBuilder` and write `builder.UseAggregatesWith<KurrentDB, RavenDB>(…)`.
 
 ```json title="People.Api/appsettings.json"

@@ -19,7 +19,8 @@ type OutboxOptions() =
     static member val DefaultExpirationFrequency = TimeSpan.FromHours 36.0
     /// How often RavenDB deletes the expired documents (Outbox:ExpirationFrequencyMinutes; 36 hours, which every
     /// licence allows, when it isn't set), when the outbox turns the database's document expiration on for EventTTL.
-    /// A database whose document expiration is already on keeps its own frequency. RavenDB only: MongoDB's TTL monitor
+    /// A database whose document expiration is already on keeps its own frequency. PostgreSQL, which has no TTL: how
+    /// often, at most, the outbox deletes the expired events itself, once it has recorded events. MongoDB's TTL monitor
     /// deletes the expired documents every 60 seconds by itself
     member val ExpirationFrequency = OutboxOptions.DefaultExpirationFrequency with get, set
 

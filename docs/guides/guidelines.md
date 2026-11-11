@@ -41,8 +41,8 @@ The rules Rosetta's design assumes, and the lessons of the applications built on
 ## Persistence
 
 - **Event-source an Aggregate** when its history matters or others react to its events; **state-based** when only the
-  current state matters. State-based Aggregates have no optimistic concurrency (last write wins) and feed no
-  Projections.
+  current state matters. State-based Aggregates feed no Projections. Both kinds have optimistic concurrency in every
+  store: a write never overwrites another command's (`ConcurrencyException`).
 - **Ids are `{PluralCategory}-{id}`**: they're the stream names, and the category feeds `$ce-{PluralCategory}`.
 - **Retry `ConcurrencyException`** by running the command again with a fresh handler (it reloads the state).
 - **Use the Outbox** for integration events, and publish them at least once with the Outbox `Id` as the message id.

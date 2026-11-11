@@ -13,11 +13,14 @@ open SI.Rosetta.Aggregates
 open SI.Rosetta.Aggregates.KurrentDB
 open SI.Rosetta.Aggregates.RavenDB
 open SI.Rosetta.Aggregates.MongoDB
+open SI.Rosetta.Aggregates.PostgreSQL
 open Raven.Client.Documents
 open MongoDB.Driver
+open Microsoft.Extensions.DependencyInjection.Extensions
 open SI.Rosetta.Persistence.RavenDB
 open SI.Rosetta.Persistence.KurrentDB
 open SI.Rosetta.Persistence.MongoDB
+open SI.Rosetta.Persistence.PostgreSQL
 open SI.Rosetta.Common
 open KurrentDB.Client
 
@@ -86,6 +89,15 @@ module HostBuilderMongoDBExtensionCommmon =
                 sp.GetRequiredService<IMongoClient>().GetDatabase(mongoConfig.DatabaseName)) |> ignore
         MongoConventions.Register()
 
+[<AutoOpen>]
+module HostBuilderPostgreSqlExtensionCommon =
+    /// The application's one PostgreSqlDatabase (Rosetta's own connection pool), shared by the state-based aggregates,
+    /// the outbox and Projections when they're in the same host. PostgreSQL:ConnectionString is read now, so a missing
+    /// one fails at registration
+    let RegisterPostgreSqlDatabase(services: IServiceCollection, config: IConfiguration) =
+        let postgreSqlConfig = PostgreSqlConfig.FromConfiguration(config)
+        services.TryAddSingleton<PostgreSqlDatabase>(fun _ -> new PostgreSqlDatabase(postgreSqlConfig))
+
 module OutboxConfiguration =
     /// A setting of the Outbox section that's a positive number of minutes, when it's set
     let private MinutesOf (configuration: IConfiguration) (key: string) =
@@ -97,7 +109,7 @@ module OutboxConfiguration =
             | _ -> raise (InvalidOperationException(sprintf "Outbox:%s must be a positive number of minutes, not '%s'." key minutes))
 
     /// The outbox's settings from the Outbox configuration section: CollectionName (Outbox unless set),
-    /// EventTTLMinutes (no expiry unless set) and ExpirationFrequencyMinutes (36 hours unless set; RavenDB only)
+    /// EventTTLMinutes (no expiry unless set) and ExpirationFrequencyMinutes (36 hours unless set; RavenDB and PostgreSQL)
     let Read (configuration: IConfiguration) =
         let options = OutboxOptions()
         match configuration.["Outbox:CollectionName"] with
@@ -166,6 +178,13 @@ module ServiceCollectionExtensions =
                 match OutboxOf sp with
                 | Some (:? MongoDBOutbox as outbox) -> MongoDBAggregateRepository(db, Some outbox) :> IStateBasedAggregateRepository
                 | _ -> MongoDBAggregateRepository(db) |> WithOutbox<IStateBasedAggregateRepository> sp) |> ignore
+        | t when t = typeof<PostgreSQL> ->
+            RegisterPostgreSqlDatabase(services, configuration)
+            services.AddSingleton<IStateBasedAggregateRepository>(fun sp ->
+                let database = sp.GetRequiredService<PostgreSqlDatabase>()
+                match OutboxOf sp with
+                | Some (:? PostgreSqlOutbox as outbox) -> PostgreSqlAggregateRepository(database, Some outbox) :> IStateBasedAggregateRepository
+                | _ -> PostgreSqlAggregateRepository(database) |> WithOutbox<IStateBasedAggregateRepository> sp) |> ignore
         | _ -> raise (Exception("Only types extending `StateBasedAggregateRepository` can be used as an Aggregate Repository generic option!"))
 
     let private AddHandlers (services: IServiceCollection) (registration: AggregatesRegistration) =
@@ -243,10 +262,18 @@ module ServiceCollectionExtensions =
         | t when t = typeof<MongoDB> ->
             RegisterMongoDatabase(services, configuration)
             services.AddSingleton<IOutbox>(fun sp -> MongoDBOutbox(sp.GetRequiredService<IMongoDatabase>(), options) :> IOutbox) |> ignore
-        | _ -> raise (Exception("Only `RavenDB` and `MongoDB` can be used as an Outbox store generic option!"))
+        | t when t = typeof<PostgreSQL> ->
+            RegisterPostgreSqlDatabase(services, configuration)
+            services.AddSingleton<IOutbox>(fun sp ->
+                let logger =
+                    match sp.GetService<ILogger<PostgreSqlOutbox>>() with
+                    | null -> NullLogger<PostgreSqlOutbox>.Instance :> ILogger<PostgreSqlOutbox>
+                    | logger -> logger
+                PostgreSqlOutbox(sp.GetRequiredService<PostgreSqlDatabase>(), options, logger) :> IOutbox) |> ignore
+        | _ -> raise (Exception("Only `RavenDB`, `MongoDB` and `PostgreSQL` can be used as an Outbox store generic option!"))
         services
 
-    /// The outbox in 'OutboxStore (RavenDB or MongoDB): once an aggregate is stored, event-sourced or state-based, its
+    /// The outbox in 'OutboxStore (RavenDB, MongoDB or PostgreSQL): once an aggregate is stored, event-sourced or state-based, its
     /// PublishedEvents are recorded there. Its settings come from the Outbox configuration section, and it can be added
     /// before or after the aggregates
     let AddOutboxWith<'OutboxStore
@@ -277,7 +304,7 @@ module HostBuilderExtensions =
         hostBuilder.ConfigureServices(fun ctx services ->
             AddAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository> services ctx.Configuration aggregatesAssembly |> ignore)
 
-    /// The outbox in 'OutboxStore (RavenDB or MongoDB), recording the PublishedEvents of every stored aggregate
+    /// The outbox in 'OutboxStore (RavenDB, MongoDB or PostgreSQL), recording the PublishedEvents of every stored aggregate
     let UseOutboxWith<'OutboxStore
         when 'OutboxStore : not struct and 'OutboxStore : (new : unit -> 'OutboxStore) and 'OutboxStore :> StateBasedAggregateRepository>
         (hostBuilder: IHostBuilder) =
@@ -308,7 +335,7 @@ module CSharp_HostBuilderExtensions =
         (hostBuilder: IHostBuilder, aggregatesAssembly: Assembly) =
         HostBuilderExtensions.UseAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository> hostBuilder aggregatesAssembly
 
-    /// The outbox in 'OutboxStore (RavenDB or MongoDB), with the Outbox configuration section's settings, which configure may change
+    /// The outbox in 'OutboxStore (RavenDB, MongoDB or PostgreSQL), with the Outbox configuration section's settings, which configure may change
     [<Extension>]
     let UseOutboxWith<'OutboxStore
         when 'OutboxStore : not struct and 'OutboxStore : (new : unit -> 'OutboxStore) and 'OutboxStore :> StateBasedAggregateRepository>
@@ -349,7 +376,7 @@ type AggregatesExtensions =
             builder.Services builder.Configuration aggregatesAssembly |> ignore
         builder
 
-    /// The outbox in 'OutboxStore (RavenDB or MongoDB), recording the PublishedEvents of every stored aggregate.
+    /// The outbox in 'OutboxStore (RavenDB, MongoDB or PostgreSQL), recording the PublishedEvents of every stored aggregate.
     /// Its settings come from the Outbox configuration section, and configure may change them
     [<Extension>]
     static member UseOutboxWith<'OutboxStore
@@ -380,7 +407,7 @@ type AggregatesExtensions =
         ServiceCollectionExtensions.AddAggregatesWith<'EventSourcedAggregateRepository, 'TStateBasedAggregateRepository>
             services configuration aggregatesAssembly
 
-    /// The outbox in 'OutboxStore (RavenDB or MongoDB), recording the PublishedEvents of every stored aggregate.
+    /// The outbox in 'OutboxStore (RavenDB, MongoDB or PostgreSQL), recording the PublishedEvents of every stored aggregate.
     /// Its settings come from the Outbox configuration section, and configure may change them
     [<Extension>]
     static member AddOutboxWith<'OutboxStore

@@ -30,7 +30,7 @@ dotnet test --project SI.Rosetta.Projections.UnitTests      # one project
 |---|---|
 | `SI.Rosetta.Common`, `.Serialization`, `.Aggregates`, `.Projections` | the core |
 | `SI.Rosetta.Persistence.*` | client factories and configuration per database |
-| `SI.Rosetta.Aggregates.{KurrentDB,RavenDB,MongoDB}`, `SI.Rosetta.Projections.{KurrentDB,RavenDB,MongoDB,PostgreSQL}` | the store implementations |
+| `SI.Rosetta.Aggregates.{KurrentDB,RavenDB,MongoDB,PostgreSQL}`, `SI.Rosetta.Projections.{KurrentDB,RavenDB,MongoDB,PostgreSQL}` | the store implementations |
 | `SI.Rosetta.*.HostBuilder` | registration |
 | `SI.Rosetta.*.TestKit`, `SI.Rosetta.TestKit.*` | the TestKits |
 | `SI.Rosetta.Aggregates.Template` | a Visual Studio item template (not built with the solution) |

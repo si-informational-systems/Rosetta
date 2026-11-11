@@ -70,52 +70,10 @@ type PostgreSqlProjectionsUnitOfWork(database: PostgreSqlDatabase) =
             do! RosettaTables.EnsureAsync connection
         }
 
-    /// The values of the first column the query returns, for the table's schema and name ($1, $2)
-    static member private ReadAllAsync<'T>(connection: NpgsqlConnection, sql: string, table: PostgreSqlTable) : Task<List<'T>> =
-        task {
-            use query = new NpgsqlCommand(sql, connection)
-            query.Parameters.Add(NpgsqlParameter(Value = table.Schema)) |> ignore
-            query.Parameters.Add(NpgsqlParameter(Value = table.Name)) |> ignore
-            let values = List<'T>()
-            use! reader = query.ExecuteReaderAsync().ConfigureAwait(false)
-            let mutable reading = true
-            while reading do
-                let! read = reader.ReadAsync().ConfigureAwait(false)
-                if read then values.Add(reader.GetFieldValue<'T> 0) else reading <- false
-            return values
-        }
-
-    /// The problem with the table, if any: missing, a column missing, or no unique key to upsert on
-    static member private Problem(table: PostgreSqlTable, columns: HashSet<string>, uniques: List<string[]>) : string option =
-        let where = sprintf "%s (for %s)" table.Qualified table.Type.Name
-        let missing = table.Columns |> Array.filter (fun column -> not (columns.Contains column.Name))
-        let key = table.Keys |> Array.map (fun key -> key.Name) |> Array.sort
-        if columns.Count = 0 then
-            Some (sprintf "The table %s doesn't exist: create it before the projections start." where)
-        elif missing.Length > 0 then
-            Some (sprintf "The table %s has no column %s." where
-                    (String.Join(", ", missing |> Array.map (fun column -> sprintf "%s (%s)" column.Name column.Property.Name))))
-        elif not (uniques |> Seq.exists (fun unique -> Array.sort unique = key)) then
-            Some (sprintf "The table %s has no primary key or unique index on (%s): rows are upserted on their key." where (String.Join(", ", key)))
-        else None
-
     /// Fails with ReadModelTableException when the read model's table doesn't match it
     static member private CheckAsync(connection: NpgsqlConnection, table: PostgreSqlTable) : Task =
         task {
-            let! columns =
-                PostgreSqlProjectionsUnitOfWork.ReadAllAsync<string>(
-                    connection, "select column_name::text from information_schema.columns where table_schema = $1 and table_name = $2", table)
-            let! uniques =
-                PostgreSqlProjectionsUnitOfWork.ReadAllAsync<string[]>(
-                    connection,
-                    """select array_agg(a.attname::text order by a.attname) from pg_index i
-                       join pg_class c on c.oid = i.indrelid
-                       join pg_namespace n on n.oid = c.relnamespace
-                       join pg_attribute a on a.attrelid = c.oid and a.attnum = any(i.indkey)
-                       where n.nspname = $1 and c.relname = $2 and i.indisunique
-                       group by i.indexrelid""",
-                    table)
-            match PostgreSqlProjectionsUnitOfWork.Problem(table, HashSet<string>(columns), uniques) with
+            match! PostgreSqlTableCheck.ProblemAsync(connection, table, "the projections start").ConfigureAwait(false) with
             | Some problem -> raise (ReadModelTableException problem)
             | None -> ()
         } :> Task

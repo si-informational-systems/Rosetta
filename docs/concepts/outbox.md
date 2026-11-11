@@ -24,7 +24,7 @@ to the outside world (a message broker, other services) without losing any. Regi
     builder.UseOutboxWith<Stores.RavenDB>();
     ```
 
-The Outbox store is `RavenDB` or `MongoDB`, configured by its section (see [Configuration](../reference/configuration.md)).
+The Outbox store is `RavenDB`, `MongoDB` or `PostgreSQL`, configured by its section (see [Configuration](../reference/configuration.md)).
 
 ## Settings
 
@@ -42,9 +42,9 @@ From the optional `Outbox` configuration section:
 
 | Setting | Unless set | |
 |---|---|---|
-| `CollectionName` | `Outbox` | the collection the events are recorded in |
+| `CollectionName` | `Outbox` | the collection the events are recorded in; in PostgreSQL, the table `rosetta.{snake_case}` (`rosetta.outbox`) |
 | `EventTTLMinutes` | events are kept until deleted | how long an event is kept, in minutes |
-| `ExpirationFrequencyMinutes` | `2160` (36 hours) | **RavenDB only**: how often RavenDB deletes the expired events when the Outbox turns Document Expiration on (see [Expiry](#expiry)). MongoDB's TTL monitor runs every 60 seconds by itself |
+| `ExpirationFrequencyMinutes` | `2160` (36 hours) | **RavenDB and PostgreSQL**: how often RavenDB deletes the expired events when the Outbox turns Document Expiration on, or how often, at most, the PostgreSQL Outbox deletes them itself (see [Expiry](#expiry)). MongoDB's TTL monitor runs every 60 seconds by itself |
 
 Or in code, after the configuration is read:
 
@@ -76,7 +76,8 @@ the Aggregate lives:
 |---|---|---|
 | state-based, in RavenDB | `RavenDB` | with the state, in one `SaveChanges`: both are saved, or neither |
 | state-based, in MongoDB | `MongoDB` | with the state, in one transaction: both are saved, or neither. MongoDB transactions need a replica set (a single node is enough) |
-| event-sourced, in KurrentDB, or state-based in the other store | `RavenDB` or `MongoDB` | right after the Aggregate is stored. The two stores can't share a transaction, so a crash in between leaves the Aggregate stored without its events in the Outbox, until the command is repeated |
+| state-based, in PostgreSQL | `PostgreSQL` | with the state, in one transaction: both are saved, or neither |
+| event-sourced, in KurrentDB, or state-based in another store | `RavenDB`, `MongoDB` or `PostgreSQL` | right after the Aggregate is stored. The two stores can't share a transaction, so a crash in between leaves the Aggregate stored without its events in the Outbox, until the command is repeated |
 
 A command that changed nothing, e.g. an idempotent repeat, stores nothing, but the events it published are recorded on
 their own. So **publish the events in the idempotent branch too**: when a crash stored an Aggregate without recording
@@ -102,16 +103,18 @@ events at the same `Version`, so they get the same `Id`s, and the Outbox only ad
 that's there stays exactly as it was, so a RavenDB subscription or a MongoDB change stream doesn't see it again.
 
 - RavenDB checks which events it holds, and saves the others on condition they're still new: if a concurrent repeat
-  recorded one meanwhile, the save fails with RavenDB's own `ConcurrencyException` (`Raven.Client.Exceptions`; the
-  command can be retried) instead of overwriting it.
+  recorded one meanwhile, the save fails with `ConcurrencyException` (Rosetta's, wrapping RavenDB's; the command can be
+  run again) instead of overwriting it.
 - MongoDB upserts with `$setOnInsert`.
+- PostgreSQL inserts with `on conflict (id) do nothing`.
 
 An event published again after the Aggregate changed further has a later `Version`, so it's recorded again. Whatever
 consumes the events must still handle duplicates (as with any broker's redeliveries); use the `Id` as the message id.
 
 ## The recorded events
 
-Each PublishedEvent is one document (`RavenDBOutboxEvent`, `MongoDBOutboxEvent`):
+Each PublishedEvent is one document (`RavenDBOutboxEvent`, `MongoDBOutboxEvent`), or one row of the PostgreSQL table,
+with the same fields as snake_case columns (see [Stored format](../reference/stored-format.md#an-event-in-the-outbox)):
 
 | Field | |
 |---|---|
@@ -126,7 +129,8 @@ Each PublishedEvent is one document (`RavenDBOutboxEvent`, `MongoDBOutboxEvent`)
 ## Publishing the events
 
 Rosetta records the events; publishing them is up to you, e.g. with a RavenDB data subscription or a MongoDB change
-stream on the collection, which sends each to your broker and then deletes it (or lets it expire).
+stream on the collection, or by polling the PostgreSQL table, which sends each to your broker and then deletes it (or
+lets it expire).
 `EventEncoding.Decode` reads an event back into its DU, through the upcasters:
 
 ```fsharp
@@ -151,6 +155,10 @@ changed TTL applies to the events recorded from then on.
       and the commands go on: the events are recorded, they just aren't deleted until Document Expiration is on.
 - **MongoDB** keeps it in an `expiresAt` field, which a TTL index the Outbox creates on first use acts on. MongoDB
   deletes expired documents every 60 seconds.
+- **PostgreSQL** has no TTL: it keeps the expiry in an `expires_at` column (indexed), and the Outbox deletes the expired
+  rows itself (`delete … where expires_at < now()`) after recording events, at most every `ExpirationFrequencyMinutes`
+  (and on its first recording after the process starts). A failed deletion is logged as a Warning and doesn't fail the
+  command: the next one tries again after `ExpirationFrequencyMinutes`.
 
 ## A custom Outbox store
 

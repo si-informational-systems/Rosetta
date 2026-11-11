@@ -60,15 +60,22 @@ Messages are quoted as Rosetta writes them; `{…}` stands for the names in your
   name, e.g. `People-1`), or route the command to `IdempotentlyCreateAggregate` if it may create.
 
 **`ConcurrencyException`**
-: Another command appended to the same Aggregate between this one's load and store. Run the command again with a
-  fresh handler; see [Recipes](recipes.md#handle-commands-from-a-message-bus).
+: Another command appended to the same Aggregate between this one's load and store (KurrentDB), or created or changed
+  its stored state (state-based, in any store: "{State} {id} already exists: another command created it after this one
+  found it missing." / "{State} {id} is no longer at version {n}: another command changed it after this one loaded
+  it."). Run the command again with a fresh handler; see [Recipes](recipes.md#handle-commands-from-a-message-bus).
 
-**RavenDB's `ConcurrencyException` from the Outbox**
-: A concurrent repeat of the same command recorded the same event first. Retry the command; it's idempotent.
+**`ConcurrencyException` from the RavenDB Outbox ("… was recorded in the outbox by another command meanwhile …")**
+: A concurrent repeat of the same command recorded the same event first. Run the command again; it's idempotent.
+  RavenDB's own exception is its `InnerException`.
 
 **`UnknownEventException`: "Event {Name} (event {n} of stream {stream}) has no case in {Events}. Add the case or upcast the event with an IEventUpcaster; a projection can skip it with [<SkipUnknownEvents>]."**
 : An Aggregate's stream holds an event its DU doesn't know: a case was removed or renamed without `[<EventType>]`. Add
   the case back, give the renamed record `[<EventType("OldName")>]`, or upcast it. An Aggregate can't skip it.
+
+**"The table {schema.table} (for {State}) doesn't exist: create it before the aggregates are stored."**, **"… has no column {column (Property)}."**, **"… has no primary key or unique index on (id): rows are written by their key."**
+: An `InvalidOperationException` on every command of a state-based Aggregate in PostgreSQL: its table doesn't match
+  the state type. Fix the migration; once it has run, the next command checks the table again and goes through.
 
 **"{State} is built from {Events}, so it can't apply {Type}."**
 : An event of another DU reached the state, e.g. two Aggregates writing to the same stream id. Keep ids unique per
@@ -95,7 +102,7 @@ Messages are quoted as Rosetta writes them; `{…}` stands for the names in your
 **"MongoDB projections need a replica set: …"**
 : Start MongoDB as a replica set (one node is enough); see [Operations](operations.md#mongodb).
 
-**"The table {schema.table} (for {Type}) doesn't exist: create it before the projections start."**, **"… has no column {column (Field)}"**, **"… has no primary key or unique index on ({keys}): rows are upserted on their key."**
+**"The table {schema.table} (for {Type}) doesn't exist: create it before the projections start."**, **"… has no column {column (Field)}"**, **"… has no primary key or unique index on ({keys}): rows are written by their key."**
 : The PostgreSQL table doesn't match the read model. Fix the migration; the Projection retries until it matches.
 
 **"{Type}'s key has {n} values ({names}), but {m} were given."**

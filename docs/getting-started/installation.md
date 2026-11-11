@@ -15,7 +15,7 @@ same version.
 | **Published Language** (commands, events, upcasters) | `SI.Rosetta.Common` | the marker interfaces, `[<EventType>]`, `IEventUpcaster`, `EventEncoding`. No database clients |
 | **Domain** (states, Aggregates, Aggregate Handlers) | `SI.Rosetta.Aggregates` | the Aggregate base classes, repositories' interfaces, `DomainException` |
 | **Projections** (Projections, Handlers, read models) | `SI.Rosetta.Projections` | `Projection<_>`, the attributes, `INoSqlStore`/`ISqlStore` |
-| **Host** of the Aggregates (API, message consumer) | `SI.Rosetta.Aggregates.HostBuilder` | registration, plus every repository and Outbox implementation (KurrentDB, RavenDB, MongoDB) |
+| **Host** of the Aggregates (API, message consumer) | `SI.Rosetta.Aggregates.HostBuilder` | registration, plus every repository and Outbox implementation (KurrentDB, RavenDB, MongoDB, PostgreSQL) |
 | **Host** of the Projections | `SI.Rosetta.Projections.HostBuilder` | registration, the subscriptions, every read model store (RavenDB, MongoDB, PostgreSQL), the health check |
 | **Domain tests** | `SI.Rosetta.Aggregates.TestKit` | `TestKitBase<'THandler>` (and the Upcasting TestKit) |
 | **Projection tests** | `SI.Rosetta.Projections.TestKit` | `TestKitBase<'TProjection, 'THandler, 'TEvents>` (and the Upcasting TestKit) |

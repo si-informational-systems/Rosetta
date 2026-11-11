@@ -121,6 +121,11 @@ type RavenDBOutbox(store: IDocumentStore, options: OutboxOptions, logger: ILogge
                 use session = store.OpenAsyncSession()
                 let! recorded = this.StoreAsync(session, events).ConfigureAwait(false)
                 if recorded.Length > 0 then
-                    do! session.SaveChangesAsync().ConfigureAwait(false)
+                    try
+                        do! session.SaveChangesAsync().ConfigureAwait(false)
+                    with :? Raven.Client.Exceptions.ConcurrencyException as conflict ->
+                        raise (SI.Rosetta.Aggregates.ConcurrencyException(
+                                sprintf "The outbox's event %s was recorded by another command meanwhile, so these events weren't: run the command again." conflict.Id,
+                                conflict))
                 return recorded.Length
             }

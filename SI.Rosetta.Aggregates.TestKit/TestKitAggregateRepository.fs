@@ -17,6 +17,14 @@ type TestKitAggregateRepository() =
 
     member this.GetProducedEvents = ProducedEvents
 
+    /// As every store does: nothing is written over changes made after the aggregate was loaded. A member of its own:
+    /// inside StoreAsync's task, the F# compiler emitted an invalid program
+    static member private CheckVersion(stateType: System.Type, aggregate: IAggregate, stored: int) =
+        let loaded = LoadedVersionOf aggregate
+        if int64 stored <> loaded then
+            raise (if loaded = 0L then ConcurrencyException.Created(stateType, aggregate.Id)
+                   else ConcurrencyException.Changed(stateType, aggregate.Id, loaded))
+
     member this.SeedEvents(id: string, events: IAggregateEvents array) =
         if events.Length > 0 then 
             let list = List<IAggregateEvents> events
@@ -46,8 +54,9 @@ type TestKitAggregateRepository() =
             (agg: IAggregate<'TAggregateState>) =
             task {
                 let events = LoadEvents agg.Id
-                
-                agg.Changes 
+                TestKitAggregateRepository.CheckVersion(typeof<'TAggregateState>, agg, events.Count)
+
+                agg.Changes
                 |> Seq.iter events.Add
                 
                 InMemoryStore.[agg.Id] <- events

@@ -73,14 +73,33 @@ The same stored name and data, in a document per event (see [Outbox](../concepts
 }
 ```
 
+In PostgreSQL, a row of `rosetta.outbox` (`rosetta.` and the snake_case of `Outbox:CollectionName`), which the Outbox
+creates:
+
+```sql
+create table rosetta.outbox (
+    id uuid primary key,
+    aggregate text not null,
+    aggregate_id text not null,
+    version bigint not null,
+    position int not null,
+    event_type text not null,
+    data json not null,              -- json, not jsonb: the record's JSON text exactly as KurrentDB stores it
+    recorded_at timestamptz not null,
+    expires_at timestamptz,          -- with Outbox:EventTTLMinutes; a partial index covers it
+    trace_parent text,
+    trace_state text);
+```
+
 `EventEncoding.Decode<PersonEvents> upcasters recorded.EventType recorded.Data` reads it back.
 
 ## State-based Aggregates
 
-| Store | Document |
+| Store | Document or row |
 |---|---|
 | RavenDB | the state object (its properties), id = `Id`; `Version` in `@metadata["Rosetta-Aggregate-Version"]` |
 | MongoDB | the state object in the pluralized state type name collection, `_id` = `Id`, with a `version` field; camelCase names, F# lists/maps/unions as described in [Configuration](../getting-started/configuration.md#mongodb) |
+| PostgreSQL | a row of the app's table, the snake_case plural of the state type name (`PersonAggregateState` → `person_aggregate_states`): `id` (the key), `version bigint`, and a column per property, mapped as [PostgreSQL read models](../concepts/postgresql.md#how-the-rows-are-mapped) |
 
 ## Checkpoints
 

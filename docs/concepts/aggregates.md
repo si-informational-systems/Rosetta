@@ -34,8 +34,8 @@ type PersonAggregateState() =
 - `Id` and `Version` come from the base class. `Version` is the number of events applied (0 = doesn't exist yet).
 - `ApplyEvent` only assigns. No validation, no exceptions: events are facts, and replaying old events must always
   work. Set `Id` in the creating event.
-- State-based Aggregates are stored as this object (a RavenDB or MongoDB document), so keep its properties
-  serializable: `member val … with get, set`.
+- State-based Aggregates are stored as this object (a RavenDB or MongoDB document, or a row of a PostgreSQL table), so
+  keep its properties serializable: `member val … with get, set`.
 
 ## Aggregate
 
@@ -156,24 +156,35 @@ The Aggregate's handler constructor decides how it's stored.
 - Event data is the record as JSON; metadata carries the stored name, CLR type names and the trace context. See
   [Stored format](../reference/stored-format.md).
 
-### State-based: RavenDB or MongoDB
+### State-based: RavenDB, MongoDB or PostgreSQL
 
 | Store | Where the state lives | Where `Version` lives |
 |---|---|---|
 | RavenDB | the state object as a document, id = `Id` | the document's `@metadata` (`Rosetta-Aggregate-Version`) |
 | MongoDB | the state object as a document in the pluralized state type name collection, `_id` = `Id` | a regular `version` field |
+| PostgreSQL | a row of your table, the snake_case plural of the state type name (`PersonAggregateState` → `person_aggregate_states`), a column per property, key `id` | a regular `version` column |
 
 - Only the latest state is kept: no history, no events in KurrentDB, so no Projections from these Aggregates.
-- **No optimistic concurrency**: concurrent commands on one Aggregate are last-write-wins. Serialize them (one consumer
-  per Aggregate id) if that matters.
+- **Optimistic concurrency**, as with KurrentDB, in every store: a write never overwrites another command's. A new
+  Aggregate is stored only while its `Id` doesn't exist, a loaded one only while the stored state is still at the
+  version it was loaded at; otherwise `ConcurrencyException`, nothing is written (its Outbox events included), and the
+  command can be run again (it reloads the state).
+
+    | Store | New Aggregate | Loaded Aggregate |
+    |---|---|---|
+    | RavenDB | saved with an empty change vector (only while no document has the id) | the stored document's version (`@metadata`) is checked, then it's saved over that document's change vector, so RavenDB refuses it if it changed in between |
+    | MongoDB | `InsertOne` (a duplicate key is a conflict) | `ReplaceOne` filtered on `_id` and `version` |
+    | PostgreSQL | `insert … on conflict (id) do nothing` | `update … where id = … and version = …` |
+
+- PostgreSQL tables are yours: your migrations create them, mapped exactly like
+  [PostgreSQL read models](postgresql.md#state-based-aggregates), and the app can query them with SQL.
 
 ### Choosing
 
-| Event-Sourced (KurrentDB) when | State-based (RavenDB/MongoDB) when |
+| Event-Sourced (KurrentDB) when | State-based (RavenDB, MongoDB, PostgreSQL) when |
 |---|---|
 | the history matters (audit, analytics, read models from it) | only the current state matters |
 | other parts of the system react to its events through Projections | nothing projects its events |
-| concurrent writes must be detected | last-write-wins is acceptable |
 
 One service can have both: register with `UseAggregatesWith<KurrentDB, RavenDB>` and give each handler the repository
 it needs. See [Registration](registration.md).

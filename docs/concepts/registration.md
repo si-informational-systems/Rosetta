@@ -30,7 +30,7 @@ Host.CreateDefaultBuilder(args)
 |> fun builder -> builder.Build().Run()
 ```
 
-> Both namespaces define the `KurrentDB`/`RavenDB`/`MongoDB` marker types. If one host registers both Aggregates and Projections, qualify them (e.g. `SI.Rosetta.Projections.HostBuilder.RavenDB`).
+> Both namespaces define the `KurrentDB`/`RavenDB`/`MongoDB`/`PostgreSQL` marker types. If one host registers both Aggregates and Projections, qualify them (e.g. `SI.Rosetta.Projections.HostBuilder.RavenDB`).
 
 **C#**
 
@@ -71,9 +71,9 @@ services.AddProjectionsWith<KurrentDB, RavenDB>(configuration, typeof(PersonProj
 | Registration | Use when | Stores |
 |---|---|---|
 | `UseAggregatesWithEventSourcing<TEventSourced>` | every Aggregate is Event-Sourced | `KurrentDB` |
-| `UseAggregatesWithoutEventSourcing<TStateBased>` | every Aggregate persists its state | `RavenDB`, `MongoDB` |
+| `UseAggregatesWithoutEventSourcing<TStateBased>` | every Aggregate persists its state | `RavenDB`, `MongoDB`, `PostgreSQL` |
 | `UseAggregatesWith<TEventSourced, TStateBased>` | a mix of both | both of the above |
-| `UseOutboxWith<TOutboxStore>` | the Aggregates' PublishedEvents are recorded in an [Outbox](outbox.md) | `RavenDB`, `MongoDB` |
+| `UseOutboxWith<TOutboxStore>` | the Aggregates' PublishedEvents are recorded in an [Outbox](outbox.md) | `RavenDB`, `MongoDB`, `PostgreSQL` |
 | `UseProjectionsWith<TEventRepository, TProjectionsStore>` | Projections | `KurrentDB` → `RavenDB`, `MongoDB`, `PostgreSQL` |
 | `UseProjectionsWith<TEventRepository, TNoSqlStore, TSqlStore>` | Projections into documents and tables at once | `KurrentDB` → `RavenDB` or `MongoDB`, and `PostgreSQL` |
 
@@ -112,13 +112,15 @@ Whatever is both named and found in an assembly is registered once. A named Proj
 
 | Call | Registers |
 |---|---|
-| `UseAggregatesWith…` | one `KurrentDBClient` (when KurrentDB is used), the RavenDB `IDocumentStore` or MongoDB database (when used), `IEventSourcedAggregateRepository` and/or `IStateBasedAggregateRepository` (singletons, with the registered `IEventUpcaster`s), and every Aggregate Handler as a transient under its marker interface |
+| `UseAggregatesWith…` | one `KurrentDBClient` (when KurrentDB is used), the RavenDB `IDocumentStore`, MongoDB database or PostgreSQL connection pool (when used), `IEventSourcedAggregateRepository` and/or `IStateBasedAggregateRepository` (singletons, with the registered `IEventUpcaster`s), and every Aggregate Handler as a transient under its marker interface |
 | `UseOutboxWith<…>` | the `IOutbox` for the store; the repositories record PublishedEvents in it |
 | `UseProjectionsWith…` | one `KurrentDBClient` and `KurrentDBProjectionManagementClient`, the read model store (`INoSqlStore` and/or `ISqlStore`), its checkpoint store and per-event unit of work, every Projection Handler as a transient by its concrete type, the hosted service that runs the Projections, and the custom JavaScript projections |
 | `AddHealthChecks().AddRosettaProjections()` | the `rosetta-projections` health check |
 
 - Services the app registered **before** Rosetta are kept: your own `KurrentDBClient` singleton, or RavenDB
   `IDocumentStore`, is used instead of Rosetta's.
+- With PostgreSQL, the Aggregates, the Outbox and the Projections of one host share Rosetta's one connection pool
+  (`PostgreSqlDatabase`), from the `PostgreSQL` section.
 - `IEventUpcaster`s are taken from DI: register them (as singletons) in every service that reads the events.
 - Each kind (Aggregates, Outbox, Projections) can be added once per service collection; a second call fails.
 - The three-store form (`UseProjectionsWith<KurrentDB, RavenDB|MongoDB, PostgreSQL>`) exists as methods only: on

@@ -18,10 +18,12 @@
   <ItemGroup>
     <ProjectReference Include="..\SI.Rosetta.Aggregates.KurrentDB\SI.Rosetta.Aggregates.KurrentDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Aggregates.MongoDB\SI.Rosetta.Aggregates.MongoDB.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Aggregates.PostgreSQL\SI.Rosetta.Aggregates.PostgreSQL.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Aggregates.RavenDB\SI.Rosetta.Aggregates.RavenDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Aggregates\SI.Rosetta.Aggregates.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Persistence.KurrentDB\SI.Rosetta.Persistence.KurrentDB.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Persistence.MongoDB\SI.Rosetta.Persistence.MongoDB.fsproj" />
+    <ProjectReference Include="..\SI.Rosetta.Persistence.PostgreSQL\SI.Rosetta.Persistence.PostgreSQL.fsproj" />
     <ProjectReference Include="..\SI.Rosetta.Persistence.RavenDB\SI.Rosetta.Persistence.RavenDB.fsproj" />
   </ItemGroup>
 

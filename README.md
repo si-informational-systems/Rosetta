@@ -22,7 +22,7 @@
 
 - 🧩 **Aggregates and Domain Events**: expressive, testable domain logic, with idempotency and optimistic concurrency built in.
 - ⚡ **Event Sourcing** with KurrentDB.
-- 🗄️ **State-based Aggregates** persisted in RavenDB or MongoDB when Event Sourcing isn't needed, or both styles in one service.
+- 🗄️ **State-based Aggregates** persisted in RavenDB, MongoDB or your own PostgreSQL tables when Event Sourcing isn't needed, or both styles in one service.
 - 📤 **Outbox**: the PublishedEvents of every stored Aggregate, recorded with its state (in one transaction where the stores allow it) for publishing to the outside world.
 - 📊 **Projections** from KurrentDB into documents (RavenDB, MongoDB), rows of your own **PostgreSQL** tables, or both in one app, through the same typed store-load-delete by key. Each event is one transaction with its checkpoint, so a retried event is projected once.
 - 🔀 **Custom (cross-Aggregate) Projections**, deployed to KurrentDB for you.
@@ -39,8 +39,8 @@
 graph TD
     A[Client/API] -->|Command| B[Aggregate Handler]
     B -->|Event| C[KurrentDB]
-    B -->|AggregateState| G[RavenDB / MongoDB]
-    B -->|PublishedEvents| H[Outbox: RavenDB / MongoDB]
+    B -->|AggregateState| G[RavenDB / MongoDB / PostgreSQL]
+    B -->|PublishedEvents| H[Outbox: RavenDB / MongoDB / PostgreSQL]
     C -->|Event| D[Projection Handler/s]
     D -->|Read Model| E[RavenDB / MongoDB / PostgreSQL]
     E -->|Query| F[Client/API]
@@ -55,7 +55,7 @@ graph TD
 Rosetta targets **.NET 11**.
 
 ```shell
-# Aggregates (registers the KurrentDB, RavenDB and MongoDB repositories)
+# Aggregates (registers the KurrentDB, RavenDB, MongoDB and PostgreSQL repositories)
 dotnet add package SI.Rosetta.Aggregates.HostBuilder
 
 # Projections (KurrentDB subscriptions into RavenDB, MongoDB or PostgreSQL)
@@ -129,11 +129,11 @@ Rosetta registers BSON serializers for F# types (`MongoConventions.Register()`, 
 
 #### PostgreSQL
 
-PostgreSQL (Projections only) stores read models as **rows of your own tables**, which your migrations create, as you create RavenDB's indexes yourself (see [Example: PostgreSQL Projection](#-example-postgresql-projection)).
+PostgreSQL stores read models and state-based Aggregates as **rows of your own tables**, which your migrations create, as you create RavenDB's indexes yourself (see [Example: PostgreSQL Projection](#-example-postgresql-projection) and [State-based persistence](#state-based-persistence)), and the [Outbox](#-outbox) in a table of its own.
 
-- `ConnectionString` is required. Rosetta keeps its own connection pool for it, apart from any `NpgsqlDataSource` the app registers.
-- `Schema` is optional: the schema of the tables that don't name theirs with `[<Table(…, Schema = …)>]`, `public` unless set. Set it when all your read model tables live in one schema of their own (`read_models`, say). Rosetta qualifies every table with its schema, so the connection string's `Search Path` doesn't change where it writes.
-- Rosetta keeps its checkpoints in its own `rosetta.checkpoints` table, which it creates, so the user needs the `CREATE` privilege on the database. A missing database is created when the Projections start, which needs `CREATEDB`; without it, create the database first.
+- `ConnectionString` is required. Rosetta keeps its own connection pool for it, apart from any `NpgsqlDataSource` the app registers, shared by the Aggregates, the Outbox and the Projections of a host.
+- `Schema` is optional: the schema of the tables that don't name theirs with `[<Table(…, Schema = …)>]`, `public` unless set. Set it when all your read model (and Aggregate state) tables live in one schema of their own (`read_models`, say). Rosetta qualifies every table with its schema, so the connection string's `Search Path` doesn't change where it writes.
+- Rosetta keeps its checkpoints in its own `rosetta.checkpoints` table and the Outbox in `rosetta.outbox`, which it creates, so the user needs the `CREATE` privilege on the database. A missing database is created when the Projections start or the Outbox first records events, which needs `CREATEDB`; without it, create the database first.
 
 ### 3. Register Aggregates & Projections
 
@@ -162,7 +162,7 @@ Host.CreateDefaultBuilder(args)
 |> fun builder -> builder.Build().Run()
 ```
 
-> Both namespaces define the `KurrentDB`/`RavenDB`/`MongoDB` marker types. If one host registers both Aggregates and Projections, qualify them (e.g. `SI.Rosetta.Projections.HostBuilder.RavenDB`).
+> Both namespaces define the `KurrentDB`/`RavenDB`/`MongoDB`/`PostgreSQL` marker types. If one host registers both Aggregates and Projections, qualify them (e.g. `SI.Rosetta.Projections.HostBuilder.RavenDB`).
 
 **C#**
 
@@ -203,9 +203,9 @@ services.AddProjectionsWith<KurrentDB, RavenDB>(configuration, typeof(PersonProj
 | Registration | Use when | Stores |
 |---|---|---|
 | `UseAggregatesWithEventSourcing<TEventSourced>` | every Aggregate is Event-Sourced | `KurrentDB` |
-| `UseAggregatesWithoutEventSourcing<TStateBased>` | every Aggregate persists its state | `RavenDB`, `MongoDB` |
+| `UseAggregatesWithoutEventSourcing<TStateBased>` | every Aggregate persists its state | `RavenDB`, `MongoDB`, `PostgreSQL` |
 | `UseAggregatesWith<TEventSourced, TStateBased>` | a mix of both | both of the above |
-| `UseOutboxWith<TOutboxStore>` | the Aggregates' PublishedEvents are recorded in an [Outbox](#-outbox) | `RavenDB`, `MongoDB` |
+| `UseOutboxWith<TOutboxStore>` | the Aggregates' PublishedEvents are recorded in an [Outbox](#-outbox) | `RavenDB`, `MongoDB`, `PostgreSQL` |
 | `UseProjectionsWith<TEventRepository, TProjectionsStore>` | Projections | `KurrentDB` → `RavenDB`, `MongoDB`, `PostgreSQL` |
 | `UseProjectionsWith<TEventRepository, TNoSqlStore, TSqlStore>` | Projections into documents and tables at once | `KurrentDB` → `RavenDB` or `MongoDB`, and `PostgreSQL` |
 
@@ -301,7 +301,7 @@ type PersonAggregateState() =
             this.Name <- ev.NewName
 ```
 
-Each applied event increments `Version`, which is used for optimistic concurrency (KurrentDB) and idempotency checks.
+Each applied event increments `Version`, which is used for optimistic concurrency (every store) and idempotency checks.
 
 ### Domain Model
 
@@ -373,6 +373,23 @@ type PersonConsumer(handler: IPersonAggregateHandler) =
 |---|---|---|
 | RavenDB | the AggregateState document | the document's `@metadata` (`Rosetta-Aggregate-Version`) |
 | MongoDB | the AggregateState document, in the pluralized state type name collection | a regular `version` field |
+| PostgreSQL | a row of your table, the snake_case plural of the state type name (`PersonAggregateState` → `person_aggregate_states`), a column per property | a regular `version` column |
+
+Every store has optimistic concurrency, as KurrentDB does: a write never overwrites another command's. A new Aggregate is stored only while its `Id` doesn't exist (RavenDB: an empty change vector; MongoDB: `InsertOne`; PostgreSQL: `insert … on conflict (id) do nothing`), a loaded one only while the stored state is still at the version it was loaded at (RavenDB: the `@metadata` version checked, then saved over that document's change vector; MongoDB: `ReplaceOne` filtered on `_id` and `version`; PostgreSQL: `update … where id = … and version = …`); otherwise `ConcurrencyException`, and nothing is written, its Outbox events included.
+
+The PostgreSQL tables are yours, mapped [as read models are](#how-the-rows-are-mapped) (`[<Table>]`, `[<Column>]`, the same column types; `Id` the key, `Version` a `bigint`), and the app can query them with SQL. Rosetta never creates or changes them: the first time a state type is used, its table is checked (it exists, has a column per property, and a primary key or unique index on `id`), and until it matches, every command on that type fails with an `InvalidOperationException` saying what's missing.
+
+```sql
+create table person_aggregate_states (
+    id text primary key,
+    version bigint not null,
+    name text not null);
+```
+
+```fsharp
+builder.UseAggregatesWith<KurrentDB, PostgreSQL>(typeof<PersonAggregateHandler>.Assembly) |> ignore
+builder.UseOutboxWith<PostgreSQL>() |> ignore
+```
 
 ---
 
@@ -392,7 +409,7 @@ builder.UseAggregatesWith<Stores.KurrentDB, Stores.RavenDB>(typeof(PersonAggrega
 builder.UseOutboxWith<Stores.RavenDB>();
 ```
 
-The Outbox store is `RavenDB` or `MongoDB`, configured by its section as in [Configure Infrastructure](#2-configure-infrastructure). The Outbox's own settings come from the optional `Outbox` section:
+The Outbox store is `RavenDB`, `MongoDB` or `PostgreSQL`, configured by its section as in [Configure Infrastructure](#2-configure-infrastructure). The Outbox's own settings come from the optional `Outbox` section:
 
 ```json
 {
@@ -406,9 +423,9 @@ The Outbox store is `RavenDB` or `MongoDB`, configured by its section as in [Con
 
 | Setting | Unless set | |
 |---|---|---|
-| `CollectionName` | `Outbox` | the collection the events are recorded in |
+| `CollectionName` | `Outbox` | the collection the events are recorded in; in PostgreSQL, the table `rosetta.{snake_case}` (`rosetta.outbox`) |
 | `EventTTLMinutes` | events are kept until deleted | how long an event is kept, in minutes |
-| `ExpirationFrequencyMinutes` | `2160` (36 hours) | **RavenDB only**: how often RavenDB deletes the expired events, in minutes, when the Outbox turns Document Expiration on (see [Expiry](#expiry)). MongoDB's TTL monitor runs every 60 seconds by itself |
+| `ExpirationFrequencyMinutes` | `2160` (36 hours) | **RavenDB and PostgreSQL**: how often RavenDB deletes the expired events, in minutes, when the Outbox turns Document Expiration on, or how often, at most, the PostgreSQL Outbox deletes them itself (see [Expiry](#expiry)). MongoDB's TTL monitor runs every 60 seconds by itself |
 
 `configure` changes them in code, after the configuration is read:
 
@@ -434,7 +451,8 @@ Every command that completes records the PublishedEvents of its Aggregate. When 
 |---|---|---|
 | state-based, in RavenDB | `RavenDB` | with the state, in one `SaveChanges`: both are saved, or neither |
 | state-based, in MongoDB | `MongoDB` | with the state, in one transaction: both are saved, or neither. MongoDB transactions need a replica set (a single node is enough) |
-| event-sourced, in KurrentDB, or state-based in the other store | `RavenDB` or `MongoDB` | right after the Aggregate is stored. The two stores can't share a transaction, so a crash in between leaves the Aggregate stored without its events in the Outbox, until the command is repeated |
+| state-based, in PostgreSQL | `PostgreSQL` | with the state, in one transaction: both are saved, or neither |
+| event-sourced, in KurrentDB, or state-based in another store | `RavenDB`, `MongoDB` or `PostgreSQL` | right after the Aggregate is stored. The two stores can't share a transaction, so a crash in between leaves the Aggregate stored without its events in the Outbox, until the command is repeated |
 
 A command that changed nothing, e.g. an idempotent repeat, stores nothing, but the events it published are recorded on their own. So **publish the events in the idempotent branch too**: when a crash stored an Aggregate without recording its events, the redelivered command (from a RabbitMQ queue, say) is idempotent, and records them this time.
 
@@ -448,7 +466,7 @@ A command that changed nothing, e.g. an idempotent repeat, stores nothing, but t
     else this.Register cmd
 ```
 
-The Outbox keeps **one record per event**. An event's `Id` comes from what makes it that event: the Aggregate, its `Version`, the event's position among the command's PublishedEvents, its type and its data. A repeat publishes the same events at the same `Version`, so they get the same `Id`s, and the Outbox only adds the ones it doesn't hold: the record that's there stays exactly as it was, so a RavenDB subscription or a MongoDB change stream doesn't see it again. RavenDB checks which events it holds, and saves the others on condition they're still new: if a concurrent repeat recorded one meanwhile, the save fails with RavenDB's own `ConcurrencyException` (`Raven.Client.Exceptions`; the command can be retried) instead of overwriting it. MongoDB upserts with `$setOnInsert`.
+The Outbox keeps **one record per event**. An event's `Id` comes from what makes it that event: the Aggregate, its `Version`, the event's position among the command's PublishedEvents, its type and its data. A repeat publishes the same events at the same `Version`, so they get the same `Id`s, and the Outbox only adds the ones it doesn't hold: the record that's there stays exactly as it was, so a RavenDB subscription or a MongoDB change stream doesn't see it again. RavenDB checks which events it holds, and saves the others on condition they're still new: if a concurrent repeat recorded one meanwhile, the save fails with `ConcurrencyException` (Rosetta's, wrapping RavenDB's; the command can be run again) instead of overwriting it. MongoDB upserts with `$setOnInsert`, PostgreSQL inserts with `on conflict (id) do nothing`.
 
 An event published again after the Aggregate changed further has a later `Version`, so it's recorded again. Whatever consumes the events must still handle duplicates (as with any broker's redeliveries), and the `Id` serves as their message id.
 
@@ -456,7 +474,7 @@ A rejected command (`DomainException`) or a failed store (`ConcurrencyException`
 
 ### The recorded events
 
-Each PublishedEvent is one document (`RavenDBOutboxEvent`, `MongoDBOutboxEvent`):
+Each PublishedEvent is one document (`RavenDBOutboxEvent`, `MongoDBOutboxEvent`), or one row of the PostgreSQL table, with the same fields as snake_case columns (`data` is `json`, not `jsonb`, so the text is kept as it is, and `expires_at` holds the expiry):
 
 | Field | |
 |---|---|
@@ -468,7 +486,7 @@ Each PublishedEvent is one document (`RavenDBOutboxEvent`, `MongoDBOutboxEvent`)
 | `RecordedAt` | when it was first recorded, in UTC. In `RecordedAt` and `Position` order, the events read back in the order they were recorded |
 | `TraceParent`, `TraceState` | the command's W3C trace context, so publishing the event can continue the command's trace |
 
-Rosetta records the events; publishing them is up to you, e.g. with a RavenDB data subscription or a MongoDB change stream on the collection. `EventEncoding.Decode` reads an event back into its DU, through the upcasters:
+Rosetta records the events; publishing them is up to you, e.g. with a RavenDB data subscription or a MongoDB change stream on the collection, or by polling the PostgreSQL table in `recorded_at`, `position` order. `EventEncoding.Decode` reads an event back into its DU, through the upcasters:
 
 ```fsharp
 match EventEncoding.Decode<PersonEvents> upcasters recorded.EventType recorded.Data with
@@ -484,6 +502,7 @@ With `EventTTLMinutes`, each event expires that long after it was recorded. The 
   - a certificate that can't read the database record can't check it;
   - a licence that doesn't allow the frequency refuses it (`LicenseLimitException`). The Outbox logs a Warning once, and the commands go on: the events are recorded, they just aren't deleted until Document Expiration is on, with a frequency the licence allows.
 - **MongoDB** keeps it in an `expiresAt` field, which a TTL index the Outbox creates on first use acts on. MongoDB deletes expired documents every 60 seconds.
+- **PostgreSQL** has no TTL: it keeps the expiry in an `expires_at` column (indexed), and the Outbox deletes the expired rows itself (`delete … where expires_at < now()`) after recording events, at most every `ExpirationFrequencyMinutes` (and on its first recording after the process starts). A failed deletion is logged as a Warning and doesn't fail the command.
 
 ---
 
@@ -1003,7 +1022,7 @@ type IAggregateRepository =
         id: string * [<Optional; DefaultParameterValue(Int64.MaxValue)>] version: int64 -> Task<Option<'TAggregateState>>
 
 type IEventSourcedAggregateRepository = inherit IAggregateRepository // e.g. KurrentDB
-type IStateBasedAggregateRepository = inherit IAggregateRepository   // e.g. RavenDB, MongoDB
+type IStateBasedAggregateRepository = inherit IAggregateRepository   // e.g. RavenDB, MongoDB, PostgreSQL
 
 //Implementing the Outbox's store: register it as a singleton IOutbox instead of calling UseOutboxWith,
 //and every command records its Aggregate's PublishedEvents in it

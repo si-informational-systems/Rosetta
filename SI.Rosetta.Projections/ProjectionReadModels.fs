@@ -1,9 +1,8 @@
 namespace SI.Rosetta.Projections
 
 open System
-open System.ComponentModel.DataAnnotations
 open System.Reflection
-open Microsoft.FSharp.Reflection
+open SI.Rosetta.Common
 
 /// Declares a read model type the projection writes: its table (PostgreSQL) or collection (RavenDB, MongoDB). Rosetta
 /// checks a PostgreSQL table against it when the projection starts, and empties it when the projection is rebuilt
@@ -65,37 +64,14 @@ module ProjectionStoreKinds =
 /// A read model's key: its [<Key>] properties, in the order they're declared, or its Id. A key of several properties is
 /// given to LoadAsync, LoadManyAsync and DeleteAsync as a tuple of their values, in that order
 module ProjectionKeys =
-    let private IsKey (property: PropertyInfo) =
-        not (isNull (property.GetCustomAttribute<KeyAttribute>()))
-        // On an F# record field, the attribute may be on the backing field
-        || (match property.DeclaringType.GetField(property.Name + "@", BindingFlags.Instance ||| BindingFlags.NonPublic) with
-            | null -> false
-            | field -> not (isNull (field.GetCustomAttribute<KeyAttribute>())))
-
     /// The properties in declaration order: an F# record's fields, or the public instance properties
-    let PropertiesOf (readModelType: Type) : PropertyInfo[] =
-        if FSharpType.IsRecord(readModelType, true) then FSharpType.GetRecordFields(readModelType, true)
-        else readModelType.GetProperties(BindingFlags.Instance ||| BindingFlags.Public) |> Array.sortBy (fun property -> property.MetadataToken)
+    let PropertiesOf (readModelType: Type) : PropertyInfo[] = TypeKeys.PropertiesOf readModelType
 
     /// The key properties, in declaration order
-    let KeyPropertiesOf (readModelType: Type) : PropertyInfo[] =
-        let properties = PropertiesOf readModelType
-        match properties |> Array.filter IsKey with
-        | [||] ->
-            match properties |> Array.tryFind (fun property -> property.Name = "Id") with
-            | Some id -> [| id |]
-            | None ->
-                raise (InvalidOperationException(
-                    sprintf "%s has no key: give it an Id, or mark its key properties with [<Key>]." readModelType.Name))
-        | keys -> keys
+    let KeyPropertiesOf (readModelType: Type) : PropertyInfo[] = TypeKeys.KeyPropertiesOf readModelType
 
     /// The read model's key values
-    let KeyOf (readModel: obj) : obj[] =
-        KeyPropertiesOf (readModel.GetType()) |> Array.map (fun property -> property.GetValue readModel)
+    let KeyOf (readModel: obj) : obj[] = TypeKeys.KeyOf readModel
 
     /// The key values an id gives: a tuple's items, or the id itself
-    let ValuesOf (id: obj) : obj[] =
-        match id with
-        | null -> raise (ArgumentNullException(nameof id))
-        | id when FSharpType.IsTuple(id.GetType()) -> FSharpValue.GetTupleFields id
-        | id -> [| id |]
+    let ValuesOf (id: obj) : obj[] = TypeKeys.ValuesOf id

@@ -23,10 +23,12 @@
     <Compile Include="KurrentDBCustomProjectionsTests.fs" />
     <Compile Include="HostingTests.fs" />
     <Compile Include="PostgreSqlProjectionsTests.fs" />
+    <Compile Include="PostgreSqlAggregatesTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="Schema\parcels.sql" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Schema\aggregates.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

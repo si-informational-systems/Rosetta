@@ -65,7 +65,8 @@ tests/
 !!! warning "State-based Aggregates: the state's type name is the collection's"
     MongoDB stores a state-based Aggregate in the pluralized name of its **state type**, and RavenDB uses its
     conventions on the state type. `PersonAggregateState` becomes `PersonAggregateStates`. If the collection should
-    read `People`, name the state `Person`.
+    read `People`, name the state `Person`. PostgreSQL takes the snake_case plural (`person_aggregate_states`), or the
+    name in the state's `[<Table("…")>]`.
 
 !!! note "Stream constants for Custom Projections"
     A [Custom Projection](../concepts/custom-projections.md) finds each source Aggregate's category stream by a

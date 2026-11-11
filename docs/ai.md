@@ -25,7 +25,7 @@ For a specific question, start from: [Recipes](guides/recipes.md) (how do I…),
 Paste into the application's `CLAUDE.md` / `AGENTS.md`, adjusting the version:
 
 ```markdown
-## Rosetta (SI.Rosetta.* 1.35)
+## Rosetta (SI.Rosetta.* 1.36)
 
 This app's domain and read models are built on Rosetta (F# DDD + Event Sourcing + CQRS projections).
 Docs: https://si-informational-systems.github.io/Rosetta/ — fetch /llms-full.txt for the whole reference
@@ -73,8 +73,8 @@ Breaking one of these compiles fine and fails at runtime, or corrupts data later
 16. Side effects in Handlers (commands, messages, HTTP) must be idempotent: a failed event is handled again.
 17. Changing what a Handler writes into existing read models requires bumping `[<ProjectionVersion(n)>]`.
 18. Document read models (RavenDB/MongoDB) have a single string `Id`; composite `[<Key>]`s are PostgreSQL only.
-19. PostgreSQL tables are created by the app's migrations (Rosetta only checks them): a column per field, `not null`
-    unless `option`, a primary key on exactly the key columns.
+19. PostgreSQL tables (read models, and the states of state-based Aggregates) are created by the app's migrations
+    (Rosetta only checks them): a column per field, `not null` unless `option`, a primary key on exactly the key columns.
 20. Custom Projection streams start with `cp-`; the Projections assembly has a `{Aggregate}Stream` literal for each
     source Aggregate.
 

@@ -199,6 +199,8 @@ type OutboxPublisher(store: IDocumentStore, publish: IAggregateEvents -> IDictio
 - RavenDB data subscriptions use RavenDB's **TCP** port: the server's `PublicServerUrl.Tcp` must be reachable from the
   service (in Docker, publish it and advertise the address the service sees).
 - With MongoDB, use a change stream on the Outbox collection the same way (it needs a replica set too).
+- With PostgreSQL, poll `rosetta.outbox` in `recorded_at`, `position` order, publish each row, and delete it once
+  published; `event_type` and `data` (the record's JSON text) go to `EventEncoding.DecodeAs` as above.
 - Let `Outbox:EventTTLMinutes` delete published events, or delete each after publishing.
 
 ## Serialize events on your bus as Rosetta does

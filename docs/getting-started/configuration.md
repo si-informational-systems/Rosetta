@@ -83,10 +83,13 @@ or its parts:
 
 ## PostgreSQL
 
-- `ConnectionString` (required). Rosetta keeps its own connection pool for it.
-- `Schema` (optional, `public` unless set): the schema of the read model tables that don't name theirs.
-- Rosetta creates a missing database (needs `CREATEDB`) and its `rosetta.checkpoints` table (needs `CREATE` on the
-  database). Your migrations create the read model tables. See [PostgreSQL read models](../concepts/postgresql.md).
+- `ConnectionString` (required). Rosetta keeps its own connection pool for it, one per host, shared by the Aggregates,
+  the Outbox and the Projections.
+- `Schema` (optional, `public` unless set): the schema of the read model and Aggregate state tables that don't name
+  theirs.
+- Rosetta creates a missing database (needs `CREATEDB`) and its `rosetta.checkpoints` and `rosetta.outbox` tables
+  (needs `CREATE` on the database). Your migrations create the read model and Aggregate state tables. See
+  [PostgreSQL](../concepts/postgresql.md).
 
 ## Outbox
 
@@ -96,6 +99,6 @@ All optional; see [Outbox](../concepts/outbox.md#settings).
 |---|---|
 | `Outbox:CollectionName` | `Outbox` |
 | `Outbox:EventTTLMinutes` | kept until deleted |
-| `Outbox:ExpirationFrequencyMinutes` | `2160` (RavenDB only) |
+| `Outbox:ExpirationFrequencyMinutes` | `2160` (RavenDB and PostgreSQL) |
 
 Every key with its default is in the [Configuration reference](../reference/configuration.md).

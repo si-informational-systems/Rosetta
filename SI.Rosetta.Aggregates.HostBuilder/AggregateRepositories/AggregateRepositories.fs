@@ -21,3 +21,8 @@ type RavenDB() =
 [<Sealed>]
 type MongoDB() =
     inherit StateBasedAggregateRepository()
+
+/// The state as a row of the app's table, a table for each state type, mapped as PostgreSQL read models are
+[<Sealed>]
+type PostgreSQL() =
+    inherit StateBasedAggregateRepository()

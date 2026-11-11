@@ -27,7 +27,7 @@ graph LR
 | Feature | |
 |---|---|
 | **Aggregates** | State, behavior and a handler per Aggregate; idempotency, optimistic concurrency and named business errors built in. [Aggregates](concepts/aggregates.md) |
-| **Event Sourcing** | Events stored in KurrentDB, one stream per Aggregate; or **state-based** Aggregates in RavenDB or MongoDB; or both in one service. |
+| **Event Sourcing** | Events stored in KurrentDB, one stream per Aggregate; or **state-based** Aggregates in RavenDB, MongoDB or your own PostgreSQL tables; or both in one service. |
 | **Outbox** | The integration events an Aggregate publishes, recorded with its state for publishing to the outside world. [Outbox](concepts/outbox.md) |
 | **Projections** | KurrentDB subscriptions that keep read models in RavenDB, MongoDB or your own **PostgreSQL** tables, one transaction per event. [Projections](concepts/projections.md) |
 | **Custom Projections** | Cross-Aggregate streams, deployed to KurrentDB as JavaScript projections for you. [Custom Projections](concepts/custom-projections.md) |
@@ -53,4 +53,4 @@ graph LR
 | KurrentDB | 26.2 (client `KurrentDB.Client` 1.6; 24.10 servers still work) | Event-Sourced Aggregates, Projection subscriptions, Custom Projections |
 | RavenDB | 7.2 | state-based Aggregates, Outbox, document read models |
 | MongoDB | 8 (a replica set for Projections and the transactional Outbox) | state-based Aggregates, Outbox, document read models |
-| PostgreSQL | 18 | read models as rows of your own tables |
+| PostgreSQL | 18 | state-based Aggregates and read models as rows of your own tables, Outbox |
