@@ -52,6 +52,9 @@ type KurrentDBAggregateRepository(client: KurrentDBClient, upcasters: IEventUpca
     /// The stream an aggregate's snapshots are in
     static member SnapshotStreamOf(id: string) = "RosettaSnapshots-" + id
 
+    /// The events' metadata holds only the command's trace context, which KurrentDBSerialization adds
+    static member val private NoHeaders = Dictionary<string, obj>() :> IDictionary<string, obj>
+
     member private this.ToEventData (event: IAggregateEvents) (headers: IDictionary<string, obj>) =
         let serializedEvent = KurrentDBSerialization.Serialize(event, headers)
         EventData(Uuid.NewUuid(), serializedEvent.EventClrName, serializedEvent.Data, ReadOnlyMemory<byte> serializedEvent.Metadata)
@@ -59,18 +62,13 @@ type KurrentDBAggregateRepository(client: KurrentDBClient, upcasters: IEventUpca
     /// Appends the aggregate's Changes, expecting the version it was loaded at. Answers the last event's id
     member private this.SaveAggregate (aggregate: IAggregate) =
         task {
-            let commitHeaders =
-                let dict = Dictionary<string, obj>()
-                dict.Add(KurrentDBSerialization.AggregateClrTypeNameHeader, aggregate.GetType().AssemblyQualifiedName :> obj)
-                dict
-
             let newEvents = aggregate.Changes |> Seq.toList
             let originalVersion = aggregate.Version - int64 newEvents.Length
             let expectedState =
                 if originalVersion = 0L then StreamState.NoStream
                 else StreamState.StreamRevision(uint64 (originalVersion - 1L))
 
-            let eventData = newEvents |> List.map (fun e -> this.ToEventData e commitHeaders)
+            let eventData = newEvents |> List.map (fun e -> this.ToEventData e KurrentDBAggregateRepository.NoHeaders)
 
             let! _ = client.AppendToStreamAsync(aggregate.Id, expectedState, eventData).ConfigureAwait(false)
             aggregate.Changes.Clear()

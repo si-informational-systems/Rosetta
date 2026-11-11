@@ -38,25 +38,45 @@ type KurrentDBAggregateRepositoryTests(databases: Databases) =
         }
 
     [<Fact>]
-    member this.``A stored event's metadata names its events union and record as the outbox does``() =
+    member this.``A stored event's type is its stored name, and its metadata only the command's trace``() =
         task {
             let repository = KurrentDBAggregateRepository(Client) :> IAggregateRepository
             let id = NewId()
             let parcel = ParcelAggregate()
             parcel.Execute(ParcelCommands.Register { Id = id; Recipient = "Ada" })
             do! repository.StoreAsync(parcel)
+            let! stored = Get repository id
+            let traced = stored.Value
+            traced.Execute(ParcelCommands.Readdress { Id = id; Recipient = "Grace" })
+            let command = (new Diagnostics.Activity("ReaddressParcel")).SetIdFormat(Diagnostics.ActivityIdFormat.W3C).Start()
+            do! repository.StoreAsync(traced)
+            command.Stop()
 
             let! events = Client.ReadStreamAsync(Direction.Forwards, id, StreamPosition.Start) |> TaskSeq.toListAsync
 
-            use metadata = Text.Json.JsonDocument.Parse(events.Head.Event.Metadata)
-            let Header (name: string) = metadata.RootElement.GetProperty(name).GetString()
-            let recorded = Assert.Single(OutboxEvents.Of parcel)
-            Assert.Equal("SI.Rosetta.IntegrationTests.ParcelEvents, SI.Rosetta.IntegrationTests", recorded.EventsUnionClrType)
-            Assert.Equal(recorded.EventsUnionClrType, Header "EventsUnionClrType")
-            Assert.Equal(recorded.EventClrType, Header "EventClrType")
-            // The older headers are still written
-            Assert.Equal(recorded.EventsUnionClrType, Header "EventsDiscriminatedUnionClrTypeName")
-            Assert.Equal(typeof<ParcelRegistered>.AssemblyQualifiedName, Header "EventClrTypeName")
+            Assert.Equal<string list>([ "ParcelRegistered"; "ParcelReaddressed" ], events |> List.map (fun e -> e.Event.EventType))
+            // Outside a trace: no metadata at all
+            Assert.True(events.[0].Event.Metadata.IsEmpty)
+            use metadata = Text.Json.JsonDocument.Parse(events.[1].Event.Metadata)
+            // KurrentDB.Client adds its own $traceId and $spanId to the metadata of an append inside a trace
+            let written = metadata.RootElement.EnumerateObject() |> Seq.map (fun p -> p.Name) |> Seq.filter (fun name -> not (name.StartsWith "$")) |> List.ofSeq
+            Assert.Equal<string list>([ "traceparent" ], written)
+            Assert.Equal(command.Id, metadata.RootElement.GetProperty("traceparent").GetString())
+        }
+
+    [<Fact>]
+    member this.``Events written by Rosetta 1.37, with their metadata, and lean ones read the same``() =
+        task {
+            let repository = KurrentDBAggregateRepository(Client) :> IAggregateRepository
+            let id = NewId()
+            let! _ = Client.AppendToStreamAsync(id, StreamState.NoStream, [
+                        Events.WrittenBy137 typeof<ParcelAggregate> (ParcelEvents.Registered { Id = id; Recipient = "Ada" })
+                        Events.Known (ParcelEvents.Readdressed { Id = id; Recipient = "Grace" }) ])
+
+            let! stored = Get repository id
+
+            Assert.Equal("Grace", stored.Value.State.Recipient)
+            Assert.Equal(2L, stored.Value.Version)
         }
 
     [<Fact>]

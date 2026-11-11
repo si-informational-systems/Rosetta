@@ -187,7 +187,7 @@ The Aggregate's handler constructor decides how it's stored.
 - Storing appends `Changes` expecting the version that was loaded: **optimistic concurrency**. When another write got
   there first, it throws `ConcurrencyException`, and the handler runs the command again on the reloaded state (see
   [Conflicts](#conflicts)).
-- Event data is the record as JSON; metadata carries the stored name, CLR type names and the trace context. See
+- Event data is the record as JSON, under its stored name as the event type; metadata carries only the trace context. See
   [Stored format](../reference/stored-format.md).
 
 #### Snapshots

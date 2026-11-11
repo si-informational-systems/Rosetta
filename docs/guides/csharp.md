@@ -81,7 +81,7 @@ app.MapGet("/people/{id}", async (string id, INoSqlStore store) =>
 
 ## Consuming events
 
-An event's data is its record as plain JSON, and its metadata's `DiscriminatedUnionCaseType` names the record it was
-stored as (see [Stored format](../reference/stored-format.md)). A C# service can read events from KurrentDB, or from the
+An event's data is its record as plain JSON, and its event type names the record it was stored as (see
+[Stored format](../reference/stored-format.md)). A C# service can read events from KurrentDB, or from the
 Outbox (`EventType`, `Data`), into C# records of the same shape, without F#. F# options are written as their value (or
 `null`); only DUs nested inside a record keep the F# `{"Case": …, "Fields": […]}` shape.

@@ -882,7 +882,7 @@ An event is stored under the **name of its record type**, and read back into the
 
 ### The stored format
 
-An event's data is its record as plain JSON (System.Text.Json), and its metadata names the record it's stored under, so the events don't depend on F#: a C# service can read them into C# records. F# options are written as their value, or `null` for `None`. DUs inside a record keep the `{"Case": …, "Fields": […]}` shape, so they're F#-only.
+An event's data is its record as plain JSON (System.Text.Json), and its event type names the record it's stored under (its metadata holds only the command's trace context), so the events don't depend on F#: a C# service can read them into C# records. F# options are written as their value, or `null` for `None`. DUs inside a record keep the `{"Case": …, "Fields": […]}` shape, so they're F#-only.
 
 ### Stable event type names
 

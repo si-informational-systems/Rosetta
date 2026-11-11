@@ -121,19 +121,15 @@ type OutboxPublicationTests() =
         Assert.Equal(Guid.Parse "50a79e97-d9fd-80a2-ac52-760540fd20da", recorded.Id)
 
     [<Fact>]
-    member this.``KurrentDB's metadata names the events union and the record as the outbox does``() =
+    member this.``KurrentDB stores the event under the same name as the outbox, without type metadata``() =
         let serialized = KurrentDBSerialization.Serialize(Sent, Dictionary<string, obj>())
-        use metadata = JsonDocument.Parse(serialized.Metadata)
-        let Header (name: string) = metadata.RootElement.GetProperty(name).GetString()
 
         let recorded = (OutboxEvents.Of(ConsignmentAggregate("Consignments-1", 1L, [ Sent ]))).[0]
 
-        Assert.Equal(recorded.EventsUnionClrType, Header KurrentDBSerialization.EventsUnionClrTypeHeader)
-        Assert.Equal(recorded.EventClrType, Header KurrentDBSerialization.EventClrTypeHeader)
-        Assert.Equal("ConsignmentDispatched", Header KurrentDBSerialization.DiscriminatedUnionCaseTypeHeader)
-        // The older headers are still written, and the union's is the union, not the case's class
-        Assert.Equal(recorded.EventsUnionClrType, Header KurrentDBSerialization.EventsDUClrTypeNameHeader)
-        Assert.Equal(typeof<ConsignmentSent>.AssemblyQualifiedName, Header KurrentDBSerialization.EventClrTypeNameHeader)
+        Assert.Equal(recorded.EventType, serialized.EventClrName)
+        Assert.Equal(recorded.Data, Text.Encoding.UTF8.GetString serialized.Data)
+        // Outside a trace there's no metadata: the union and record types are the outbox's alone
+        Assert.Empty(serialized.Metadata)
 
     [<Fact>]
     member this.``The publisher is handed the event as the aggregate published it, and everything known about it``() =

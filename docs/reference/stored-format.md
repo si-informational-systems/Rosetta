@@ -12,34 +12,23 @@ description: How Rosetta writes events to KurrentDB and the Outbox — data, met
 | Stream | the Aggregate's `Id` (`People-1`) |
 | Event type | the record's stored name: its `[<EventType>]` name, or its type name (`PersonRegistered`) |
 | Data | the case's **record** as compact JSON (not the union case) |
-| Metadata | the headers below, as JSON |
+| Metadata | the command's trace context, as JSON; empty when the command ran outside a trace |
 
 ```json title="data"
 {"Id":"People-1","Name":"Ada"}
 ```
 
 ```json title="metadata"
-{
-  "EventClrTypeName": "People.PL.PersonRegistered, People.PL, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-  "EventsDiscriminatedUnionClrTypeName": "People.PL.PersonEvents, People.PL",
-  "EventsUnionClrType": "People.PL.PersonEvents, People.PL",
-  "EventClrType": "People.PL.PersonRegistered, People.PL",
-  "DiscriminatedUnionCaseType": "PersonRegistered",
-  "AggregateClrTypeName": "People.Domain.PersonAggregate, People.Domain",
-  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
-}
+{"traceparent":"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}
 ```
 
-- **`DiscriminatedUnionCaseType`** is the stored name, and the only header Rosetta needs to read an event: it finds the
-  DU case whose record has that name. The CLR type names are informational.
-- **`EventsUnionClrType`** and **`EventClrType`** (since 1.38) name the events union and the case's record as
-  `Namespace.Type, Assembly`, without a version, exactly as the [Outbox](#an-event-in-the-outbox) records them
-  (`EventEncoding.EventsUnionClrTypeOf` and `EventClrTypeOf`), so KurrentDB events and Outbox records describe
-  themselves the same way.
-- `EventClrTypeName` and `EventsDiscriminatedUnionClrTypeName` are still written, for the events already stored. Before
-  1.38, `EventsDiscriminatedUnionClrTypeName` named the class .NET gives a case with fields
-  (`People.PL.PersonEvents+Registered, …`) with its assembly's version; it now names the union, like `EventsUnionClrType`.
-- `traceparent`/`tracestate` are written when the command ran inside a trace.
+- **The event type** is all Rosetta needs to read an event: it finds the DU case whose record is stored under that name.
+- **`traceparent`/`tracestate`** are written when the command ran inside a trace, so the projections handling the event
+  continue it. Outside a trace the metadata is empty.
+- **Before 1.38** the metadata also held `DiscriminatedUnionCaseType` (the stored name again, always equal to the event
+  type) and the CLR type names `EventClrTypeName`, `EventsDiscriminatedUnionClrTypeName` and `AggregateClrTypeName`,
+  with their assemblies' versions: often more bytes than the event's data. Nothing read them, so 1.38 stopped writing
+  them. Events stored before keep them (KurrentDB events are immutable) and read the same.
 
 ## JSON shapes
 

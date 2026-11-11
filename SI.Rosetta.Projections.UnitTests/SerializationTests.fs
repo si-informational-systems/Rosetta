@@ -52,8 +52,15 @@ type SerializationTests() =
         let serialized = KurrentDBSerialization.Serialize(ev, Dictionary<string, obj>())
         Resolved serialized.EventClrName serialized.Data serialized.Metadata
 
+    /// An event stored under typeName, without metadata
     let Written (typeName: string) (json: string) =
-        let metadata = sprintf """{"%s":"%s"}""" KurrentDBSerialization.DiscriminatedUnionCaseTypeHeader typeName
+        Resolved typeName (Encoding.UTF8.GetBytes json) [||]
+
+    /// An event as Rosetta 1.37 and earlier wrote it: the stored name and CLR type names in its metadata, and a trace
+    let WrittenBy137 (typeName: string) (json: string) =
+        let metadata =
+            sprintf """{"EventClrTypeName":"Some.PL.%s, Some.PL, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null","EventsDiscriminatedUnionClrTypeName":"Some.PL.OrganizationEvents+Registered, Some.PL, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null","DiscriminatedUnionCaseType":"%s","AggregateClrTypeName":"Some.Domain.OrganizationAggregate, Some.Domain, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null","traceparent":"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}"""
+                typeName typeName
         Resolved typeName (Encoding.UTF8.GetBytes json) (Encoding.UTF8.GetBytes metadata)
 
     let Registered = OrganizationEvents.Registered { Id = StreamName; Name = "Rosetta"; DateRegistered = DateTime(2026, 10, 15, 8, 30, 0) }
@@ -99,7 +106,21 @@ type SerializationTests() =
         let serialized = KurrentDBSerialization.Serialize(ClosingEvents.Closed { Id = StreamName; Reason = "Merged" }, Dictionary<string, obj>())
 
         Assert.Equal("OrganizationArchived", serialized.EventClrName)
-        Assert.Contains("\"DiscriminatedUnionCaseType\":\"OrganizationArchived\"", Encoding.UTF8.GetString serialized.Metadata)
+
+    [<Fact>]
+    member this.``Outside a trace, an event is stored without metadata``() =
+        let serialized = KurrentDBSerialization.Serialize(Registered, Dictionary<string, obj>())
+
+        Assert.Equal("OrganizationRegistered", serialized.EventClrName)
+        Assert.Empty(serialized.Metadata)
+        Assert.Equal(Registered, KurrentDBSerialization.Deserialize<OrganizationEvents>(Serialized Registered))
+
+    [<Fact>]
+    member this.``An event Rosetta 1.37 wrote, with its metadata, reads the same, trace included``() =
+        let stored = WrittenBy137 "OrganizationNameChanged" """{"Id":"Organizations-1","Name":"Rosetta"}"""
+
+        Assert.Equal(OrganizationEvents.NameChanged { Id = StreamName; Name = "Rosetta" }, KurrentDBSerialization.Deserialize<OrganizationEvents> stored)
+        Assert.Equal("4bf92f3577b34da6a3ce929d0e0e4736", (KurrentDBSerialization.TraceContextOf stored).TraceId.ToHexString())
 
     [<Fact>]
     member this.``Events stored under the [<EventType>] name are read into the renamed record``() =
@@ -132,6 +153,10 @@ type SerializationTests() =
         use command = (new System.Diagnostics.Activity("RegisterOrganization")).Start()
 
         let stored = Serialized Registered
+
+        use metadata = System.Text.Json.JsonDocument.Parse(stored.Event.Metadata)
+        // Only the trace
+        Assert.Equal<string list>([ "traceparent" ], metadata.RootElement.EnumerateObject() |> Seq.map (fun p -> p.Name) |> List.ofSeq)
 
         Assert.Contains(sprintf "\"traceparent\":\"%s\"" command.Id, Encoding.UTF8.GetString(stored.Event.Metadata.ToArray()))
         let context = KurrentDBSerialization.TraceContextOf stored

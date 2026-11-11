@@ -74,11 +74,10 @@ These settings are **unsecured, for development only**.
     curl -X POST http://localhost:2113/streams/People-1 \
       -H "Content-Type: application/vnd.eventstore.events+json" \
       -d '[{"eventId":"5b4e5a1c-6f0e-4c39-9f3e-7f1c1d1e2a01","eventType":"PersonRegistered",
-            "data":{"Id":"People-1","Name":"Ada"},
-            "metadata":{"DiscriminatedUnionCaseType":"PersonRegistered"}}]'
+            "data":{"Id":"People-1","Name":"Ada"}}]'
     ```
 
-    Rosetta reads an event by its `DiscriminatedUnionCaseType` metadata, so that's the one header it needs.
+    Rosetta reads an event by its event type alone, so it needs no metadata.
 - **Custom Projections** are created, relinked and deleted by the application that defines them (see
   [Custom Projections](../concepts/custom-projections.md#how-the-javascript-projections-are-deployed)). One left behind
   from before an application kept its `RosettaCustomProjections-{owner}` record is deleted by hand: stop it, then
