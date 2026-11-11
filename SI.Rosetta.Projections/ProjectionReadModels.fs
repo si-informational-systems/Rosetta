@@ -31,6 +31,30 @@ module ProjectionReadModels =
                 sprintf "%s is a read model of %s: a read model belongs to one projection (IProjectInto), as rebuilding a projection empties its read models."
                     readModel.Name (String.Join(" and ", owners |> Seq.map (fun (_, owner) -> owner.Name)))))
 
+    /// Why the projection can be rebuilt, if it can: a [<ProjectionVersion>] above 0, or a custom projection's cp-
+    /// stream, which is linked again when the custom projection's definition changes
+    let RebuildReasonOf (projectionType: Type) : string option =
+        let version = projectionType.GetCustomAttribute<ProjectionVersion>() |> box |> Option.ofObj |> Option.map (fun attribute -> (attribute :?> ProjectionVersion).Version)
+        let stream = projectionType.GetCustomAttribute<HandlesStream>() |> box |> Option.ofObj |> Option.map (fun attribute -> (attribute :?> HandlesStream).Name)
+        match version, stream with
+        | Some version, _ when version > 0 -> Some (sprintf "it has [<ProjectionVersion(%d)>]" version)
+        | _, Some stream when not (isNull stream) && stream.StartsWith "cp-" ->
+            Some (sprintf "it reads %s, which is linked again when its custom projection's definition changes" stream)
+        | _ -> None
+
+    /// Fails, naming why, when the projection can be rebuilt but has nothing to empty first: replaying its stream over
+    /// its read models would apply every event twice. Unless it's marked [<RebuildWithoutClearing>]
+    let RequireClearable (projectionType: Type) (reason: string) =
+        if (Of projectionType).Length = 0 && not (Attribute.IsDefined(projectionType, typeof<RebuildWithoutClearing>)) then
+            raise (InvalidOperationException(
+                sprintf "Projection %s can be rebuilt (%s), but declares no read models to empty first: replaying its stream over them would apply every event twice. Declare them with IProjectInto<…>, or mark it [<RebuildWithoutClearing>] when every handler only writes whole documents or rows."
+                    projectionType.Name reason))
+
+    /// Fails for any of the projections that can be rebuilt but declares no read models to empty first
+    let CheckRebuildable (projectionTypes: Type seq) =
+        for projectionType in projectionTypes do
+            RebuildReasonOf projectionType |> Option.iter (RequireClearable projectionType)
+
 /// The stores a projection can write to, and which one it does: a projection whose handlers take ISqlStore writes to
 /// PostgreSQL, one whose handlers take INoSqlStore to RavenDB or MongoDB. Its transactions and checkpoints are that
 /// store's, registered as keyed services under its name

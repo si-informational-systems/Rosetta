@@ -50,8 +50,23 @@ Messages are quoted as Rosetta writes them; `{…}` stands for the names in your
 **"{ReadModel} is a read model of {A} and {B}: a read model belongs to one projection (IProjectInto), …"**
 : Two Projections declare the same read model. Give each its own, or merge them.
 
-**"Outbox:{key} must be a positive number of minutes, not '{value}'."**, **"The outbox's … must be …"**
+**"Projection {P} can be rebuilt ({reason}), but declares no read models to empty first: …"**
+: It has a `[<ProjectionVersion>]` above 0 or reads a `cp-` stream, so it can be rebuilt by replaying its stream, and
+  nothing would be emptied first. Declare the read models it writes with `IProjectInto<…>`, or mark it
+  `[<RebuildWithoutClearing>]` if every Handler overwrites whole documents or rows (no `+1`, no appending). Raised at
+  registration, or when a Projection created without it is rebuilt (then it doesn't start, and its checkpoint stays).
+
+**"Outbox:{key} must be a positive number of minutes, not '{value}'."**, **"Outbox:{key} must be a positive whole number, not '{value}'."**, **"The outbox's … must be …"**
 : Fix the `Outbox` section or the `configure` function.
+
+**"The outbox's publisher can only be added once: …"**
+: `UseOutboxPublisher`/`AddOutboxPublisher` runs once per service collection, with one publisher.
+
+**"The outbox's publisher needs the outbox: add it with `UseOutboxWith` or `AddOutboxWith`."** (when the host starts)
+: `UseOutboxPublisher` was registered without the Outbox. Add `UseOutboxWith<…>`, before or after it.
+
+**"The outbox ({Type}) can't be published by UseOutboxPublisher: it doesn't implement IOutboxRelayStore. …"**
+: A custom `IOutbox` is registered. Implement `IOutboxRelayStore` on it too, or publish it yourself.
 
 ## When a command runs
 
@@ -83,6 +98,15 @@ Messages are quoted as Rosetta writes them; `{…}` stands for the names in your
 
 **"{Events} has more than one case stored under the same event type name: {names}. Give their records different [<EventType>] names."**
 : Two cases of one DU share a stored name (the same record type, or the same `[<EventType>]`). Each case needs its own.
+
+**"{State} can't be snapshotted: a snapshot would lose {names}. Keep its state in public properties with public setters (member val X = … with get, set)."**
+: An `InvalidOperationException` on the first load of a state with `[<Snapshot>]`: it keeps data in fields
+  (`let mutable`) or properties with private setters, which the snapshot's JSON wouldn't restore. Make them public
+  `member val … with get, set`, or remove `[<Snapshot>]`.
+
+**Warning "The snapshot of {State} {id} at version {n} couldn't be written: …"**
+: The command stood; only the snapshot failed (KurrentDB unreachable meanwhile, say). The Aggregate loads from an older
+  snapshot, or its whole stream, until the next one is due.
 
 **The handler resolves but `GetPublishedEvents()` has another command's events**
 : A handler instance was reused across commands. Resolve one per command (they're transient).
@@ -130,6 +154,30 @@ Messages are quoted as Rosetta writes them; `{…}` stands for the names in your
 **A composite-key read model passes the TestKit but fails in RavenDB/MongoDB**
 : Document stores key by `Id` only. Give document read models a single string `Id`.
 
+## When the Outbox publishes
+
+**"The outbox {Collection} FAILED to publish. Retrying in {Delay} …"**, Critical **"… FAILED to publish 5 times in a row. …"**
+: Your `IOutboxPublisher` threw (the broker down, a refused message), or the Outbox's store failed. The events before
+  the failing one were marked; it's retried from there for as long as it takes, and the later events wait. Fix the
+  cause; "RECOVERED" is logged when it publishes again. An event the broker will never take holds up the Outbox: fix
+  the publisher (e.g. route it elsewhere) rather than letting it throw forever.
+
+**Nothing is published, and "… is published by another instance: this one ({Owner}) waits to take over."**
+: Another instance holds the lease. One that stopped hands it over; one that crashed holds it until it expires (30 s),
+  then this one takes over.
+
+**Events recorded before the publisher was registered aren't published** (RavenDB, MongoDB)
+: Expected: a record without `PublishedAt` is taken to be your own former publisher's. Publish those yourself, or set
+  their `PublishedAt` to `null` to hand them to the publisher.
+
+**Old events are published again after registering the publisher** (PostgreSQL)
+: The `published_at` column was added to the existing table, so every row there is unpublished. Delete the rows your
+  own publisher already sent before registering the built-in one.
+
+**Consumers receive an event twice**
+: Delivery is at least once (a crash between publishing and marking, or a lease handed over mid-batch). Dedupe on the
+  message id, the event's `Id`.
+
 ## Custom Projections
 
 **"KurrentDB Custom Projection Stream name must start with 'cp-'. …"**
@@ -146,6 +194,24 @@ Messages are quoted as Rosetta writes them; `{…}` stands for the names in your
 **"Custom projection {Name} UPDATED without comparing, its definition couldn't be read"**
 : The KurrentDB HTTP API wasn't reachable with the connection string's address and credentials. Harmless: the
   definition was re-submitted.
+
+**"Projection {P} couldn't be deleted: DELETE … returned …"**
+: Removing a Custom Projection the code no longer defines goes through the KurrentDB HTTP API, which refused or wasn't
+  reachable. The Custom Projections are retried as a startup failure until it succeeds (or, when the application
+  defines none anymore, logged as a Warning and tried again on the next start). Check the connection string's address
+  and credentials.
+
+**"Projection {Name} is REBUILT: {stream} was linked again from the start: …"** (or "… is shorter than checkpoint …", "… doesn't exist, but …")
+: Its Custom Projection's definition changed (relinked), or its `cp-` stream was renamed or deleted. Expected: its
+  `IProjectInto` read models are emptied and projected again from the stream.
+
+**A Custom Projection that was renamed or removed long ago still runs**
+: Rosetta deletes only the Custom Projections its application recorded as its own, starting with the first start that
+  keeps the record. Delete older ones by hand (see [Operations](operations.md#kurrentdb)).
+
+**A Projection of a `cp-` stream counts the stream's events twice after a deployment**
+: It ran in another service while the Custom Projection was relinked. Keep it in the application that defines the
+  Custom Projection, or bump its `[<ProjectionVersion>]` to rebuild it.
 
 ## Tests
 

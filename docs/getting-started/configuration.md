@@ -41,7 +41,10 @@ message naming the key.
   every Projection. It's created on first use, so a service starts while KurrentDB is unreachable; the calls that need
   it fail until it's back, and Projections retry. To configure the client yourself, register your own `KurrentDBClient`
   singleton before Rosetta's registration.
-- The HTTP API (for reading Custom Projection definitions) uses the same address, credentials and TLS settings.
+- The HTTP API (for reading Custom Projection definitions, and deleting the ones the code no longer defines) uses the
+  same address, credentials and TLS settings.
+- `CustomProjectionsOwner` (optional): whose Custom Projections these are; the host's `ApplicationName` unless set.
+  An application deletes only its own (see [Custom Projections](../concepts/custom-projections.md#which-projections-an-application-owns)).
 - A single KurrentDB node is free to run in production from 26.2; clusters need a license.
 
 ## RavenDB
@@ -87,8 +90,8 @@ or its parts:
   the Outbox and the Projections.
 - `Schema` (optional, `public` unless set): the schema of the read model and Aggregate state tables that don't name
   theirs.
-- Rosetta creates a missing database (needs `CREATEDB`) and its `rosetta.checkpoints` and `rosetta.outbox` tables
-  (needs `CREATE` on the database). Your migrations create the read model and Aggregate state tables. See
+- Rosetta creates a missing database (needs `CREATEDB`) and its `rosetta.checkpoints`, `rosetta.outbox` and
+  `rosetta.outbox_leases` tables (needs `CREATE` on the database). Your migrations create the read model and Aggregate state tables. See
   [PostgreSQL](../concepts/postgresql.md).
 
 ## Outbox
@@ -100,5 +103,7 @@ All optional; see [Outbox](../concepts/outbox.md#settings).
 | `Outbox:CollectionName` | `Outbox` |
 | `Outbox:EventTTLMinutes` | kept until deleted |
 | `Outbox:ExpirationFrequencyMinutes` | `2160` (RavenDB and PostgreSQL) |
+| `Outbox:PublishBatchSize` | `100` (with a publisher) |
+| `Outbox:PublishPollIntervalMilliseconds` | `1000` (with a publisher) |
 
 Every key with its default is in the [Configuration reference](../reference/configuration.md).

@@ -21,11 +21,11 @@
 **Rosetta** is an opinionated framework for building Event-Sourced, Domain-Driven services in .NET. Commands and Events are **F# Discriminated Unions**, so the compiler checks that every one of them is handled.
 
 - 🧩 **Aggregates and Domain Events**: expressive, testable domain logic, with idempotency and optimistic concurrency built in.
-- ⚡ **Event Sourcing** with KurrentDB.
+- ⚡ **Event Sourcing** with KurrentDB, with opt-in snapshots for long-lived Aggregates.
 - 🗄️ **State-based Aggregates** persisted in RavenDB, MongoDB or your own PostgreSQL tables when Event Sourcing isn't needed, or both styles in one service.
-- 📤 **Outbox**: the PublishedEvents of every stored Aggregate, recorded with its state (in one transaction where the stores allow it) for publishing to the outside world.
+- 📤 **Outbox**: the PublishedEvents of every stored Aggregate, recorded with its state (in one transaction where the stores allow it), and published to your broker by your `IOutboxPublisher`: in order, at least once, from one instance at a time.
 - 📊 **Projections** from KurrentDB into documents (RavenDB, MongoDB), rows of your own **PostgreSQL** tables, or both in one app, through the same typed store-load-delete by key. Each event is one transaction with its checkpoint, so a retried event is projected once.
-- 🔀 **Custom (cross-Aggregate) Projections**, deployed to KurrentDB for you.
+- 🔀 **Custom (cross-Aggregate) Projections**, deployed to KurrentDB for you: relinked from the start when they change, deleted when the code drops them, and the Projections reading them rebuilt.
 - 🔁 **Event evolution**: upcasters rename events and fields as they're read; an unknown event stops a Projection with a clear error, or is skipped.
 - 🏗️ **Host extensions**: one line registers everything on `IHostBuilder`, `IHostApplicationBuilder` (`Host.CreateApplicationBuilder`, `WebApplication.CreateBuilder`) or a plain `IServiceCollection`, from F# or C#.
 - 📈 **OpenTelemetry-ready**: traces and metrics, with one trace from a request to every read model it updates.
@@ -41,6 +41,7 @@ graph TD
     B -->|Event| C[KurrentDB]
     B -->|AggregateState| G[RavenDB / MongoDB / PostgreSQL]
     B -->|PublishedEvents| H[Outbox: RavenDB / MongoDB / PostgreSQL]
+    H -->|IOutboxPublisher| I[Message broker]
     C -->|Event| D[Projection Handler/s]
     D -->|Read Model| E[RavenDB / MongoDB / PostgreSQL]
     E -->|Query| F[Client/API]
@@ -98,12 +99,14 @@ Whether you're using Aggregates, Projections, or both - the persistence undernea
   "Outbox": {
     "CollectionName": "Outbox",
     "EventTTLMinutes": 10080,
-    "ExpirationFrequencyMinutes": 2160
+    "ExpirationFrequencyMinutes": 2160,
+    "PublishBatchSize": 100,
+    "PublishPollIntervalMilliseconds": 1000
   }
 }
 ```
 
-`CertificatePath`/`CertificatePassword`, the MongoDB credentials, `PostgreSQL:Schema` and the whole `Outbox` section (see [Outbox](#-outbox)) are optional.
+`CertificatePath`/`CertificatePassword`, `KurrentDB:CustomProjectionsOwner` (see [Custom Projections](#-example-cross-aggregate-custom-projections)), the MongoDB credentials, `PostgreSQL:Schema` and the whole `Outbox` section (see [Outbox](#-outbox)) are optional.
 
 #### KurrentDB
 
@@ -133,7 +136,7 @@ PostgreSQL stores read models and state-based Aggregates as **rows of your own t
 
 - `ConnectionString` is required. Rosetta keeps its own connection pool for it, apart from any `NpgsqlDataSource` the app registers, shared by the Aggregates, the Outbox and the Projections of a host.
 - `Schema` is optional: the schema of the tables that don't name theirs with `[<Table(…, Schema = …)>]`, `public` unless set. Set it when all your read model (and Aggregate state) tables live in one schema of their own (`read_models`, say). Rosetta qualifies every table with its schema, so the connection string's `Search Path` doesn't change where it writes.
-- Rosetta keeps its checkpoints in its own `rosetta.checkpoints` table and the Outbox in `rosetta.outbox`, which it creates, so the user needs the `CREATE` privilege on the database. A missing database is created when the Projections start or the Outbox first records events, which needs `CREATEDB`; without it, create the database first.
+- Rosetta keeps its checkpoints in its own `rosetta.checkpoints` table and the Outbox in `rosetta.outbox` (its publisher's lease in `rosetta.outbox_leases`), which it creates, so the user needs the `CREATE` privilege on the database. A missing database is created when the Projections start or the Outbox first records events, which needs `CREATEDB`; without it, create the database first.
 
 ### 3. Register Aggregates & Projections
 
@@ -206,6 +209,7 @@ services.AddProjectionsWith<KurrentDB, RavenDB>(configuration, typeof(PersonProj
 | `UseAggregatesWithoutEventSourcing<TStateBased>` | every Aggregate persists its state | `RavenDB`, `MongoDB`, `PostgreSQL` |
 | `UseAggregatesWith<TEventSourced, TStateBased>` | a mix of both | both of the above |
 | `UseOutboxWith<TOutboxStore>` | the Aggregates' PublishedEvents are recorded in an [Outbox](#-outbox) | `RavenDB`, `MongoDB`, `PostgreSQL` |
+| `UseOutboxPublisher<TPublisher>` | the Outbox's events are [published](#publishing-the-events) with your `IOutboxPublisher` | the Outbox's |
 | `UseProjectionsWith<TEventRepository, TProjectionsStore>` | Projections | `KurrentDB` → `RavenDB`, `MongoDB`, `PostgreSQL` |
 | `UseProjectionsWith<TEventRepository, TNoSqlStore, TSqlStore>` | Projections into documents and tables at once | `KurrentDB` → `RavenDB` or `MongoDB`, and `PostgreSQL` |
 
@@ -355,6 +359,22 @@ type PersonAggregateHandler(repo: IEventSourcedAggregateRepository) =
 - The Aggregate is stored only when its `Version` changed.
 - With KurrentDB the stream name is the Aggregate `Id` - use ids like `People-1` so that the `$ce-People` category stream can feed Projections.
 
+### Snapshots
+
+A long-lived event-sourced Aggregate (thousands of events) loads faster from a snapshot. Opt in on its state:
+
+```fsharp
+[<Snapshot(100)>]   // every 100 events; [<Snapshot(100, Version = 2)>] ignores the snapshots taken before
+type AccountAggregateState() =
+    inherit AggregateState<AccountEvents>()
+    member val Balance = 0m with get, set
+    override this.ApplyEvent(ev) = …
+```
+
+- A snapshot is taken after the events are appended, whenever a command takes the `Version` to or past a multiple of `Every`, into the stream `RosettaSnapshots-{Id}` (its own category, so no Projection sees it; only the latest is kept). A failed snapshot write is logged as a Warning, and the command stands.
+- Loading reads the latest snapshot, then only the events after it. A snapshot that no longer fits is ignored, and the whole stream read: the state's public settable properties or the attribute's `Version` changed, or the event it ends with isn't in the stream where it was. Raise `Version` when `ApplyEvent` changes what it builds from the same events.
+- The state must round-trip as JSON: public properties with public setters (`member val … with get, set`). A `let mutable` field or a private setter fails the first load with an `InvalidOperationException` naming what a snapshot would lose.
+
 ### Usage
 
 ```fsharp
@@ -395,18 +415,20 @@ builder.UseOutboxWith<PostgreSQL>() |> ignore
 
 ## 📤 Outbox
 
-The Outbox records the **PublishedEvents** of every Aggregate that's stored, so that another process can publish them to the outside world (a message broker, other services) without losing any. Register it next to the Aggregates, before or after them:
+The Outbox records the **PublishedEvents** of every Aggregate that's stored, and its publisher sends them to the outside world (a message broker, other services) without losing any. Register it next to the Aggregates, before or after them:
 
 ```fsharp
 Host.CreateDefaultBuilder(args)
 |> fun builder -> UseAggregatesWith<KurrentDB, RavenDB> builder typeof<PersonAggregateHandler>.Assembly
 |> fun builder -> UseOutboxWith<RavenDB> builder
+|> fun builder -> UseOutboxPublisher<RabbitMqPublisher> builder   // optional: see Publishing the events
 |> fun builder -> builder.Build().Run()
 ```
 
 ```csharp
 builder.UseAggregatesWith<Stores.KurrentDB, Stores.RavenDB>(typeof(PersonAggregateHandler).Assembly);
 builder.UseOutboxWith<Stores.RavenDB>();
+builder.UseOutboxPublisher<RabbitMqPublisher>();   // optional: see Publishing the events
 ```
 
 The Outbox store is `RavenDB`, `MongoDB` or `PostgreSQL`, configured by its section as in [Configure Infrastructure](#2-configure-infrastructure). The Outbox's own settings come from the optional `Outbox` section:
@@ -424,10 +446,12 @@ The Outbox store is `RavenDB`, `MongoDB` or `PostgreSQL`, configured by its sect
 | Setting | Unless set | |
 |---|---|---|
 | `CollectionName` | `Outbox` | the collection the events are recorded in; in PostgreSQL, the table `rosetta.{snake_case}` (`rosetta.outbox`) |
-| `EventTTLMinutes` | events are kept until deleted | how long an event is kept, in minutes |
+| `EventTTLMinutes` | events are kept until deleted | how long an event is kept, in minutes: from its recording, or with a publisher from its publication |
 | `ExpirationFrequencyMinutes` | `2160` (36 hours) | **RavenDB and PostgreSQL**: how often RavenDB deletes the expired events, in minutes, when the Outbox turns Document Expiration on, or how often, at most, the PostgreSQL Outbox deletes them itself (see [Expiry](#expiry)). MongoDB's TTL monitor runs every 60 seconds by itself |
+| `PublishBatchSize` | `100` | with a publisher: how many events it reads at a time |
+| `PublishPollIntervalMilliseconds` | `1000` | with a publisher: how long it waits before looking again, when it found less than a full batch |
 
-`configure` changes them in code, after the configuration is read:
+`configure` changes them in code, after the configuration is read (and `PublishLeaseDuration`, 30 seconds, see [Publishing the events](#publishing-the-events)):
 
 ```fsharp
 builder.UseOutboxWith<RavenDB>(fun outbox ->
@@ -466,7 +490,7 @@ A command that changed nothing, e.g. an idempotent repeat, stores nothing, but t
     else this.Register cmd
 ```
 
-The Outbox keeps **one record per event**. An event's `Id` comes from what makes it that event: the Aggregate, its `Version`, the event's position among the command's PublishedEvents, its type and its data. A repeat publishes the same events at the same `Version`, so they get the same `Id`s, and the Outbox only adds the ones it doesn't hold: the record that's there stays exactly as it was, so a RavenDB subscription or a MongoDB change stream doesn't see it again. RavenDB checks which events it holds, and saves the others on condition they're still new: if a concurrent repeat recorded one meanwhile, the save fails with `ConcurrencyException` (Rosetta's, wrapping RavenDB's; the command can be run again) instead of overwriting it. MongoDB upserts with `$setOnInsert`, PostgreSQL inserts with `on conflict (id) do nothing`.
+The Outbox keeps **one record per event**. An event's `Id` comes from what makes it that event: the Aggregate, its `Version`, the event's position among the command's PublishedEvents, its type and its data. A repeat publishes the same events at the same `Version`, so they get the same `Id`s, and the Outbox only adds the ones it doesn't hold: the record that's there stays exactly as it was, published or not, so it isn't published again. RavenDB checks which events it holds, and saves the others on condition they're still new: if a concurrent repeat recorded one meanwhile, the save fails with `ConcurrencyException` (Rosetta's, wrapping RavenDB's; the command can be run again) instead of overwriting it. MongoDB upserts with `$setOnInsert`, PostgreSQL inserts with `on conflict (id) do nothing`.
 
 An event published again after the Aggregate changed further has a later `Version`, so it's recorded again. Whatever consumes the events must still handle duplicates (as with any broker's redeliveries), and the `Id` serves as their message id.
 
@@ -485,8 +509,30 @@ Each PublishedEvent is one document (`RavenDBOutboxEvent`, `MongoDBOutboxEvent`)
 | `EventType`, `Data` | the event as KurrentDB stores it: the name its record is stored under, and the record as JSON, exactly as written |
 | `RecordedAt` | when it was first recorded, in UTC. In `RecordedAt` and `Position` order, the events read back in the order they were recorded |
 | `TraceParent`, `TraceState` | the command's W3C trace context, so publishing the event can continue the command's trace |
+| `PublishedAt` | when the publisher published it, in UTC; `null` until then |
 
-Rosetta records the events; publishing them is up to you, e.g. with a RavenDB data subscription or a MongoDB change stream on the collection, or by polling the PostgreSQL table in `recorded_at`, `position` order. `EventEncoding.Decode` reads an event back into its DU, through the upcasters:
+### Publishing the events
+
+Implement `IOutboxPublisher` (one event to your broker: `PublishAsync(event: OutboxEvent, cancellationToken)`), and register it with `UseOutboxPublisher<T>()` on `IHostApplicationBuilder`/`IHostBuilder`, or `AddOutboxPublisher<T>()` on `IServiceCollection`. It's a singleton made by DI, so it can take services; it needs `UseOutboxWith`, before or after it.
+
+```fsharp
+type RabbitMqPublisher(channel: IChannel) =
+    interface IOutboxPublisher with
+        member this.PublishAsync(event, cancellationToken) =
+            // send event.Data as event.EventType, with event.Id as the message id, and return once the broker confirms it
+            …
+```
+
+A hosted service then loops: it takes or renews the Outbox's **lease** (one instance of the app publishes at a time, renewing it during a long batch; the others check every half lease and take over when it's handed over, as a stopping instance does, or has expired, 30 s by default), reads up to `PublishBatchSize` unpublished events, publishes them **one at a time, in order** (as recorded, and each Aggregate's in `Version` order even if the instances' clocks disagree), and marks the published ones (`PublishedAt`). A full batch is followed by the next at once; otherwise it waits `PublishPollIntervalMilliseconds`.
+
+- **Failures**: when `PublishAsync` throws, the events before it are marked, and publishing restarts from the failed one after 1, 2, 4, 8, 16, then every 30 s, logged as an Error, as Critical at the 5th failure in a row, and "RECOVERED" once it publishes again. The later events wait: the order holds.
+- **At least once**: a crash between publishing and marking publishes the event again, with the same `Id`. Use it as the message id, and dedupe on it in consumers.
+- **Marked, not deleted**: the Outbox records an event once because it still holds it, so a repeat of the command doesn't record, and publish, it again. With `EventTTLMinutes`, an event expires that long after its publication; an unpublished one never expires.
+- **What's unpublished**: `PublishedAt` explicitly `null`. In RavenDB and MongoDB a record without the field (recorded before the publisher was registered) is taken to be your own former publisher's, and isn't published. PostgreSQL adds a `published_at` column to an existing table, so the rows already there **are** published: delete the ones already sent first.
+- **The lease** is the document `OutboxLeases/{CollectionName}` in RavenDB, a document of the `OutboxLeases` collection (`_id` = `CollectionName`) in MongoDB, a row of `rosetta.outbox_leases` (by the database's clock) in PostgreSQL.
+- Each publication is a Producer span `{Aggregate} {EventType} publish` continuing the command's trace, counted in `rosetta.outbox.published`.
+
+Without `UseOutboxPublisher`, publishing is up to you (a RavenDB data subscription, a MongoDB change stream, a connector of your broker). `EventEncoding.Decode` reads a recorded event back into its DU, through the upcasters:
 
 ```fsharp
 match EventEncoding.Decode<PersonEvents> upcasters recorded.EventType recorded.Data with
@@ -496,13 +542,13 @@ match EventEncoding.Decode<PersonEvents> upcasters recorded.EventType recorded.D
 
 ### Expiry
 
-With `EventTTLMinutes`, each event expires that long after it was recorded. The expiry is stored in each event, so a changed TTL applies to the events recorded from then on.
+With `EventTTLMinutes`, each event expires that long after it was recorded, or, with a publisher, that long after it was published (an event waiting to be published never expires). The expiry is stored in each event, so a changed TTL applies to the events recorded (or published) from then on.
 
 - **RavenDB** keeps it in the document's `@expires` metadata, which only Document Expiration acts on. The Outbox turns Document Expiration on for the database (once, on first use) when it's off, deleting the expired documents every `ExpirationFrequencyMinutes`: 36 hours unless set, the shortest frequency a RavenDB Community licence allows, so it works with every licence. An expired event can therefore stay up to that long after its TTL; with a licence that allows it, set a shorter frequency. The Outbox leaves an existing Document Expiration configuration alone, frequency included. In two cases it can't turn Document Expiration on, so turn it on yourself (Studio: Settings → Document Expiration):
   - a certificate that can't read the database record can't check it;
   - a licence that doesn't allow the frequency refuses it (`LicenseLimitException`). The Outbox logs a Warning once, and the commands go on: the events are recorded, they just aren't deleted until Document Expiration is on, with a frequency the licence allows.
 - **MongoDB** keeps it in an `expiresAt` field, which a TTL index the Outbox creates on first use acts on. MongoDB deletes expired documents every 60 seconds.
-- **PostgreSQL** has no TTL: it keeps the expiry in an `expires_at` column (indexed), and the Outbox deletes the expired rows itself (`delete … where expires_at < now()`) after recording events, at most every `ExpirationFrequencyMinutes` (and on its first recording after the process starts). A failed deletion is logged as a Warning and doesn't fail the command.
+- **PostgreSQL** has no TTL: it keeps the expiry in an `expires_at` column (indexed), and the Outbox deletes the expired rows itself (`delete … where expires_at < now()`) after recording or publishing events, at most every `ExpirationFrequencyMinutes` (and the first time after the process starts). A failed deletion is logged as a Warning and doesn't fail the command.
 
 ---
 
@@ -584,6 +630,7 @@ type PersonProjection() =
 
 - Without the attribute the version is 0, so the first `ProjectionVersion(1)` rebuilds too. The version is kept with the checkpoint.
 - A read model belongs to one Projection: two that declare the same one fail at registration, so rebuilding one never empties the other's.
+- A Projection that can be rebuilt (a `ProjectionVersion` above 0, or a `cp-` stream) must declare its read models with `IProjectInto`, or registering it fails: replaying its stream over read models nothing emptied would apply every event twice. `[<RebuildWithoutClearing>]` allows it when every Handler only overwrites whole documents or rows.
 - Until it has caught up, a rebuilt Projection's read models are partial.
 - A Projection whose version is lower than its read models' (an older deployment still running) doesn't start.
 
@@ -788,10 +835,11 @@ Conventions the generator relies on:
 How the JavaScript projections are deployed on startup:
 
 - A projection is **created** when no KurrentDB projection with its name (`{StreamName without cp-}CustomProjection`) exists. It's created on the V1 projections engine: V2 is still experimental in KurrentDB, and the engine can only be chosen at creation.
-- An existing projection is **updated only when needed**. Rosetta reads its stored definition over the KurrentDB HTTP API, using the address, credentials and TLS settings of `KurrentDB:ConnectionString`. It re-submits the definition when the query changed, when emit is disabled, or when the projection is Faulted (re-submitting restarts it). Otherwise the projection is left alone.
-- If the stored definition can't be read, the definition is re-submitted anyway and a warning is logged.
-- **Renaming** the stream creates a new projection. The old one is neither removed nor stopped, and keeps linking events into the old stream.
-- A **changed definition** (e.g. a new event case) applies from the projection's last persisted checkpoint, not from the start of history. Older events of the new type are only partly linked, so reset the projection in KurrentDB, and rebuild the Read Model, if they matter.
+- An existing projection is **left alone** when its stored definition (read over the KurrentDB HTTP API, with the address, credentials and TLS settings of `KurrentDB:ConnectionString`) is the code's. A Faulted one, or one with emit disabled, gets its definition re-submitted (which restarts it), unless its query changed: then it's relinked, Faulted or not; so does one whose definition can't be read, with a warning.
+- A **changed definition** (e.g. a new event case) is **relinked**: the projection is stopped, its `cp-` stream soft-deleted (only the links go; the events stay in their streams), its query updated, and it's reset and started, so it links the whole history of its source streams again (`Custom projection … RELINKED`).
+- A projection the code **no longer defines** (removed, or renamed: a new stream name is a new projection) is stopped, deleted over the HTTP API (the gRPC client can't delete projections) and its `cp-` stream soft-deleted (`Custom projection … DELETED`), also when the application no longer defines any.
+- An application only ever deletes the projections it created itself, which it records in the stream `RosettaCustomProjections-{owner}`: never another service's on the same KurrentDB, nor a hand-made one. The owner is `KurrentDB:CustomProjectionsOwner`, else the host's `ApplicationName`, else the entry assembly's name. Projections left behind by renames before the application kept that record stay: delete those by hand.
+- A Rosetta Projection reading a `cp-` stream is **rebuilt** when it starts if its checkpoint is in links that were deleted, or past the stream's end (another stream than it was built from): its `IProjectInto` read models are emptied and its checkpoint reset, as when its `[<ProjectionVersion>]` goes up (`Projection … is REBUILT`). Keep these Projections in the application that defines the Custom Projection (there the Custom Projections are deployed before the Projections start), and bump their `[<ProjectionVersion>]` when renaming the `cp-` stream: a new stream that already holds as many links as the old checkpoint can't be told apart.
 
 ---
 
@@ -883,8 +931,9 @@ builder.Services
 |---|---|---|
 | `{Aggregate} {Command}`, e.g. `Person RegisterPerson` | Internal | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.command`, `rosetta.events` (stored), `rosetta.outcome` (`handled`, `rejected`, `failed`), `rosetta.domain_error` |
 | `{Projection} {Event}`, e.g. `Person PersonRegistered` | Consumer | `rosetta.projection`, `rosetta.stream`, `rosetta.event`, `rosetta.checkpoint`, `rosetta.outcome` (`skipped`) |
+| `{Aggregate} {EventType} publish`, e.g. `Person PersonRegistered publish` | Producer | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.event`, `rosetta.outbox.event.id` |
 
-A command's trace context (W3C `traceparent`/`tracestate`) is stored in the metadata of the events it produces, and the projections handling those events continue it. So one trace runs from the request, through the command, to every read model it updates, even across services. A rejected command (`DomainException`) or a failing projection marks its span as an error. Spans of your own code and of instrumented clients nest inside Rosetta's.
+A command's trace context (W3C `traceparent`/`tracestate`) is stored in the metadata of the events it produces, and the projections handling those events continue it, as does the Outbox publisher for its PublishedEvents. So one trace runs from the request, through the command, to every read model it updates, even across services. A rejected command (`DomainException`) or a failing projection marks its span as an error. Spans of your own code and of instrumented clients nest inside Rosetta's.
 
 **Metrics**
 
@@ -894,6 +943,7 @@ A command's trace context (W3C `traceparent`/`tracestate`) is stored in the meta
 | `rosetta.command.duration` | `s` | `rosetta.aggregate`, `rosetta.command` |
 | `rosetta.events.stored` | `{event}` | `rosetta.aggregate` |
 | `rosetta.outbox.events` | `{event}` | `rosetta.aggregate` |
+| `rosetta.outbox.published` | `{event}` | `rosetta.aggregate` |
 | `rosetta.projection.events` | `{event}` | `rosetta.projection`, `rosetta.outcome` (`handled`, `failed`, `skipped`) |
 | `rosetta.projection.event.duration` | `s` | `rosetta.projection` |
 | `rosetta.projection.resubscriptions` | `{resubscription}` | `rosetta.projection` |
@@ -1030,6 +1080,12 @@ type IOutbox =
     // Records the events it doesn't hold yet (by Id), leaves the others as they are, and returns how many it recorded
     abstract member RecordAsync: events: OutboxEvent[] -> Task<int>
 
+//...and for UseOutboxPublisher to publish it, IOutboxRelayStore on the same object
+type IOutboxRelayStore =
+    abstract member TryLeaseAsync: owner: string * duration: TimeSpan * cancellationToken: CancellationToken -> Task<bool>
+    abstract member UnpublishedAsync: max: int * cancellationToken: CancellationToken -> Task<OutboxEvent[]>
+    abstract member MarkPublishedAsync: events: OutboxEvent[] * publishedAt: DateTime * cancellationToken: CancellationToken -> Task
+
 //Implementing the db for Projections: the read models, the checkpoints, and a transaction per event.
 //While a Projection's Handlers run, ProjectionTransaction.Current is the event's transaction: the store writes and reads in it
 type IProjectionTransaction =
@@ -1120,7 +1176,7 @@ The page's tables list the RavenDB documents (database `TEST.ROSETTA`), which yo
 
 - Keep the **business rules in the Aggregate** (`Execute` and its domain methods). Aggregate Handlers only route commands to create or update, and controllers or consumers only build commands.
 - **Commands are imperative, events past tense**, in the domain's language: `RegisterPerson` → `PersonRegistered`. Every DU case wraps exactly one record.
-- **Make commands idempotent**: compare the command with the state, and apply nothing when it's a repeat. With the [Outbox](#-outbox), publish the events in the idempotent branch too.
+- **Make commands idempotent**: compare the command with the state, and apply nothing when it's a repeat. With the [Outbox](#-outbox), publish the events in the idempotent branch too, and let consumers dedupe on the Outbox event's `Id` (publishing is at least once).
 - **Name business errors** with `DomainException.Named(name, message)`, so callers and `ThenError` can tell them apart.
 - **Give Event-Sourced Aggregates category ids** (`People-1`), so `$ce-People` feeds their Projections.
 
@@ -1134,6 +1190,7 @@ The page's tables list the RavenDB documents (database `TEST.ROSETTA`), which yo
 
 - **One Projection per purpose**, declaring every read model it writes with `IProjectInto<…>`. A read model has one owner.
 - **Bump `[<ProjectionVersion>]`** whenever its Handlers change what they write, and the read models are rebuilt from the stream.
+- **A Projection that can be rebuilt declares what to empty**: with a version above 0 or a `cp-` stream, it needs `IProjectInto` (registration fails otherwise), or `[<RebuildWithoutClearing>]` when every Handler overwrites whole documents or rows. For large read models, rebuild side by side: write into a new read model type and switch the queries once it has caught up.
 - **Handlers only write read models.** Load before updating, and handle a missing read model. Any other effect (a command, a message, an HTTP call) runs again when the event is retried, so make it idempotent and quick.
 - Choose [documents or tables](#guidelines-for-postgresql-read-models) per read model: documents for screens, PostgreSQL tables for SQL analytics and reports.
 - **Watch them**: add the `rosetta-projections` [health check](#projections-at-runtime), or alert on the `rosetta.projections.unhealthy` gauge. A Faulted Projection keeps the application running.

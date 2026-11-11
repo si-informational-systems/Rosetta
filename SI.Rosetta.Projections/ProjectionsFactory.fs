@@ -5,6 +5,7 @@ open System.Collections.Generic
 open System.Reflection
 open System.Threading.Tasks
 open Microsoft.Extensions.DependencyInjection
+open Microsoft.Extensions.Logging
 open SI.Rosetta.Common
 
 type ProjectionInfo = {
@@ -75,23 +76,52 @@ type ProjectionsFactory(provider: IServiceProvider) =
     /// clears again
     member this.RebuildIfVersioned(t: Type, proj: Projection<_>) =
         task {
-            let version =
-                match t.GetCustomAttribute(typeof<ProjectionVersion>) with
-                | :? ProjectionVersion as attribute -> attribute.Version
-                | _ -> 0
-            let clear = ProjectionReadModels.Of t
+            let version = ProjectionsFactory.VersionOf t
             let stored = proj.Checkpoint.Version
             if stored > version then
                 raise (InvalidOperationException(
                     sprintf "Projection %s is at version %d, but its read models were built by version %d: a newer version of it runs elsewhere." proj.Name version stored))
             if stored < version then
-                if clear.Length > 0 then
-                    if isNull (box proj.UnitOfWork) then
-                        raise (InvalidOperationException(sprintf "Projection %s can't clear its read models: its store has no unit of work." proj.Name))
-                    do! proj.UnitOfWork.ClearAsync(clear).ConfigureAwait(false)
-                let reset = Checkpoint(Id = proj.Checkpoint.Id, Value = 0UL, Version = version)
-                do! proj.CheckpointStore.StoreAsync(reset).ConfigureAwait(false)
-                proj.Checkpoint <- reset
+                do! this.Rebuild(t, proj, version, sprintf "its [<ProjectionVersion>] went from %d to %d" stored version)
+        }
+
+    static member private VersionOf(t: Type) =
+        match t.GetCustomAttribute(typeof<ProjectionVersion>) with
+        | :? ProjectionVersion as attribute -> attribute.Version
+        | _ -> 0
+
+    /// Empties the projection's read models (IProjectInto), then starts its checkpoint again from 0 at version. In that
+    /// order, so a crash between them clears again. One with nothing to empty doesn't start, unless it's marked
+    /// [<RebuildWithoutClearing>]: replaying over its read models would apply every event twice
+    member private this.Rebuild(t: Type, proj: Projection<_>, version: int, reason: string) : Task =
+        task {
+            ProjectionReadModels.RequireClearable t reason
+            let clear = ProjectionReadModels.Of t
+            if clear.Length > 0 then
+                if isNull (box proj.UnitOfWork) then
+                    raise (InvalidOperationException(sprintf "Projection %s can't clear its read models: its store has no unit of work." proj.Name))
+                do! proj.UnitOfWork.ClearAsync(clear).ConfigureAwait(false)
+            let reset = Checkpoint(Id = proj.Checkpoint.Id, Value = 0UL, Version = version)
+            do! proj.CheckpointStore.StoreAsync(reset).ConfigureAwait(false)
+            proj.Checkpoint <- reset
+        } :> Task
+
+    /// A projection whose stream was replaced under it (a custom projection's cp- stream linked again, or renamed) is
+    /// rebuilt: its read models were built from links the stream no longer holds
+    member this.RebuildIfReplaced(t: Type, proj: Projection<_>, subscription: obj) =
+        task {
+            match subscription with
+            | :? ISubscriptionHistory as history ->
+                match! history.ReplacedSinceAsync(proj.Checkpoint.Value).ConfigureAwait(false) with
+                | Some reason ->
+                    match provider.GetService<ILogger<ProjectionsFactory>>() with
+                    | null -> ()
+                    | logger ->
+                        logger.LogWarning("Projection {Name} is REBUILT: {Reason}. Its read models (IProjectInto) are emptied, and it starts again from the start of the stream.",
+                            proj.Name, reason)
+                    do! this.Rebuild(t, proj, ProjectionsFactory.VersionOf t, reason)
+                | None -> ()
+            | _ -> ()
         }
         
     member this.CreateSubscription<'TEvent when 'TEvent :> IAggregateEvents>(proj: Projection<'TEvent>) =
@@ -145,6 +175,7 @@ type ProjectionsFactory(provider: IServiceProvider) =
             do! this.LoadCheckpoint(projection).ConfigureAwait(false)
             do! this.RebuildIfVersioned(projectionType, projection).ConfigureAwait(false)
             projection.Subscription <- this.CreateSubscription projection
+            do! this.RebuildIfReplaced(projectionType, projection, box projection.Subscription).ConfigureAwait(false)
             projection.Handlers <- this.CreateHandlers<'TEvent> projectionType
             return projection :> IProjection
         }

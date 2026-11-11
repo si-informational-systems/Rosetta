@@ -142,6 +142,21 @@ type IStateBasedAggregateRepository = inherit IAggregateRepository     // RavenD
 Only the two marker interfaces are registered in DI. `GetAsync` with a `version` rebuilds an event-sourced state up to
 that version.
 
+### Snapshots
+
+```fsharp
+[<AttributeUsage(AttributeTargets.Class)>]
+type SnapshotAttribute(every: int) =          // on an event-sourced state type; every >= 1
+    member Every: int                          // a snapshot each time Version reaches a multiple of it
+    member Version: int with get, set          // raise it to ignore the snapshots taken before (0)
+```
+
+The `Snapshots` module (`Of`, `IsDue`, `FingerprintOf`, `Serialize`, `Deserialize`) is *(infrastructure)*: what a
+store's snapshots share. In `SI.Rosetta.Aggregates.KurrentDB`, `KurrentDBAggregateRepository(client, upcasters, logger)`
+(also without the logger, which reports snapshots that couldn't be written) takes them, and
+`KurrentDBAggregateRepository.SnapshotStreamOf id` names an Aggregate's snapshot stream (`RosettaSnapshots-{id}`). See
+[Snapshots](../concepts/aggregates.md#snapshots).
+
 ### Exceptions
 
 ```fsharp
@@ -166,6 +181,10 @@ type OutboxOptions() =
     member CollectionName: string with get, set          // "Outbox"
     member EventTTL: Nullable<TimeSpan> with get, set     // null: kept until deleted
     member ExpirationFrequency: TimeSpan with get, set    // 36 h; RavenDB and PostgreSQL
+    member PublishBatchSize: int with get, set            // 100; with a publisher
+    member PublishPollInterval: TimeSpan with get, set    // 1 s; with a publisher
+    member PublishLeaseDuration: TimeSpan with get, set   // 30 s; with a publisher
+    member ExpiresFromPublication: bool with get, set     // set by registration when there's a publisher
     member Validate: unit -> unit
 
 type OutboxEvent =
@@ -174,10 +193,21 @@ type OutboxEvent =
 
 type IOutbox =
     abstract RecordAsync: events: OutboxEvent[] -> Task<int>   // records the ones it doesn't hold; returns how many
+
+type IOutboxPublisher =                                        // yours: sends one event to the broker
+    abstract PublishAsync: event: OutboxEvent * cancellationToken: CancellationToken -> Task
+
+type IOutboxRelayStore =                                       // Rosetta's outboxes, as the publisher reads them
+    abstract TryLeaseAsync: owner: string * duration: TimeSpan * cancellationToken: CancellationToken -> Task<bool>
+    abstract UnpublishedAsync: max: int * cancellationToken: CancellationToken -> Task<OutboxEvent[]>   // oldest first
+    abstract MarkPublishedAsync: events: OutboxEvent[] * publishedAt: DateTime * cancellationToken: CancellationToken -> Task
 ```
 
-`OutboxEvents.Of aggregate` builds an Aggregate's `OutboxEvent`s; `OutboxEvents.IdOf` computes the deterministic id.
-`OutboxAggregateRepository(repository, outbox)` *(infrastructure)* stores, then records.
+`OutboxEvents.Of aggregate` builds an Aggregate's `OutboxEvent`s; `OutboxEvents.IdOf` computes the deterministic id;
+`OutboxEvents.InPublishingOrder` sorts events as the publisher sends them.
+`OutboxAggregateRepository(repository, outbox)` *(infrastructure)* stores, then records. The store packages'
+`RavenDBOutbox`, `MongoDBOutbox` and `PostgreSqlOutbox` implement `IOutbox` and `IOutboxRelayStore`; their
+`RavenDBOutboxEvent` and `MongoDBOutboxEvent` records have a `PublishedAt: Nullable<DateTime>`.
 
 ## SI.Rosetta.Projections
 
@@ -201,7 +231,8 @@ type IProjectionHandler<'TEvents when 'TEvents :> IAggregateEvents> =
 | Attribute | Arguments | |
 |---|---|---|
 | `[<HandlesStream(name)>]` | stream name | required, exactly one |
-| `[<ProjectionVersion(n)>]` | int | rebuild when raised; none = 0 |
+| `[<ProjectionVersion(n)>]` | int | rebuild when raised; none = 0. Above 0, needs `IProjectInto` or `[<RebuildWithoutClearing>]` |
+| `[<RebuildWithoutClearing>]` | — | a rebuild empties nothing (Handlers overwrite whole documents/rows) |
 | `[<SkipUnknownEvents>]` | — | log and skip events the DU lacks |
 | `[<DisabledProjection>]` | — | don't run it |
 | `[<CustomProjectionStream(name)>]` | `cp-…` stream | on an `ICustomProjectionEvents` DU |
@@ -240,8 +271,10 @@ For custom stores and tests: `Checkpoint` (`Id`, `Value` one-based, `Version`), 
 `IProjectionTransaction` (`CommitAsync checkpoint`, dispose = rollback), `IProjectionsUnitOfWork` (`PrepareAsync`,
 `BeginAsync`, `ClearAsync`), `ProjectionTransaction.Current` (the event's transaction, an `AsyncLocal`),
 `ProjectionKeys` (`KeyPropertiesOf`, `KeyOf`, `ValuesOf`; delegates to `TypeKeys`), `ProjectionStoreKinds` (`Documents`, `Sql`, `Of`),
-`ProjectionReadModels`, `IProjectionsFactory`/`ProjectionsFactory`, `ISubscription`, `ISubscriptionFactory`.
-See [Extending Rosetta](../contributing.md#extending-rosetta).
+`ProjectionReadModels`, `IProjectionsFactory`/`ProjectionsFactory` (`RebuildIfVersioned`, `RebuildIfReplaced`),
+`ISubscription`, `ISubscriptionFactory`, and `ISubscriptionHistory` (`ReplacedSinceAsync checkpoint`: why the read
+models built up to it no longer match the stream, or `None`; a subscription that implements it is checked when its
+Projection starts, and the Projection rebuilt). See [Extending Rosetta](../contributing.md#extending-rosetta).
 
 ## SI.Rosetta.Projections.KurrentDB
 
@@ -272,6 +305,22 @@ type ProjectionStatus =                         // read-only
 Register your own `ProjectionRetries` before `UseProjectionsWith` to change the backoff. Resolve `ProjectionStatuses`
 to show the Projections' state in your own UI.
 
+```fsharp
+type CustomProjectionAction =                   // what a Custom Projection needs on startup
+    | Create
+    | Update of reason: string                  // Faulted, or emit disabled
+    | Relink                                    // its query changed (Faulted or not): its cp- stream is linked again from the start
+    | UpdateUnverified of error: string         // its stored definition couldn't be read
+    | Unchanged
+
+type KurrentDBCustomJSProjectionsFactory(conf, logger, managementClient, client, owner: string) =   // also without owner
+    static member DefaultOwner: conf: IConfiguration * applicationName: string -> string
+    member RegistryStream: string               // RosettaCustomProjections-{owner}
+```
+
+`CustomProjectionSync.Decide query status stored` decides the action *(infrastructure)*. `KurrentDBSubscription`
+implements `ISubscriptionHistory` for `cp-` streams.
+
 ## SI.Rosetta.Aggregates.HostBuilder
 
 | Member | On | |
@@ -280,7 +329,8 @@ to show the Projections' state in your own UI.
 | `UseAggregatesWithoutEventSourcing<RavenDB \| MongoDB \| PostgreSQL>` | same | every Aggregate state-based |
 | `UseAggregatesWith<KurrentDB, RavenDB \| MongoDB \| PostgreSQL>` | same | both |
 | `UseOutboxWith<RavenDB \| MongoDB \| PostgreSQL>(?configure)` | same | the Outbox |
-| `AddAggregatesWith…(configuration, …)`, `AddOutboxWith<…>(configuration, ?configure)` | `IServiceCollection` | the same |
+| `UseOutboxPublisher<'TPublisher>` | same | publishes the Outbox with `'TPublisher :> IOutboxPublisher` (a singleton) |
+| `AddAggregatesWith…(configuration, …)`, `AddOutboxWith<…>(configuration, ?configure)`, `AddOutboxPublisher<'TPublisher>()` | `IServiceCollection` | the same |
 
 Each takes an `Assembly` or an `Action<AggregatesRegistration>`:
 

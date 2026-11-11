@@ -225,3 +225,29 @@ type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
     member this.EventReceived 
         with get() = eventReceived
         and set(value) = eventReceived<- value
+
+    /// Only the custom projections' cp- streams, which Rosetta deletes and links again: a checkpoint at or before the
+    /// stream's truncation was reached in the links that were deleted, and one past the stream's end in another stream
+    /// (e.g. the stream a renamed custom projection linked before)
+    interface ISubscriptionHistory with
+        member this.ReplacedSinceAsync(checkpoint) =
+            task {
+                if checkpoint = 0UL || not (streamName.StartsWith "cp-") then return None
+                else
+                    let! metadata = client.GetStreamMetadataAsync(streamName).ConfigureAwait(false)
+                    let truncatedBefore =
+                        if metadata.Metadata.TruncateBefore.HasValue then Some (metadata.Metadata.TruncateBefore.Value.ToUInt64()) else None
+                    match truncatedBefore with
+                    | Some before when checkpoint <= before ->
+                        return Some (sprintf "%s was linked again from the start: its links up to checkpoint %d were deleted" streamName checkpoint)
+                    | _ ->
+                        let read = client.ReadStreamAsync(Direction.Backwards, streamName, StreamPosition.End, 1L)
+                        match! read.ReadState with
+                        | ReadState.StreamNotFound ->
+                            return Some (sprintf "%s doesn't exist, but this projection is at checkpoint %d of it" streamName checkpoint)
+                        | _ ->
+                            let! last = read |> TaskSeq.toListAsync
+                            match last with
+                            | event :: _ when event.OriginalEventNumber.ToUInt64() + 1UL >= checkpoint -> return None
+                            | _ -> return Some (sprintf "%s is shorter than checkpoint %d: it isn't the stream this projection was built from" streamName checkpoint)
+            }

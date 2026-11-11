@@ -14,10 +14,13 @@ recorded until something listens. See [Observability](../concepts/observability.
 |---|---|---|---|
 | `{Aggregate} {Command}` (`Person RegisterPerson`) | Internal | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.command`, `rosetta.events` (stored, when any), `rosetta.outcome` (`handled`, `rejected`, `failed`), `rosetta.domain_error` | Error with the `DomainException.Name`, or the exception |
 | `{Projection} {Event}` (`Person PersonRegistered`) | Consumer | `rosetta.projection`, `rosetta.stream`, `rosetta.event`, `rosetta.checkpoint`, `rosetta.outcome` (`skipped`) | Error when a Handler fails |
+| `{Aggregate} {EventType} publish` (`Person PersonRegistered publish`) | Producer | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.event`, `rosetta.outbox.event.id` | Error with the exception when `PublishAsync` throws |
 
-- `{Command}` is the command's record type name; `{Event}` is the event's stored name.
+- `{Command}` is the command's record type name; `{Event}` and `{EventType}` are the event's stored name.
 - A projection span's parent is the `traceparent` stored in the event's metadata, so a trace runs from the request,
   through the command, to every Projection, across services.
+- The Outbox publisher's span continues the trace of the command that recorded the event (its `TraceParent`), so
+  spans of your broker client inside `PublishAsync` join it.
 
 ## Metrics
 
@@ -27,6 +30,7 @@ recorded until something listens. See [Observability](../concepts/observability.
 | `rosetta.command.duration` | Histogram | `s` | `rosetta.aggregate`, `rosetta.command` |
 | `rosetta.events.stored` | Counter | `{event}` | `rosetta.aggregate` |
 | `rosetta.outbox.events` | Counter | `{event}` | `rosetta.aggregate` |
+| `rosetta.outbox.published` | Counter | `{event}` | `rosetta.aggregate` |
 | `rosetta.projection.events` | Counter | `{event}` | `rosetta.projection`, `rosetta.outcome` (`handled`, `failed`, `skipped`) |
 | `rosetta.projection.event.duration` | Histogram | `s` | `rosetta.projection` |
 | `rosetta.projection.resubscriptions` | Counter | `{resubscription}` | `rosetta.projection` |
@@ -48,10 +52,22 @@ Through `ILogger`. The Projections log each state change, with the Projection's 
 | `FAULTED` (5 failures in a row) | Critical, once |
 | `STOPPED` (an unknown event, or a permanent startup error) | Critical |
 | `CANCELED` (the application stopped) | Information |
-| `Custom projection {Name} CREATED` / `UPDATED: {reason}` / `is up to date` | Information |
+| `Custom projection {Name} CREATED` / `UPDATED: {reason}` / `RELINKED: …` / `DELETED, with {Stream}: …` / `is up to date` | Information |
 | `Custom projection {Name} UPDATED without comparing, …` | Warning |
+| `The custom projections this application created before couldn't be checked for deletion; …` | Warning |
+| `Projection {Name} is REBUILT: {reason}. …` (its `cp-` stream was relinked or replaced) | Warning |
 
-The Outbox logs a Warning once when RavenDB's licence refuses its Document Expiration frequency.
+The Outbox logs a Warning once when RavenDB's licence refuses its Document Expiration frequency. Its publisher logs:
+
+| Message | Level |
+|---|---|
+| `The outbox {Collection} is published by this instance ({Owner}).` / `… by another instance: this one ({Owner}) waits to take over.` | Information |
+| `The outbox {Collection} FAILED to publish. Retrying in {Delay} …` | Error |
+| `The outbox {Collection} FAILED to publish {Failures} times in a row. …` (the 5th) | Critical |
+| `The outbox {Collection} RECOVERED: it publishes again.` | Information |
+
+The KurrentDB Aggregate repository logs a Warning when a [snapshot](../concepts/aggregates.md#snapshots) couldn't be
+written.
 
 ## Health check
 

@@ -22,6 +22,8 @@ module RosettaTelemetry =
     let EventsStored = Meter.CreateCounter<int64>("rosetta.events.stored", "{event}", "Events aggregates produced and stored")
     /// Events recorded in the outbox, by aggregate
     let OutboxEvents = Meter.CreateCounter<int64>("rosetta.outbox.events", "{event}", "Events recorded in the outbox")
+    /// Events the outbox's publisher published, by aggregate
+    let OutboxPublished = Meter.CreateCounter<int64>("rosetta.outbox.published", "{event}", "Events the outbox's publisher published")
     /// Events projections received, by projection and outcome (handled, failed, skipped)
     let ProjectionEvents = Meter.CreateCounter<int64>("rosetta.projection.events", "{event}", "Events projections received")
     let ProjectionEventDuration = Meter.CreateHistogram<double>("rosetta.projection.event.duration", "s", "How long projections took to handle an event")

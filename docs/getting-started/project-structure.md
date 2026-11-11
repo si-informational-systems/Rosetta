@@ -19,7 +19,7 @@ src/
       PersonAggregate.fs
       PersonAggregateHandler.fs
   X.Domain.Bus                   message handlers that call the Aggregate Handlers, policies        SI.Rosetta.Aggregates
-  X.Domain.Infrastructure        the Outbox publisher, infrastructure the domain host needs
+  X.Domain.Infrastructure        the IOutboxPublisher (e.g. RabbitMQ), infrastructure the domain host needs
   X.Domain.App                   host of the Aggregates: Program.fs + Composition.fs               SI.Rosetta.Aggregates.HostBuilder
   X.ReadModel                    read model types and query interfaces, no infrastructure
   X.ReadModel.Projections        StreamNames.fs, Projections and their Handlers                     SI.Rosetta.Projections
@@ -93,6 +93,7 @@ Applications built on Rosetta write the same few helpers. They're short; see [Re
 - An `Emit` member on Aggregates that publish every event: `PublishedEvents.Add` + `Apply`.
 - A command-handling wrapper on the message bus: a `DomainException` is an outcome, a `ConcurrencyException` is retried
   with a fresh handler.
-- An Outbox publisher: a background service that sends the recorded events to the broker.
+- An `IOutboxPublisher` that sends one recorded event to the broker, registered with `UseOutboxPublisher` (Rosetta runs
+  it in order, with retries and a lease).
 - Projection helpers: `ChangeAsync` (load, change, store; fail when missing).
 - Test fixtures: `Both events` for "produced and published", a `{Aggregate}Data.fs` with default commands and events.

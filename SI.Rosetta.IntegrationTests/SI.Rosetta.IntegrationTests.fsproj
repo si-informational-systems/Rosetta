@@ -17,6 +17,7 @@
     <Compile Include="ProjectionsUnitOfWorkTests.fs" />
     <Compile Include="MongoConfigTests.fs" />
     <Compile Include="KurrentDBAggregateRepositoryTests.fs" />
+    <Compile Include="KurrentDBSnapshotsTests.fs" />
     <Compile Include="StateBasedAggregateRepositoryTests.fs" />
     <Compile Include="OutboxTests.fs" />
     <Compile Include="KurrentDBSubscriptionTests.fs" />
@@ -24,6 +25,7 @@
     <Compile Include="HostingTests.fs" />
     <Compile Include="PostgreSqlProjectionsTests.fs" />
     <Compile Include="PostgreSqlAggregatesTests.fs" />
+    <Compile Include="OutboxPublisherTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

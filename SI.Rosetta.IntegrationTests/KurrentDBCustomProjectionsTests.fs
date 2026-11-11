@@ -7,6 +7,8 @@ open Xunit
 open FSharp.Control
 open KurrentDB.Client
 open SI.Rosetta.Persistence.KurrentDB
+open Microsoft.Extensions.Logging.Abstractions
+open SI.Rosetta.Projections
 open SI.Rosetta.Projections.KurrentDB
 
 /// Custom JS projections, as the projections host creates and updates them on startup
@@ -18,6 +20,8 @@ type KurrentDBCustomProjectionsTests(databases: Databases) =
     // Every test has a projection, a source stream and a destination stream of its own
     let Name = "Parcels" + Guid.NewGuid().ToString("N")
     let SourceStream = "parcel-" + Name
+    // Every test is an application of its own: it deletes only the custom projections it created
+    let Owner = "Tests" + Name
 
     /// A custom projection linking these events of the test's parcel stream into cp-{Name}
     let Parameters (events: Type list) : KurrentDBProjectionParameters =
@@ -28,7 +32,7 @@ type KurrentDBCustomProjectionsTests(databases: Databases) =
 
     /// What the projections host does on startup
     let Sync (logger: CapturingLogger<KurrentDBCustomJSProjectionsFactory>) (parameters: KurrentDBProjectionParameters) =
-        let factory = KurrentDBCustomJSProjectionsFactory(Configuration, logger, ManagementClient) :> IKurrentDBCustomJSProjectionsFactory
+        let factory = KurrentDBCustomJSProjectionsFactory(Configuration, logger, ManagementClient, databases.KurrentDBClient, Owner) :> IKurrentDBCustomJSProjectionsFactory
         factory.CreateCustomProjections [ parameters ]
 
     /// The one message logged
@@ -84,11 +88,20 @@ type KurrentDBCustomProjectionsTests(databases: Databases) =
             Assert.Equal("Running", details.Status)
         }
 
+    member private this.LinkedAre (parameters: KurrentDBProjectionParameters) (expected: string list) =
+        Eventually (TimeSpan.FromSeconds 30.0) (sprintf "%s links %A" parameters.DestinationStreamName expected) (fun () ->
+            task {
+                let! linked = Linked parameters
+                return linked = expected
+            })
+
     [<Fact>]
-    member this.``Starting with an unchanged definition leaves the projection, and with a changed one updates it``() =
+    member this.``Starting with an unchanged definition leaves the projection, and with a changed one links its whole history again``() =
         task {
             let registered = Parameters [ typeof<ParcelRegistered> ]
+            do! Append [ ParcelEvents.Registered { Id = Name; Recipient = "Ada" }; ParcelEvents.Readdressed { Id = Name; Recipient = "Grace" } ]
             do! Sync (CapturingLogger()) registered
+            do! this.LinkedAre registered [ "ParcelRegistered" ]
 
             let unchangedLogger = CapturingLogger()
             do! Sync unchangedLogger registered
@@ -99,13 +112,93 @@ type KurrentDBCustomProjectionsTests(databases: Databases) =
             let changedLogger = CapturingLogger()
             do! Sync changedLogger readdressedToo
 
-            Assert.Equal(sprintf "Custom projection %s UPDATED: its definition changed." readdressedToo.ProjectionName, Logged changedLogger)
+            Assert.Equal(
+                sprintf "Custom projection %s RELINKED: its definition changed, so %s is linked again from the start." readdressedToo.ProjectionName readdressedToo.DestinationStreamName,
+                Logged changedLogger)
             do! AssertStored readdressedToo
-            // The updated query runs, still emitting: it links the event the first one left out
-            do! Append [ ParcelEvents.Registered { Id = Name; Recipient = "Ada" }; ParcelEvents.Readdressed { Id = Name; Recipient = "Grace" } ]
-            do! Eventually (TimeSpan.FromSeconds 30.0) "both events are linked" (fun () ->
-                    task {
-                        let! linked = Linked readdressedToo
-                        return linked = [ "ParcelRegistered"; "ParcelReaddressed" ]
-                    })
+            // The whole history again, the event the first query left out included, then what's appended after
+            do! this.LinkedAre readdressedToo [ "ParcelRegistered"; "ParcelReaddressed" ]
+            do! Append [ ParcelEvents.Readdressed { Id = Name; Recipient = "Linus" } ]
+            do! this.LinkedAre readdressedToo [ "ParcelRegistered"; "ParcelReaddressed"; "ParcelReaddressed" ]
+            // The first query's one link is gone: the stream is truncated before it
+            let! metadata = databases.KurrentDBClient.GetStreamMetadataAsync(readdressedToo.DestinationStreamName)
+            Assert.Equal(1UL, metadata.Metadata.TruncateBefore.Value.ToUInt64())
+            let! details = ManagementClient.GetStatusAsync(readdressedToo.ProjectionName)
+            Assert.Equal("Running", details.Status)
+        }
+
+    [<Fact>]
+    member this.``A custom projection the code no longer defines is deleted with its stream, and another application's is left alone``() =
+        task {
+            let parameters = Parameters [ typeof<ParcelRegistered> ]
+            do! Append [ ParcelEvents.Registered { Id = Name; Recipient = "Ada" } ]
+            do! Sync (CapturingLogger()) parameters
+            do! this.LinkedAre parameters [ "ParcelRegistered" ]
+            // Another application's, on the same KurrentDB
+            let others = { parameters with ProjectionName = "Other" + parameters.ProjectionName; DestinationStreamName = "cp-Other" + Name }
+            let otherApplication =
+                KurrentDBCustomJSProjectionsFactory(Configuration, CapturingLogger(), ManagementClient, databases.KurrentDBClient, "Other" + Owner)
+                :> IKurrentDBCustomJSProjectionsFactory
+            do! otherApplication.CreateCustomProjections [ others ]
+
+            // Renamed: a new projection, on a new stream
+            let renamed = { parameters with ProjectionName = "Renamed" + parameters.ProjectionName; DestinationStreamName = "cp-Renamed" + Name }
+            let logger = CapturingLogger()
+            do! Sync logger renamed
+
+            Assert.Contains(
+                sprintf "Custom projection %s DELETED, with %s: the code no longer defines it." parameters.ProjectionName parameters.DestinationStreamName,
+                logger.Entries |> Seq.map snd)
+            let! projections = ManagementClient.ListAllAsync() |> TaskSeq.toListAsync
+            let names = projections |> List.map (fun projection -> projection.Name)
+            Assert.DoesNotContain(parameters.ProjectionName, names)
+            Assert.Contains(renamed.ProjectionName, names)
+            Assert.Contains(others.ProjectionName, names)
+            let! deleted = Linked parameters
+            Assert.Empty(deleted)
+            do! this.LinkedAre renamed [ "ParcelRegistered" ]
+            do! this.LinkedAre others [ "ParcelRegistered" ]
+        }
+
+    [<Fact>]
+    member this.``A projection reading a relinked or replaced stream is told its read models no longer match``() =
+        task {
+            let parameters = Parameters [ typeof<ParcelRegistered> ]
+            do! Append [ ParcelEvents.Registered { Id = Name; Recipient = "Ada" } ]
+            do! Sync (CapturingLogger()) parameters
+            do! this.LinkedAre parameters [ "ParcelRegistered" ]
+            let subscription = KurrentDBSubscription<ParcelEvents>(NullLogger<KurrentDBSubscription<ParcelEvents>>.Instance, databases.KurrentDBClient)
+            (subscription :> ISubscription<ParcelEvents>).StreamName <- parameters.DestinationStreamName
+            let history = subscription :> ISubscriptionHistory
+
+            let! handledItAll = history.ReplacedSinceAsync 1UL
+            let! pastTheEnd = history.ReplacedSinceAsync 5UL
+
+            Assert.True(handledItAll.IsNone)
+            Assert.Contains("shorter than checkpoint 5", pastTheEnd.Value)
+
+            do! Sync (CapturingLogger()) (Parameters [ typeof<ParcelRegistered>; typeof<ParcelReaddressed> ])
+            let! builtFromDeletedLinks = history.ReplacedSinceAsync 1UL
+            Assert.Contains("linked again from the start", builtFromDeletedLinks.Value)
+            do! this.LinkedAre parameters [ "ParcelRegistered" ]
+            // Rebuilt, it handled the new link (number 1): it matches
+            let! rebuilt = history.ReplacedSinceAsync 2UL
+            Assert.True(rebuilt.IsNone)
+        }
+
+    [<Fact>]
+    member this.``When the code defines no custom projection anymore, the ones it created are deleted``() =
+        task {
+            let parameters = Parameters [ typeof<ParcelRegistered> ]
+            do! Append [ ParcelEvents.Registered { Id = Name; Recipient = "Ada" } ]
+            do! Sync (CapturingLogger()) parameters
+            do! this.LinkedAre parameters [ "ParcelRegistered" ]
+            let factory = KurrentDBCustomJSProjectionsFactory(Configuration, CapturingLogger(), ManagementClient, databases.KurrentDBClient, Owner) :> IKurrentDBCustomJSProjectionsFactory
+
+            do! factory.CreateCustomProjections(Array.empty<KurrentDBProjectionParameters>)
+
+            let! projections = ManagementClient.ListAllAsync() |> TaskSeq.toListAsync
+            Assert.DoesNotContain(parameters.ProjectionName, projections |> List.map (fun projection -> projection.Name))
+            let! linked = Linked parameters
+            Assert.Empty(linked)
         }

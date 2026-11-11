@@ -55,6 +55,7 @@ Other attributes on the Projection type:
 | Attribute | Effect |
 |---|---|
 | `[<ProjectionVersion(n)>]` | The read models' version: bump it to [rebuild](#rebuilding-a-projection) them. None = 0. |
+| `[<RebuildWithoutClearing>]` | A [rebuild](#rebuilding-a-projection) empties nothing: every Handler overwrites whole documents or rows. Lets a Projection that can be rebuilt declare no `IProjectInto`. |
 | `[<SkipUnknownEvents>]` | An event its DU has no case for is logged and skipped instead of stopping the Projection. See [Event evolution](event-evolution.md#unknown-events). |
 | `[<DisabledProjection>]` | The Projection doesn't run, even when registered by name. |
 
@@ -188,7 +189,16 @@ type PersonProjection() =
 ```
 
 - Without the attribute the version is 0, so the first `ProjectionVersion(1)` rebuilds too.
+- A Projection of a [Custom Projection](custom-projections.md#the-projections-that-read-it)'s `cp-` stream is also
+  rebuilt, without a version bump, when the stream was linked again from the start (its definition changed) or replaced
+  (renamed, deleted): its checkpoint is then in links that are gone, or past the stream's end. It logs a Warning,
+  "Projection {Name} is REBUILT: {reason}. …".
 - The read models are emptied before the checkpoint is reset, so a crash in between empties them again.
+- A Projection that can be rebuilt (a `ProjectionVersion` above 0, or a `cp-` stream) must declare its read models with
+  `IProjectInto`: replaying its stream over read models nothing emptied would apply every event twice, so registering
+  it fails ("Projection {P} can be rebuilt (…), but declares no read models to empty first …"), and so does starting
+  one created without registration. `[<RebuildWithoutClearing>]` allows it when every Handler only overwrites whole
+  documents or rows, so a replay gives what a fresh start would.
 - A read model belongs to one Projection: two that declare the same one fail at registration, so rebuilding one never
   empties the other's.
 - Until it has caught up, a rebuilt Projection's read models are partial.

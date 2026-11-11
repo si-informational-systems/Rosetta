@@ -10,6 +10,7 @@ description: Every configuration key Rosetta reads, with defaults, and every def
 | Key | Required | Default | |
 |---|---|---|---|
 | `KurrentDB:ConnectionString` | with KurrentDB | — | `kurrentdb://host:2113?tls=false`; also used for the HTTP API |
+| `KurrentDB:CustomProjectionsOwner` | no | the host's `ApplicationName`, else the entry assembly's name | whose [Custom Projections](../concepts/custom-projections.md#which-projections-an-application-owns) these are: only its own are deleted |
 | `RavenDB:Urls` | with RavenDB | — | `;`-separated |
 | `RavenDB:DatabaseName` | with RavenDB | — | created when missing |
 | `RavenDB:CertificatePath` | no | — | a PKCS#12 client certificate |
@@ -25,6 +26,8 @@ description: Every configuration key Rosetta reads, with defaults, and every def
 | `Outbox:CollectionName` | no | `Outbox` | in PostgreSQL, the table `rosetta.{snake_case}` |
 | `Outbox:EventTTLMinutes` | no | kept until deleted | positive number |
 | `Outbox:ExpirationFrequencyMinutes` | no | `2160` (36 h) | RavenDB and PostgreSQL |
+| `Outbox:PublishBatchSize` | no | `100` | with a publisher; a positive whole number |
+| `Outbox:PublishPollIntervalMilliseconds` | no | `1000` | with a publisher; a positive whole number |
 
 ## Defaults in code
 
@@ -36,7 +39,9 @@ description: Every configuration key Rosetta reads, with defaults, and every def
 | Store retries outside a Projection's transaction | RavenDB 3 × 100 ms, MongoDB 3 × 50 ms, PostgreSQL 3 × 100 ms, on transient errors | — |
 | MongoDB commit retries | 3 attempts on `UnknownTransactionCommitResult` | — |
 | RavenDB rebuild (delete by query) timeout | 5 min | — |
-| KurrentDB HTTP API timeout (Custom Projection definitions) | 10 s | — |
+| KurrentDB HTTP API timeout (Custom Projection definitions and deletions) | 10 s | — |
+| Outbox publisher lease | 30 s, renewed before every batch; others check every 15 s | `OutboxOptions.PublishLeaseDuration` |
+| Outbox publisher retries | 1, 2, 4, 8, 16, then 30 s; Critical at the 5th failure in a row | — |
 | Health check name | `rosetta-projections` | `AddRosettaProjections(name, tags)` |
 | Option format written in events | `Plain` (the value or `null`) | `EventEncoding.WriteOptionsAs <- OptionFormat.Newtonsoft` |
 
@@ -56,5 +61,8 @@ description: Every configuration key Rosetta reads, with defaults, and every def
 | PostgreSQL column | snake_case of the field, or `[<Column>]` | `SessionDate` → `session_date` |
 | PostgreSQL checkpoints | `rosetta.checkpoints` | |
 | PostgreSQL Outbox | `rosetta.` + snake_case of `Outbox:CollectionName` | `Outbox` → `rosetta.outbox` |
+| Outbox publisher's lease | RavenDB `OutboxLeases/{CollectionName}`; MongoDB collection `OutboxLeases`, `_id` = `CollectionName`; PostgreSQL a row of `rosetta.outbox_leases` | `OutboxLeases/Outbox` |
+| Snapshot stream (`[<Snapshot>]`) | `RosettaSnapshots-` + the Aggregate's `Id` | `RosettaSnapshots-People-1` |
+| Custom Projections an application defined | `RosettaCustomProjections-` + `KurrentDB:CustomProjectionsOwner` or the application's name | `RosettaCustomProjections-People.Projections` |
 | Custom Projection in KurrentDB | stream without `cp-` + `CustomProjection` | `cp-Totals` → `TotalsCustomProjection` |
 | Stream constant for a Custom Projection | `{Aggregate}Stream` | `PersonStream` |

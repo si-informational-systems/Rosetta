@@ -25,7 +25,7 @@ For a specific question, start from: [Recipes](guides/recipes.md) (how do I…),
 Paste into the application's `CLAUDE.md` / `AGENTS.md`, adjusting the version:
 
 ```markdown
-## Rosetta (SI.Rosetta.* 1.36)
+## Rosetta (SI.Rosetta.* 1.37)
 
 This app's domain and read models are built on Rosetta (F# DDD + Event Sourcing + CQRS projections).
 Docs: https://si-informational-systems.github.io/Rosetta/ — fetch /llms-full.txt for the whole reference
@@ -62,33 +62,44 @@ Breaking one of these compiles fine and fails at runtime, or corrupts data later
     `{Aggregate}DoesNotExist`).
 11. Ids are `{PluralCategory}-{id}`: the id is the KurrentDB stream.
 12. Resolve a fresh handler per command; retry `ConcurrencyException` with a fresh one.
+13. A state with `[<Snapshot(n)>]` keeps everything in public `member val … with get, set` properties (no
+    `let mutable`, no private setters); raise the attribute's `Version` when `ApplyEvent` changes what it builds.
+
+**Outbox**
+
+14. Integration events go to the outside world through an `IOutboxPublisher` registered with `UseOutboxPublisher`
+    (next to `UseOutboxWith`). `PublishAsync` returns only once the broker has the event (publisher confirms), and
+    sends the event's `Id` as the message id; consumers dedupe on it (delivery is at least once).
 
 **Projections**
 
-13. A Projection inherits `Projection<'TEvents>`, has exactly one `[<HandlesStream("$ce-…")>]`, one
+15. A Projection inherits `Projection<'TEvents>`, has exactly one `[<HandlesStream("$ce-…")>]`, one
     `IAmHandledBy<Handler, 'TEvents>` per Handler (same DU), and one `IProjectInto<ReadModel>` per read model it owns.
-14. Handlers write read models only through `INoSqlStore`/`ISqlStore`, never a raw database session (that escapes the
+16. Handlers write read models only through `INoSqlStore`/`ISqlStore`, never a raw database session (that escapes the
     event's transaction and makes retries double-apply). A Handler takes one store kind; never both.
-15. Updates are load → change → store; check `isNull (box x)` after `LoadAsync`.
-16. Side effects in Handlers (commands, messages, HTTP) must be idempotent: a failed event is handled again.
-17. Changing what a Handler writes into existing read models requires bumping `[<ProjectionVersion(n)>]`.
-18. Document read models (RavenDB/MongoDB) have a single string `Id`; composite `[<Key>]`s are PostgreSQL only.
-19. PostgreSQL tables (read models, and the states of state-based Aggregates) are created by the app's migrations
+17. Updates are load → change → store; check `isNull (box x)` after `LoadAsync`.
+18. Side effects in Handlers (commands, messages, HTTP) must be idempotent: a failed event is handled again.
+19. Changing what a Handler writes into existing read models requires bumping `[<ProjectionVersion(n)>]`. A Projection
+    with a version above 0, or reading a `cp-` stream, must declare its read models with `IProjectInto` (registration
+    fails otherwise); `[<RebuildWithoutClearing>]` only when every Handler overwrites whole documents or rows.
+20. Document read models (RavenDB/MongoDB) have a single string `Id`; composite `[<Key>]`s are PostgreSQL only.
+21. PostgreSQL tables (read models, and the states of state-based Aggregates) are created by the app's migrations
     (Rosetta only checks them): a column per field, `not null` unless `option`, a primary key on exactly the key columns.
-20. Custom Projection streams start with `cp-`; the Projections assembly has a `{Aggregate}Stream` literal for each
-    source Aggregate.
+22. Custom Projection streams start with `cp-`; the Projections assembly has a `{Aggregate}Stream` literal for each
+    source Aggregate. The Projections of a `cp-` stream run in the application that defines its Custom Projection;
+    renaming a `cp-` stream also bumps their `[<ProjectionVersion>]`.
 
 **Tests**
 
-21. Aggregates: `TestKitBase<Handler>`; `Given(events…)`, `When(command)`, then exactly one of `Then(events…)`,
+23. Aggregates: `TestKitBase<Handler>`; `Given(events…)`, `When(command)`, then exactly one of `Then(events…)`,
     `Then(produced, published)`, `ThenNoEvents()`, `ThenError("Name")`. Commands need `Id: string`.
-22. Projections: `TestKitBase<Projection, Handler, Events>`; `do! this.Given(…)`, `do! this.Then(expectedReadModel)`;
+24. Projections: `TestKitBase<Projection, Handler, Events>`; `do! this.Given(…)`, `do! this.Then(expectedReadModel)`;
     override `ConfigureServices` for a Projection's other Handlers.
-23. Test projects are xUnit v3 executables (`<OutputType>Exe</OutputType>`).
+25. Test projects are xUnit v3 executables (`<OutputType>Exe</OutputType>`).
 
 **Deployment**
 
-24. A new event: deploy the Projections that read it before the Aggregates that write it.
+26. A new event: deploy the Projections that read it before the Aggregates that write it.
 
 ## Where things are decided
 
@@ -97,6 +108,8 @@ Breaking one of these compiles fine and fails at runtime, or corrupts data later
 | Event-sourced or state-based? | [Aggregates → Choosing](concepts/aggregates.md#choosing) |
 | Documents or PostgreSQL? | [Projections → Choosing the store](concepts/projections.md#choosing-the-store) |
 | What does a failure do at runtime? | [Projections at runtime](concepts/projections.md#projections-at-runtime) |
+| How do integration events reach the broker? | [Outbox → Publishing the events](concepts/outbox.md#publishing-the-events) |
+| When does a Custom Projection relink, or a Projection rebuild? | [Custom Projections → Deployment](concepts/custom-projections.md#how-the-javascript-projections-are-deployed) |
 | Which package goes where? | [Installation](getting-started/installation.md) |
 | How is a name derived (stream, collection, table, checkpoint)? | [Configuration reference → Names](reference/configuration.md#names-rosetta-derives) |
 

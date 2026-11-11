@@ -5,6 +5,7 @@ open System.Collections.Generic
 open System.Threading.Tasks
 open Microsoft.Extensions.DependencyInjection
 open Xunit
+open SI.Rosetta.Common
 open SI.Rosetta.Projections
 open SI.Rosetta.Projections.TestKit
 
@@ -286,3 +287,85 @@ type ProjectionVersionTests() =
 
     interface IDisposable with
         member _.Dispose() = Services.Dispose()
+
+/// Subscriptions whose stream says the read models built up to a checkpoint no longer match it, from checkpoint on
+type ReplacingSubscriptionFactory(replacedUpTo: uint64) =
+    interface ISubscriptionFactory with
+        member _.Create<'TEvent when 'TEvent :> IAggregateEvents>() =
+            let mutable name = ""
+            let mutable stream = ""
+            let mutable received: 'TEvent * uint64 -> Task<unit> = fun _ -> Task.FromResult()
+            let mutable skip = false
+            { new ISubscription<'TEvent> with
+                member _.Name with get () = name and set value = name <- value
+                member _.StreamName with get () = stream and set value = stream <- value
+                member _.StartAsync(_, _) = Task.CompletedTask
+                member _.EventReceived with get () = received and set value = received <- value
+                member _.SkipUnknownEvents with get () = skip and set value = skip <- value
+              interface ISubscriptionHistory with
+                member _.ReplacedSinceAsync(checkpoint) =
+                    Task.FromResult(if checkpoint > 0UL && checkpoint <= replacedUpTo then Some "cp-Organizations was linked again" else None) }
+
+/// A projection whose stream was replaced under it (a custom projection's cp- stream linked again) is rebuilt
+type ReplacedStreamTests() =
+    let Stored = Dictionary<string, Checkpoint>()
+    let Cleared = List<string>()
+
+    let Services (replacedUpTo: uint64) =
+        let store = TestKitProjectionStore()
+        ServiceCollection()
+            .AddSingleton<INoSqlStore>(store)
+            .AddSingleton<IProjectionsUnitOfWork>(
+                { new IProjectionsUnitOfWork with
+                    member _.PrepareAsync(_) = Task.CompletedTask
+                    member _.BeginAsync() = (store :> IProjectionsUnitOfWork).BeginAsync()
+                    member _.ClearAsync(readModels) =
+                        Cleared.AddRange(readModels |> Array.map (fun readModel -> readModel.Name))
+                        Task.CompletedTask })
+            .AddSingleton<ICheckpointStore>(
+                { new ICheckpointStore with
+                    member _.ReadAsync(id) =
+                        Task.FromResult(
+                            match Stored.TryGetValue id with
+                            | true, checkpoint -> checkpoint
+                            | false, _ -> Checkpoint(Id = id))
+                    member _.StoreAsync(checkpoint) =
+                        Stored.[checkpoint.Id] <- checkpoint
+                        Task.CompletedTask })
+            .AddSingleton<ISubscriptionFactory>(ReplacingSubscriptionFactory(replacedUpTo))
+            .AddTransient<IProjectionHandlerFactory, ProjectionHandlerFactory>()
+            .AddTransient<IProjectionsFactory, ProjectionsFactory>()
+            .AddTransient<OrganizationProjectionHandler>()
+            .BuildServiceProvider()
+
+    let Create (replacedUpTo: uint64) =
+        task {
+            use services = Services replacedUpTo
+            return! services.GetRequiredService<IProjectionsFactory>().CreateAsync(typeof<VersionedOrganizationProjection>)
+        }
+
+    let StoredAt (value: uint64) =
+        Stored.["Checkpoints-VersionedOrganization"] <- Checkpoint(Id = "Checkpoints-VersionedOrganization", Value = value, Version = 2)
+
+    [<Fact>]
+    member this.``A projection built from links its stream no longer holds empties its read models and starts from the beginning``() =
+        task {
+            StoredAt 42UL
+
+            let! projection = Create 42UL
+
+            Assert.Equal<string>([ "Organization" ], Cleared)
+            Assert.Equal((0UL, 2), (projection.Checkpoint.Value, projection.Checkpoint.Version))
+            Assert.Equal(0UL, Stored.["Checkpoints-VersionedOrganization"].Value)
+        }
+
+    [<Fact>]
+    member this.``A projection past the replacement continues from its checkpoint``() =
+        task {
+            StoredAt 43UL
+
+            let! projection = Create 42UL
+
+            Assert.Empty(Cleared)
+            Assert.Equal(43UL, projection.Checkpoint.Value)
+        }

@@ -34,8 +34,8 @@ type PersonAggregateState() =
 - `Id` and `Version` come from the base class. `Version` is the number of events applied (0 = doesn't exist yet).
 - `ApplyEvent` only assigns. No validation, no exceptions: events are facts, and replaying old events must always
   work. Set `Id` in the creating event.
-- State-based Aggregates are stored as this object (a RavenDB or MongoDB document, or a row of a PostgreSQL table), so
-  keep its properties serializable: `member val … with get, set`.
+- State-based Aggregates are stored as this object (a RavenDB or MongoDB document, or a row of a PostgreSQL table), and
+  so are [snapshots](#snapshots), so keep its properties serializable: `member val … with get, set`.
 
 ## Aggregate
 
@@ -155,6 +155,35 @@ The Aggregate's handler constructor decides how it's stored.
   there first, it throws `ConcurrencyException`; run the command again (it reloads the state).
 - Event data is the record as JSON; metadata carries the stored name, CLR type names and the trace context. See
   [Stored format](../reference/stored-format.md).
+
+#### Snapshots
+
+A long-lived Aggregate (thousands of events) loads faster from a snapshot of its state. Opt in on the state type:
+
+```fsharp
+[<Snapshot(100)>]   // every 100 events; [<Snapshot(100, Version = 2)>] ignores the snapshots taken before
+type AccountAggregateState() =
+    inherit AggregateState<AccountEvents>()
+    member val Balance = 0m with get, set
+    member val Overdrawn = false with get, set
+    override this.ApplyEvent(ev) = …
+```
+
+- **Taken** after the command's events are appended, whenever the command takes the Aggregate's `Version` to or past a multiple of `Every`,
+  into the stream `RosettaSnapshots-{Id}`: its own category, so no `$ce-…` stream and no Projection sees it. Only the
+  latest is kept (`$maxCount` 1). A snapshot that fails to be written is logged as a Warning; the command stands.
+- **Loaded**: the latest snapshot, then only the events after it (through the upcasters). It's ignored, and the whole
+  stream read, when it no longer fits: the state's public settable properties (names and types) or the `[<Snapshot>]`
+  `Version` changed, or the event it ends with isn't in the stream where it was (a deleted or rewritten stream).
+  Optimistic concurrency is unchanged.
+- **Raise `Version`** when `ApplyEvent` changes what it builds from the same events: the old snapshots would hold what
+  the old code built.
+- **The state must round-trip as JSON** (`EventEncoding.JsonOptions`): public properties with public setters
+  (`member val X = … with get, set`). A `let mutable` field or a private setter would be lost, so the first load of the
+  state type fails with `InvalidOperationException`: "{State} can't be snapshotted: a snapshot would lose {names}. …".
+  Computed get-only properties are fine.
+- Only for Aggregates with long streams: a short stream loads as fast without, and every snapshot is one more write.
+  `KurrentDBAggregateRepository.SnapshotStreamOf id` names the stream.
 
 ### State-based: RavenDB, MongoDB or PostgreSQL
 

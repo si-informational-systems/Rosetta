@@ -17,6 +17,7 @@ graph LR
     H -->|events| K[(KurrentDB)]
     H -->|state| S[(RavenDB / MongoDB)]
     H -->|PublishedEvents| O[(Outbox)]
+    O -->|publisher| B[Message broker]
     K -->|subscription| P[Projection Handlers]
     P -->|read models| R[(RavenDB / MongoDB / PostgreSQL)]
     R -->|queries| API
@@ -27,10 +28,10 @@ graph LR
 | Feature | |
 |---|---|
 | **Aggregates** | State, behavior and a handler per Aggregate; idempotency, optimistic concurrency and named business errors built in. [Aggregates](concepts/aggregates.md) |
-| **Event Sourcing** | Events stored in KurrentDB, one stream per Aggregate; or **state-based** Aggregates in RavenDB, MongoDB or your own PostgreSQL tables; or both in one service. |
-| **Outbox** | The integration events an Aggregate publishes, recorded with its state for publishing to the outside world. [Outbox](concepts/outbox.md) |
+| **Event Sourcing** | Events stored in KurrentDB, one stream per Aggregate, with opt-in snapshots for long-lived ones; or **state-based** Aggregates in RavenDB, MongoDB or your own PostgreSQL tables; or both in one service. |
+| **Outbox** | The integration events an Aggregate publishes, recorded with its state, and published to your broker in order, at least once, from one instance at a time. [Outbox](concepts/outbox.md) |
 | **Projections** | KurrentDB subscriptions that keep read models in RavenDB, MongoDB or your own **PostgreSQL** tables, one transaction per event. [Projections](concepts/projections.md) |
-| **Custom Projections** | Cross-Aggregate streams, deployed to KurrentDB as JavaScript projections for you. [Custom Projections](concepts/custom-projections.md) |
+| **Custom Projections** | Cross-Aggregate streams, deployed to KurrentDB as JavaScript projections for you: relinked when they change, deleted when they're gone, and their consumers rebuilt. [Custom Projections](concepts/custom-projections.md) |
 | **Event evolution** | Stable event names, upcasters, and a clear policy for unknown events. [Event evolution](concepts/event-evolution.md) |
 | **Hosting** | One line on `IHostBuilder`, `IHostApplicationBuilder` or `IServiceCollection`, from F# or C#. [Registration](concepts/registration.md) |
 | **Observability** | OpenTelemetry traces and metrics, one trace from a request to every read model. [Observability](concepts/observability.md) |

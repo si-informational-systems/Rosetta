@@ -3,6 +3,7 @@ namespace SI.Rosetta.Projections.UnitTests
 open System
 open System.ComponentModel.DataAnnotations
 open System.Threading.Tasks
+open Microsoft.Extensions.DependencyInjection
 open Xunit
 open SI.Rosetta.Projections
 open SI.Rosetta.Projections.TestKit
@@ -40,8 +41,72 @@ type MixedOrganizationProjection() =
     interface IAmHandledBy<SqlOrganizationHandler, OrganizationEvents>
     interface IAmHandledBy<DocumentOrganizationHandler, OrganizationEvents>
 
+[<HandlesStream(ProjectionStreamNames.OrganizationStream); DisabledProjection; ProjectionVersion(2)>]
+type VersionedWithoutReadModelsProjection() =
+    inherit Projection<OrganizationEvents>()
+    interface IAmHandledBy<NoStoreOrganizationHandler, OrganizationEvents>
+
+[<HandlesStream("cp-OrganizationTotals"); DisabledProjection>]
+type CustomStreamWithoutReadModelsProjection() =
+    inherit Projection<OrganizationEvents>()
+    interface IAmHandledBy<NoStoreOrganizationHandler, OrganizationEvents>
+
+[<HandlesStream("cp-OrganizationTotals"); DisabledProjection; ProjectionVersion(2); RebuildWithoutClearing>]
+type OverwritingProjection() =
+    inherit Projection<OrganizationEvents>()
+    interface IAmHandledBy<NoStoreOrganizationHandler, OrganizationEvents>
+
+[<HandlesStream(ProjectionStreamNames.OrganizationStream); DisabledProjection; ProjectionVersion(0)>]
+type UnversionedWithoutReadModelsProjection() =
+    inherit Projection<OrganizationEvents>()
+    interface IAmHandledBy<NoStoreOrganizationHandler, OrganizationEvents>
+
 /// Which store a projection writes to, and the read models' keys
 type ProjectionReadModelsTests() =
+    [<Fact>]
+    member this.``A projection that can be rebuilt must declare its read models``() =
+        let versioned = Assert.Throws<InvalidOperationException>(fun () ->
+            ProjectionReadModels.CheckRebuildable [ typeof<VersionedWithoutReadModelsProjection> ])
+        let customStream = Assert.Throws<InvalidOperationException>(fun () ->
+            ProjectionReadModels.CheckRebuildable [ typeof<CustomStreamWithoutReadModelsProjection> ])
+
+        Assert.Contains("it has [<ProjectionVersion(2)>]", versioned.Message)
+        Assert.Contains("IProjectInto", versioned.Message)
+        Assert.Contains("it reads cp-OrganizationTotals", customStream.Message)
+
+    [<Fact>]
+    member this.``A projection rebuilt with nothing to empty doesn't start, and its checkpoint stays``() =
+        task {
+            let mutable stored = Checkpoint(Id = "Checkpoints-VersionedWithoutReadModels", Value = 42UL, Version = 1)
+            use services =
+                let store = TestKitProjectionStore()
+                ServiceCollection()
+                    .AddSingleton<INoSqlStore>(store)
+                    .AddSingleton<IProjectionsUnitOfWork>(store)
+                    .AddSingleton<ICheckpointStore>(
+                        { new ICheckpointStore with
+                            member _.ReadAsync(_) = Task.FromResult stored
+                            member _.StoreAsync(checkpoint) =
+                                stored <- checkpoint
+                                Task.CompletedTask })
+                    .AddTransient<ISubscriptionFactory, TestKitSubscriptionFactory>()
+                    .AddTransient<IProjectionHandlerFactory, ProjectionHandlerFactory>()
+                    .AddTransient<IProjectionsFactory, ProjectionsFactory>()
+                    .AddTransient<NoStoreOrganizationHandler>()
+                    .BuildServiceProvider()
+
+            let! refused = Assert.ThrowsAsync<InvalidOperationException>(fun () ->
+                services.GetRequiredService<IProjectionsFactory>().CreateAsync(typeof<VersionedWithoutReadModelsProjection>) :> Task)
+
+            Assert.Contains("its [<ProjectionVersion>] went from 1 to 2", refused.Message)
+            Assert.Equal((42UL, 1), (stored.Value, stored.Version))
+        }
+
+    [<Fact>]
+    member this.``A projection that declares its read models, rebuilds without clearing, or can't be rebuilt passes``() =
+        ProjectionReadModels.CheckRebuildable
+            [ typeof<SqlOrganizationProjection>; typeof<OverwritingProjection>; typeof<UnversionedWithoutReadModelsProjection> ]
+
     [<Fact>]
     member this.``A projection whose handlers take ISqlStore writes to PostgreSQL``() =
         Assert.Equal(ProjectionStoreKinds.Sql, ProjectionStoreKinds.Of typeof<SqlOrganizationProjection>)

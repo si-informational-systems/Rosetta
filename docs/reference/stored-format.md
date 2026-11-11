@@ -69,9 +69,15 @@ The same stored name and data, in a document per event (see [Outbox](../concepts
   "Data": "{\"Id\":\"People-1\",\"Name\":\"Ada\"}",
   "RecordedAt": "2026-11-11T10:15:00Z",
   "TraceParent": "00-…",
-  "TraceState": null
+  "TraceState": null,
+  "PublishedAt": null
 }
 ```
+
+`PublishedAt` is set when the Outbox's [publisher](../concepts/outbox.md#publishing-the-events) has published the
+event; until then it's `null`. A document recorded before the publisher was registered has no `PublishedAt` at all,
+and isn't published (RavenDB, MongoDB). With `EventTTLMinutes` and a publisher, the expiry (`@expires` in RavenDB,
+`expiresAt` in MongoDB) is set when the event is published. MongoDB writes the fields in camelCase (`publishedAt`).
 
 In PostgreSQL, a row of `rosetta.outbox` (`rosetta.` and the snake_case of `Outbox:CollectionName`), which the Outbox
 creates:
@@ -86,12 +92,54 @@ create table rosetta.outbox (
     event_type text not null,
     data json not null,              -- json, not jsonb: the record's JSON text exactly as KurrentDB stores it
     recorded_at timestamptz not null,
-    expires_at timestamptz,          -- with Outbox:EventTTLMinutes; a partial index covers it
+    expires_at timestamptz,          -- with Outbox:EventTTLMinutes (null until published, with a publisher); a partial index covers it
     trace_parent text,
-    trace_state text);
+    trace_state text,
+    published_at timestamptz);       -- set by the publisher; a partial index on (recorded_at, position) where it's null
+```
+
+`published_at` is added to a table created without it (`alter table … add column if not exists`). The publisher's
+lease is a row of a table the Outbox also creates:
+
+```sql
+create table rosetta.outbox_leases (name text primary key, owner text not null, expires_at timestamptz not null);
 ```
 
 `EventEncoding.Decode<PersonEvents> upcasters recorded.EventType recorded.Data` reads it back.
+
+## The Outbox publisher's lease
+
+| Store | Where | Fields |
+|---|---|---|
+| RavenDB | document `OutboxLeases/{CollectionName}` | `Owner`, `ExpiresAt` |
+| MongoDB | collection `OutboxLeases`, `_id` = `CollectionName` | `owner`, `expiresAt` |
+| PostgreSQL | `rosetta.outbox_leases`, `name` = the Outbox table's name (`outbox`) | `owner`, `expires_at` |
+
+The owner is the instance publishing, `{machine name}/{a GUID per process}`.
+
+## A snapshot
+
+An event-sourced Aggregate whose state has [`[<Snapshot(n)>]`](../concepts/aggregates.md#snapshots):
+
+| | |
+|---|---|
+| Stream | `RosettaSnapshots-{Id}` (`RosettaSnapshots-People-1`), with `$maxCount` 1 |
+| Event type | `RosettaSnapshot` |
+| Data | the state as JSON (`EventEncoding.JsonOptions`): its public settable properties, `Id` and `Version` included |
+| Metadata | `Version` (the Aggregate's version it's the state at), `Fingerprint` (of the state's shape and the `[<Snapshot>]` `Version`), `LastEventId` (the id of the last event it covers) |
+
+```json title="metadata"
+{"Version":200,"Fingerprint":"3F1A9C0B7D2E4F61","LastEventId":"5b4e5a1c-6f0e-4c39-9f3e-7f1c1d1e2a01"}
+```
+
+## Custom Projections an application defined
+
+The stream `RosettaCustomProjections-{owner}` (`$maxCount` 10), one `CustomProjectionsDefined` event each time the set
+changes; its data lists each projection's name and `cp-` stream:
+
+```json title="data"
+[{"Name":"TotalPeopleAndOrganizationsCustomProjection","Stream":"cp-TotalPeopleAndOrganizations"}]
+```
 
 ## State-based Aggregates
 

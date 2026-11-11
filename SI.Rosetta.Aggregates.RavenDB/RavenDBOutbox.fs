@@ -27,19 +27,39 @@ type RavenDBOutboxEvent =
       Data: string
       RecordedAt: DateTime
       TraceParent: string
-      TraceState: string }
+      TraceState: string
+      /// When the outbox's publisher published it; null until then
+      PublishedAt: Nullable<DateTime> }
+
+/// The lease of the outbox's publisher: one instance of the app publishes at a time
+[<CLIMutable>]
+type RavenDBOutboxLease = { Id: string; Owner: string; ExpiresAt: DateTime }
 
 /// Records the events as {CollectionName}/{Id} documents of the CollectionName collection, all of one command's in one
 /// transaction, skipping the ones it already holds. With a TTL, each document expires through its @expires metadata,
-/// so the TTL is in the documents and changing it changes only the events recorded from then on
+/// so the TTL is in the documents and changing it changes only the events recorded from then on. With a publisher, the
+/// @expires is set when the event is published. The publisher's lease is OutboxLeases/{CollectionName}
 type RavenDBOutbox(store: IDocumentStore, options: OutboxOptions, logger: ILogger<RavenDBOutbox>) =
     let CollectionName = options.CollectionName
     let EventTTL = Option.ofNullable options.EventTTL
     let ExpirationFrequency = options.ExpirationFrequency
     let mutable ExpirationChecked = EventTTL.IsNone
     let CheckingExpiration = new SemaphoreSlim(1, 1)
+    let LeaseId = sprintf "OutboxLeases/%s" CollectionName
 
     let DocumentIdOf (event: OutboxEvent) = sprintf "%s/%O" CollectionName event.Id
+
+    let EventOf (document: RavenDBOutboxEvent) : OutboxEvent =
+        { Id = Guid.Parse(document.Id.Substring(CollectionName.Length + 1))
+          Aggregate = document.Aggregate
+          AggregateId = document.AggregateId
+          Version = document.Version
+          Position = document.Position
+          EventType = document.EventType
+          Data = document.Data
+          RecordedAt = DateTime.SpecifyKind(document.RecordedAt, DateTimeKind.Utc)
+          TraceParent = document.TraceParent
+          TraceState = document.TraceState }
 
     /// Without a logger: a licence that refuses the expiration frequency goes unreported
     new(store: IDocumentStore, options: OutboxOptions) = RavenDBOutbox(store, options, NullLogger<RavenDBOutbox>.Instance)
@@ -105,14 +125,39 @@ type RavenDBOutbox(store: IDocumentStore, options: OutboxOptions, logger: ILogge
                       Data = event.Data
                       RecordedAt = event.RecordedAt
                       TraceParent = event.TraceParent
-                      TraceState = event.TraceState }
+                      TraceState = event.TraceState
+                      PublishedAt = Nullable() }
                 // An empty change vector: saved only while no document has the id
                 do! session.StoreAsync(document, String.Empty, document.Id).ConfigureAwait(false)
                 let metadata = session.Advanced.GetMetadataFor(document)
                 metadata.[Constants.Documents.Metadata.Collection] <- box CollectionName
-                EventTTL |> Option.iter (fun ttl ->
-                    metadata.[Constants.Documents.Metadata.Expires] <- box (event.RecordedAt.Add ttl))
+                // Waiting to be published, it doesn't expire
+                if not options.ExpiresFromPublication then
+                    EventTTL |> Option.iter (fun ttl ->
+                        metadata.[Constants.Documents.Metadata.Expires] <- box (event.RecordedAt.Add ttl))
             return missing
+        }
+
+    /// The lease, taken or renewed when it's free, expired or already the owner's. Saved on the change vector it was
+    /// read with (none: while there's none), so of two instances taking it at once, one fails
+    member private this.LeaseAsync(owner: string, duration: TimeSpan) : Task<bool> =
+        task {
+            use session = store.OpenAsyncSession()
+            let! current = session.LoadAsync<RavenDBOutboxLease>(LeaseId).ConfigureAwait(false)
+            let now = DateTime.UtcNow
+            let free = isNull (box current) || current.Owner = owner || current.ExpiresAt < now
+            if not free then return false
+            else
+                let changeVector = if isNull (box current) then String.Empty else session.Advanced.GetChangeVectorFor(current)
+                // Stored as a new object: the session tracks the one it loaded
+                if not (isNull (box current)) then session.Advanced.Evict(current)
+                let lease = { Id = LeaseId; Owner = owner; ExpiresAt = now.Add duration }
+                do! session.StoreAsync(lease, changeVector, LeaseId).ConfigureAwait(false)
+                try
+                    do! session.SaveChangesAsync().ConfigureAwait(false)
+                    return true
+                with :? Raven.Client.Exceptions.ConcurrencyException ->
+                    return false
         }
 
     interface IOutbox with
@@ -129,3 +174,41 @@ type RavenDBOutbox(store: IDocumentStore, options: OutboxOptions, logger: ILogge
                                 conflict))
                 return recorded.Length
             }
+
+    interface IOutboxRelayStore with
+        member this.TryLeaseAsync(owner, duration, _cancellationToken) = this.LeaseAsync(owner, duration)
+
+        /// PublishedAt null, not missing: the documents of an outbox that had no publisher before (published by the app
+        /// itself) aren't published again. The query waits for the index, so it sees every event recorded before it
+        member this.UnpublishedAsync(max, cancellationToken) =
+            task {
+                use session = store.OpenAsyncSession()
+                let! documents =
+                    session.Advanced.AsyncDocumentQuery<RavenDBOutboxEvent>(null, CollectionName, false)
+                        .WaitForNonStaleResults()
+                        .WhereEquals("PublishedAt", null)
+                        .OrderBy("RecordedAt", OrderingType.String)
+                        .OrderBy("Position", OrderingType.Long)
+                        .Take(max)
+                        .ToListAsync(cancellationToken).ConfigureAwait(false)
+                return documents |> Seq.map EventOf |> Seq.toArray
+            }
+
+        member this.MarkPublishedAsync(events, publishedAt, cancellationToken) =
+            task {
+                if events.Length > 0 then
+                    do! this.EnsureExpirationAsync().ConfigureAwait(false)
+                    use session = store.OpenAsyncSession()
+                    let! documents = session.LoadAsync<RavenDBOutboxEvent>(events |> Array.map DocumentIdOf, cancellationToken).ConfigureAwait(false)
+                    for KeyValue(_, document) in documents do
+                        if not (isNull (box document)) then
+                            // A record is immutable: the published one replaces it
+                            session.Advanced.Evict(document)
+                            let published = { document with PublishedAt = Nullable publishedAt }
+                            do! session.StoreAsync(published, published.Id, cancellationToken).ConfigureAwait(false)
+                            let metadata = session.Advanced.GetMetadataFor(published)
+                            metadata.[Constants.Documents.Metadata.Collection] <- box CollectionName
+                            EventTTL |> Option.iter (fun ttl ->
+                                metadata.[Constants.Documents.Metadata.Expires] <- box (publishedAt.Add ttl))
+                    do! session.SaveChangesAsync(cancellationToken).ConfigureAwait(false)
+            } :> Task

@@ -4,6 +4,7 @@ open System
 open System.Diagnostics
 open System.Security.Cryptography
 open System.Text
+open System.Threading
 open System.Threading.Tasks
 open SI.Rosetta.Common
 
@@ -23,6 +24,17 @@ type OutboxOptions() =
     /// often, at most, the outbox deletes the expired events itself, once it has recorded events. MongoDB's TTL monitor
     /// deletes the expired documents every 60 seconds by itself
     member val ExpirationFrequency = OutboxOptions.DefaultExpirationFrequency with get, set
+    /// With a publisher (UseOutboxPublisher): how many events it reads at a time (Outbox:PublishBatchSize; 100)
+    member val PublishBatchSize = 100 with get, set
+    /// With a publisher: how long it waits before looking again when there's nothing to publish
+    /// (Outbox:PublishPollIntervalMilliseconds; 1 second)
+    member val PublishPollInterval = TimeSpan.FromSeconds 1.0 with get, set
+    /// With a publisher: how long its lease lasts unless renewed. One instance of the app publishes at a time, the one
+    /// holding the lease; another takes over once it expires (30 seconds)
+    member val PublishLeaseDuration = TimeSpan.FromSeconds 30.0 with get, set
+    /// Set when a publisher is registered: an event then expires EventTTL after it's published, not after it's
+    /// recorded, so an event waiting to be published never expires
+    member val ExpiresFromPublication = false with get, set
 
     member this.Validate() =
         if String.IsNullOrWhiteSpace this.CollectionName then
@@ -32,6 +44,12 @@ type OutboxOptions() =
         // RavenDB counts it in whole seconds
         if this.ExpirationFrequency < TimeSpan.FromSeconds 1.0 then
             raise (InvalidOperationException(sprintf "The outbox's ExpirationFrequency must be at least a second, not %O." this.ExpirationFrequency))
+        if this.PublishBatchSize < 1 then
+            raise (InvalidOperationException(sprintf "The outbox's PublishBatchSize must be at least 1, not %d." this.PublishBatchSize))
+        if this.PublishPollInterval <= TimeSpan.Zero then
+            raise (InvalidOperationException(sprintf "The outbox's PublishPollInterval must be positive, not %O." this.PublishPollInterval))
+        if this.PublishLeaseDuration < TimeSpan.FromSeconds 1.0 then
+            raise (InvalidOperationException(sprintf "The outbox's PublishLeaseDuration must be at least a second, not %O." this.PublishLeaseDuration))
 
 /// A PublishedEvent as the outbox records it, whichever store holds it
 type OutboxEvent =
@@ -68,6 +86,23 @@ type IOutbox =
 type IRecordPublishedEvents =
     abstract member RecordPublishedEventsAsync: aggregate: IAggregate -> Task
 
+/// Sends the outbox's events to the outside world (a message broker, e.g. RabbitMQ): the app implements it, and
+/// UseOutboxPublisher runs it. Called one event at a time, in the order they were recorded. Delivery is at least once:
+/// an event whose publication wasn't marked (a crash in between) is published again, so give the message the event's
+/// Id as its message id and let consumers ignore one they've seen. A thrown exception is retried, from that event on
+type IOutboxPublisher =
+    abstract member PublishAsync: event: OutboxEvent * cancellationToken: CancellationToken -> Task
+
+/// The outbox as its publisher reads it: Rosetta's outboxes implement it
+type IOutboxRelayStore =
+    /// Takes or renews the lease that lets one instance of the app publish (true), unless another owner holds it
+    abstract member TryLeaseAsync: owner: string * duration: TimeSpan * cancellationToken: CancellationToken -> Task<bool>
+    /// The oldest events not published yet, at most max, in the order they were recorded
+    abstract member UnpublishedAsync: max: int * cancellationToken: CancellationToken -> Task<OutboxEvent[]>
+    /// Marks the events published. They're kept, so a repeat of their command doesn't record them again, until EventTTL
+    /// after publishedAt
+    abstract member MarkPublishedAsync: events: OutboxEvent[] * publishedAt: DateTime * cancellationToken: CancellationToken -> Task
+
 module OutboxEvents =
     /// A UUID v8 (RFC 9562) from the SHA-256 of what makes the event the one it is: the aggregate, its version, the
     /// event's position in its command, its type and its data
@@ -100,6 +135,18 @@ module OutboxEvents =
               TraceParent = traceParent
               TraceState = traceState })
         |> Seq.toArray
+
+    /// The events in the order they're published: as recorded (RecordedAt, then Position), except that each aggregate's
+    /// events keep their own order (Version, then Position) in the places its events take, should clocks of the app's
+    /// instances disagree
+    let InPublishingOrder (events: OutboxEvent[]) : OutboxEvent[] =
+        let recorded = events |> Array.sortBy (fun event -> event.RecordedAt, event.AggregateId, event.Version, event.Position)
+        let byAggregate =
+            recorded
+            |> Array.groupBy (fun event -> event.Aggregate, event.AggregateId)
+            |> Array.map (fun (key, events) -> key, Collections.Generic.Queue(events |> Array.sortBy (fun event -> event.Version, event.Position)))
+            |> dict
+        recorded |> Array.map (fun event -> byAggregate.[(event.Aggregate, event.AggregateId)].Dequeue())
 
     /// Counts the events the outbox recorded in rosetta.outbox.events
     let Recorded (aggregate: string) (recorded: int) =

@@ -18,6 +18,7 @@
     <Compile Include="TelemetryTests.fs" />
     <Compile Include="OutboxTests.fs" />
     <Compile Include="TestKitRepositoryTests.fs" />
+    <Compile Include="OutboxRelayTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

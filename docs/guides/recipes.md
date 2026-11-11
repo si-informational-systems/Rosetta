@@ -141,67 +141,52 @@ Name errors consistently and map them by convention, in one place:
 
 ## Publish the Outbox
 
-Rosetta records the PublishedEvents; your service publishes them. With RavenDB, a data subscription on the Outbox
-collection hands them over in the order they were saved, and holds its position:
+Implement `IOutboxPublisher` for your broker and register it with `UseOutboxPublisher`: Rosetta reads the unpublished
+events, hands them to it one at a time in order, retries a failure, marks what's published, and publishes from one
+instance at a time (see [Outbox](../concepts/outbox.md#publishing-the-events)). With RabbitMQ (RabbitMQ.Client 7):
 
 ```fsharp
-type OutboxPublisher(store: IDocumentStore, publish: IAggregateEvents -> IDictionary<string, string> -> Task,
-                     logger: ILogger<OutboxPublisher>) =
-    inherit BackgroundService()
+open System
+open System.Text
+open System.Threading.Tasks
+open RabbitMQ.Client
+open SI.Rosetta.Aggregates
 
-    /// The events DU of each Aggregate, by the name the Outbox records (the Aggregate type without "Aggregate")
-    static member EventsTypeOf(aggregate: string) : Type option =
-        match aggregate with
-        | "Person" -> Some typeof<PersonEvents>
-        | "Reservation" -> Some typeof<ReservationEvents>
-        | _ -> None
+/// Sends each Outbox event to the "events" exchange, routed by its type, and returns once RabbitMQ confirms it
+type RabbitMqPublisher(connection: IConnection) =   // the app's IConnection singleton
+    let Exchange = "events"
+    let mutable Channel: IChannel = null
 
-    member private this.PublishAsync(item: SubscriptionBatchBase<RavenDBOutboxEvent>.Item) : Task =
-        task {
-            let recorded = item.Result
-            match OutboxPublisher.EventsTypeOf recorded.Aggregate with
-            | None -> logger.LogError("Outbox event {Id} of an unknown Aggregate {Aggregate}", item.Id, recorded.Aggregate)
-            | Some eventsType ->
-                match EventEncoding.DecodeAs eventsType Seq.empty recorded.EventType recorded.Data with
-                | Error unknown -> logger.LogError("Outbox event {Id}: {EventType} has no case in {Events}", item.Id, unknown, eventsType.Name)
-                | Ok event ->
-                    let headers = Dictionary<string, string>()
-                    headers.["message-id"] <- recorded.Id.ToString()       // consumers dedupe on it
-                    if not (String.IsNullOrEmpty recorded.TraceParent) then
-                        headers.["traceparent"] <- recorded.TraceParent      // continues the command's trace
-                    do! publish event headers
-        }
-
-    override this.ExecuteAsync(stoppingToken) =
-        task {
-            let name = "OutboxPublisher"
-            try
-                let! _ = store.Subscriptions.GetSubscriptionStateAsync(name, token = stoppingToken)
-                ()
-            with :? SubscriptionDoesNotExistException ->
-                let! _ = store.Subscriptions.CreateAsync(SubscriptionCreationOptions(Name = name, Query = "from 'Outbox'"), token = stoppingToken)
-                ()
-            while not stoppingToken.IsCancellationRequested do
-                try
-                    let options = SubscriptionWorkerOptions(name, Strategy = SubscriptionOpeningStrategy.WaitForFree)
-                    use worker = store.Subscriptions.GetSubscriptionWorker<RavenDBOutboxEvent>(options)
-                    do! worker.Run((fun batch -> task { for item in batch.Items do do! this.PublishAsync item } :> Task), stoppingToken)
-                with
-                | :? OperationCanceledException when stoppingToken.IsCancellationRequested -> ()
-                | ex ->
-                    logger.LogError(ex, "The Outbox publisher stopped; restarting in 5 s")
-                    try do! Task.Delay(TimeSpan.FromSeconds 5.0, stoppingToken) with :? OperationCanceledException -> ()
-        } :> Task
+    interface IOutboxPublisher with
+        member this.PublishAsync(event, cancellationToken) =
+            task {
+                if isNull Channel || Channel.IsClosed then
+                    // With confirmation tracking, BasicPublishAsync waits for the broker's ack, and throws on a nack
+                    let options = CreateChannelOptions(publisherConfirmationsEnabled = true, publisherConfirmationTrackingEnabled = true)
+                    let! channel = connection.CreateChannelAsync(options, cancellationToken)
+                    Channel <- channel
+                let properties =
+                    BasicProperties(
+                        MessageId = event.Id.ToString(),   // the same for every repeat: consumers dedupe on it
+                        Type = event.EventType,            // the stored name, for EventEncoding.Decode
+                        ContentType = "application/json",
+                        Persistent = true)
+                do! Channel.BasicPublishAsync(Exchange, event.EventType, false, properties, ReadOnlyMemory(Encoding.UTF8.GetBytes event.Data), cancellationToken)
+            } :> Task
 ```
 
-- Publishing is **at least once**: use the Outbox `Id` as the message id, and dedupe on it in consumers.
-- `WaitForFree` lets several instances run: one holds the subscription, the others take over when it stops.
-- RavenDB data subscriptions use RavenDB's **TCP** port: the server's `PublicServerUrl.Tcp` must be reachable from the
-  service (in Docker, publish it and advertise the address the service sees).
-- With MongoDB, use a change stream on the Outbox collection the same way (it needs a replica set too).
-- With PostgreSQL, poll `rosetta.outbox` in `recorded_at`, `position` order, publish each row, and delete it once
-  published; `event_type` and `data` (the record's JSON text) go to `EventEncoding.DecodeAs` as above.
-- Let `Outbox:EventTTLMinutes` delete published events, or delete each after publishing.
+```fsharp
+builder.UseOutboxWith<RavenDB>() |> ignore
+builder.UseOutboxPublisher<RabbitMqPublisher>() |> ignore
+```
+
+- The publisher is called one event at a time, so one channel is enough. When `PublishAsync` throws (RabbitMQ down, a
+  nack), the event is published again after a growing delay, and the ones after it wait: the order holds.
+- Delivery is **at least once**: dedupe on the message id in consumers. A consumer reads the event back into its DU with
+  `EventEncoding.Decode<PersonEvents> upcasters message.Type json`.
+- `Outbox:EventTTLMinutes` then deletes events that long after they were **published**; unpublished ones are kept.
+- To publish the records yourself instead (a RavenDB data subscription, a MongoDB change stream, a connector of your
+  broker), leave `UseOutboxPublisher` out: see [Your own publisher](../concepts/outbox.md#your-own-publisher).
 
 ## Serialize events on your bus as Rosetta does
 
@@ -271,6 +256,25 @@ Until the tables match, the Projection retries and logs what's missing (`ReadMod
 Bump `[<ProjectionVersion(n)>]` on its Projection and deploy. Its `IProjectInto` read models are emptied, the
 checkpoint reset, and the stream projected from the start. A changed PostgreSQL table needs its migration first:
 Rosetta empties tables, it never changes them.
+
+## Change, rename or remove a Custom Projection
+
+- **Add a case** (or change the source streams): deploy. The Custom Projection is relinked from the start of its source
+  streams, and the Projections reading its `cp-` stream rebuild their `IProjectInto` read models on their own.
+- **Rename its stream**: the new name is a new Custom Projection, and the old one is deleted with its stream. Bump
+  `[<ProjectionVersion>]` on the Projections that read it, so they rebuild from the new stream.
+- **Remove it**: delete the DU (and its Projections). On the next start the application deletes the KurrentDB
+  projection and its `cp-` stream.
+
+Keep the Projections of a `cp-` stream in the application that defines its Custom Projection. See
+[Custom Projections](../concepts/custom-projections.md#how-the-javascript-projections-are-deployed).
+
+## Load a long-lived Aggregate faster
+
+Put `[<Snapshot(n)>]` on its state (e.g. every 100 or 500 events), with the state's data in public
+`member val … with get, set` properties. When `ApplyEvent` later changes what it builds from the same events, raise the
+attribute's `Version` (`[<Snapshot(100, Version = 2)>]`) so the old snapshots are ignored. See
+[Snapshots](../concepts/aggregates.md#snapshots).
 
 ## Use your own RavenDB conventions
 

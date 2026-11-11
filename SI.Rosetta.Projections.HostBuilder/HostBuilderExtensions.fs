@@ -95,6 +95,8 @@ module ServiceCollectionExtensions =
         services.AddSingleton<ProjectionsAdded>(ProjectionsAdded()) |> ignore
         // The projections that run: each read model belongs to one of them
         ProjectionReadModels.CheckOneProjectionEach registration.ProjectionTypes
+        // Each one that can be rebuilt has its read models to empty first
+        ProjectionReadModels.CheckRebuildable registration.ProjectionTypes
 
         services.AddTransient<IProjectionsFactory, ProjectionsFactory>() |> ignore
         services.AddTransient<IProjectionHandlerFactory, ProjectionHandlerFactory>() |> ignore
@@ -113,7 +115,18 @@ module ServiceCollectionExtensions =
             services.TryAddSingleton<ProjectionRetries>(ProjectionRetries.Default)
             services
                 .AddTransient<ISubscriptionFactory, KurrentDBSubscriptionFactory>()
-                .AddTransient<IKurrentDBCustomJSProjectionsFactory, KurrentDBCustomJSProjectionsFactory>() |> ignore
+                // Owned by the application: it deletes only the custom projections it created
+                .AddTransient<IKurrentDBCustomJSProjectionsFactory>(fun sp ->
+                    let applicationName =
+                        match sp.GetService<IHostEnvironment>() with
+                        | null -> null
+                        | environment -> environment.ApplicationName
+                    KurrentDBCustomJSProjectionsFactory(
+                        configuration,
+                        sp.GetRequiredService<ILogger<KurrentDBCustomJSProjectionsFactory>>(),
+                        sp.GetRequiredService<KurrentDB.Client.KurrentDBProjectionManagementClient>(),
+                        sp.GetRequiredService<KurrentDB.Client.KurrentDBClient>(),
+                        KurrentDBCustomJSProjectionsFactory.DefaultOwner(configuration, applicationName)) :> IKurrentDBCustomJSProjectionsFactory) |> ignore
             services.AddHostedService(fun sp ->
                 new KurrentDBProjectionsHostedServiceInstance(
                     sp.GetRequiredService<ILogger<KurrentDBProjectionsHostedServiceInstance>>(),

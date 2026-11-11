@@ -134,6 +134,13 @@ type KurrentDBProjectionsHostedServiceInstance(
                         failures <- failures + 1
                         let! retry = this.StartFailed(status, ex, failures, stoppingToken)
                         trying <- retry
+            else
+                // None defined: the ones this application created before, if any, are deleted. Once, and not in the
+                // health check: an application without custom projections doesn't depend on them
+                try
+                    do! jsProjectionsFactory.CreateCustomProjections(Array.empty<KurrentDBProjectionParameters>).ConfigureAwait(false)
+                with ex when not stoppingToken.IsCancellationRequested ->
+                    logger.LogWarning(ex, "The custom projections this application created before couldn't be checked for deletion; they're checked again on the next start.")
         }
 
     /// Creates and runs the projection until the application stops, or the projection stops for good

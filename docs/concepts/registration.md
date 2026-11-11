@@ -74,6 +74,7 @@ services.AddProjectionsWith<KurrentDB, RavenDB>(configuration, typeof(PersonProj
 | `UseAggregatesWithoutEventSourcing<TStateBased>` | every Aggregate persists its state | `RavenDB`, `MongoDB`, `PostgreSQL` |
 | `UseAggregatesWith<TEventSourced, TStateBased>` | a mix of both | both of the above |
 | `UseOutboxWith<TOutboxStore>` | the Aggregates' PublishedEvents are recorded in an [Outbox](outbox.md) | `RavenDB`, `MongoDB`, `PostgreSQL` |
+| `UseOutboxPublisher<TPublisher>` | the Outbox's events are [published](outbox.md#publishing-the-events) with your `IOutboxPublisher` | the Outbox's |
 | `UseProjectionsWith<TEventRepository, TProjectionsStore>` | Projections | `KurrentDB` → `RavenDB`, `MongoDB`, `PostgreSQL` |
 | `UseProjectionsWith<TEventRepository, TNoSqlStore, TSqlStore>` | Projections into documents and tables at once | `KurrentDB` → `RavenDB` or `MongoDB`, and `PostgreSQL` |
 
@@ -81,7 +82,7 @@ Each `Use…` has an `Add…` counterpart for `IServiceCollection`, and each can
 
 ## Naming the Handlers and Projections
 
-Instead of the assembly, every `Use…`/`Add…` above (Outbox aside) also takes a function that names what to register, one by one, or the assemblies to find it in, or both:
+Instead of the assembly, every `Use…`/`Add…` above (the Outbox's aside) also takes a function that names what to register, one by one, or the assemblies to find it in, or both:
 
 ```fsharp
 builder.UseAggregatesWith<KurrentDB, RavenDB>(fun aggregates ->
@@ -114,7 +115,8 @@ Whatever is both named and found in an assembly is registered once. A named Proj
 |---|---|
 | `UseAggregatesWith…` | one `KurrentDBClient` (when KurrentDB is used), the RavenDB `IDocumentStore`, MongoDB database or PostgreSQL connection pool (when used), `IEventSourcedAggregateRepository` and/or `IStateBasedAggregateRepository` (singletons, with the registered `IEventUpcaster`s), and every Aggregate Handler as a transient under its marker interface |
 | `UseOutboxWith<…>` | the `IOutbox` for the store; the repositories record PublishedEvents in it |
-| `UseProjectionsWith…` | one `KurrentDBClient` and `KurrentDBProjectionManagementClient`, the read model store (`INoSqlStore` and/or `ISqlStore`), its checkpoint store and per-event unit of work, every Projection Handler as a transient by its concrete type, the hosted service that runs the Projections, and the custom JavaScript projections |
+| `UseOutboxPublisher<TPublisher>` | `TPublisher` as the singleton `IOutboxPublisher`, and the hosted service that publishes the Outbox with it |
+| `UseProjectionsWith…` | one `KurrentDBClient` and `KurrentDBProjectionManagementClient`, the read model store (`INoSqlStore` and/or `ISqlStore`), its checkpoint store and per-event unit of work, every Projection Handler as a transient by its concrete type, the hosted service that runs the Projections, and the custom JavaScript projections (owned by the host's `ApplicationName`: see [Custom Projections](custom-projections.md#which-projections-an-application-owns)) |
 | `AddHealthChecks().AddRosettaProjections()` | the `rosetta-projections` health check |
 
 - Services the app registered **before** Rosetta are kept: your own `KurrentDBClient` singleton, or RavenDB
@@ -122,7 +124,8 @@ Whatever is both named and found in an assembly is registered once. A named Proj
 - With PostgreSQL, the Aggregates, the Outbox and the Projections of one host share Rosetta's one connection pool
   (`PostgreSqlDatabase`), from the `PostgreSQL` section.
 - `IEventUpcaster`s are taken from DI: register them (as singletons) in every service that reads the events.
-- Each kind (Aggregates, Outbox, Projections) can be added once per service collection; a second call fails.
+- Each kind (Aggregates, Outbox, Outbox publisher, Projections) can be added once per service collection; a second
+  call fails.
 - The three-store form (`UseProjectionsWith<KurrentDB, RavenDB|MongoDB, PostgreSQL>`) exists as methods only: on
   `IHostApplicationBuilder` (with an assembly or a registration function), on `IHostBuilder` (with a registration
   function) and `AddProjectionsWith` on `IServiceCollection`. There's no curried F# function for it.

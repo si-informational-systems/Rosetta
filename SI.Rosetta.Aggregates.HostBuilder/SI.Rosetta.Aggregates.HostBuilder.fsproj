@@ -12,6 +12,7 @@
   <ItemGroup>
     <Compile Include="AggregateRepositories\AggregateRepositories.fs" />
     <Compile Include="AggregatesRegistration.fs" />
+    <Compile Include="OutboxRelay.fs" />
     <Compile Include="HostBuilderExtensions.fs" />
   </ItemGroup>
 

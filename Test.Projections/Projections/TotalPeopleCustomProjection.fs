@@ -22,6 +22,8 @@ type TotalPeopleCustomProjection() =
     inherit Projection<TotalPeopleAndOrganizationsCustomProjectionEvents>()
     interface IAmHandledBy<TotalPeopleCustomProjectionHandler, TotalPeopleAndOrganizationsCustomProjectionEvents>
     interface IAmHandledBy<TotalJohnsCustomProjectionHandler, TotalPeopleAndOrganizationsCustomProjectionEvents>
+    // Its cp- stream is linked again when the custom projection changes: the totals are emptied, then counted again
+    interface IProjectInto<TotalPeople>
 
 and TotalPeopleCustomProjectionHandler(store: INoSqlStore) =
     let Store = store

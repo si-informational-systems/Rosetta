@@ -45,17 +45,28 @@ The rules Rosetta's design assumes, and the lessons of the applications built on
   store: a write never overwrites another command's (`ConcurrencyException`).
 - **Ids are `{PluralCategory}-{id}`**: they're the stream names, and the category feeds `$ce-{PluralCategory}`.
 - **Retry `ConcurrencyException`** by running the command again with a fresh handler (it reloads the state).
-- **Use the Outbox** for integration events, and publish them at least once with the Outbox `Id` as the message id.
+- **Use the Outbox** for integration events, published by an `IOutboxPublisher` registered with `UseOutboxPublisher`,
+  with the Outbox `Id` as the message id; consumers dedupe on it (delivery is at least once).
+- **Snapshot only long-lived Aggregates** (`[<Snapshot(n)>]`, thousands of events), and raise its `Version` when
+  `ApplyEvent` changes what it builds.
 
 ## Projections
 
 - **One Projection per purpose**, declaring every read model it writes with `IProjectInto<…>`. A read model has one
-  owner; a document the API writes too isn't declared (a rebuild would delete it).
+  owner; a document the API writes too isn't declared (a rebuild would delete it), so a Projection whose only read
+  models the API also writes can be rebuilt only with `[<RebuildWithoutClearing>]` (below).
 - **Handlers only write read models.** Any other effect (a command, a message, an HTTP call) runs again when the event
   is retried: make it idempotent and quick, or move it to a policy on the bus.
 - **Load before updating, and decide about missing.** A missing document the stream itself creates is a bug: fail (the
   Projection retries and then reports Faulted). Skipping silently hides it.
 - **Bump `[<ProjectionVersion>]`** whenever a Handler changes what it writes into existing read models.
+- **A Projection that can be rebuilt declares what to empty.** One with `[<ProjectionVersion>]` above 0, or one that
+  reads a `cp-` stream (linked again when its Custom Projection changes), is rebuilt by replaying its stream. Without
+  `IProjectInto` read models to empty first, every `+1`, appended item and load → change → store would apply twice, so
+  registering it fails. Mark it `[<RebuildWithoutClearing>]` only when every Handler overwrites whole documents or rows.
+- **Rebuild large read models side by side.** A rebuild empties them in place, so they're partial until the Projection
+  catches up. When that matters, write into a new read model type (a new collection or table), and switch the queries
+  over once it has caught up.
 - **Keep document read models on a string `Id`.** Composite keys work in PostgreSQL only.
 - **Choose the store per read model**: documents for screens (read whole, by id or index), PostgreSQL tables for SQL
   analytics and reports.
@@ -63,6 +74,8 @@ The rules Rosetta's design assumes, and the lessons of the applications built on
   Projections over hosts.
 - **Watch them**: the `rosetta-projections` health check, or an alert on `rosetta.projections.unhealthy > 0`. A Faulted
   Projection doesn't stop the application, so something must notice.
+- **Keep a `cp-` stream's Projections with its Custom Projection**, in the application that defines it, so a changed
+  definition rebuilds them before they read the relinked stream.
 - **Skip unknown events only on purpose.** `[<SkipUnknownEvents>]` suits a Projection that cares about a few events
   of a busy stream; on one that should handle everything it hides a missing case.
 
@@ -85,7 +98,7 @@ See [PostgreSQL read models](../concepts/postgresql.md#guidelines-for-postgresql
 - **Every Projection** with the Projections TestKit (PostgreSQL ones too); **every upcaster** with the Upcasting
   TestKit.
 - **A few integration tests** for what memory can't check: a PostgreSQL schema against its read models, a MongoDB
-  replica set, Custom Projections in KurrentDB, the Outbox publisher.
+  replica set, Custom Projections in KurrentDB, your `IOutboxPublisher` against the broker.
 - **Test data in one place**: default commands and events per Aggregate, fixed ids and time.
 
 ## Operations

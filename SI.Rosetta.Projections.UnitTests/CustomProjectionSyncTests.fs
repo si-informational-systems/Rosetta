@@ -16,9 +16,9 @@ type CustomProjectionSyncTests() =
         Assert.Equal(Unchanged, CustomProjectionSync.Decide Query (Some "Running") (Stored Query true))
 
     [<Fact>]
-    member this.``Updates a projection whose definition changed``() =
+    member this.``Relinks a projection whose definition changed``() =
         let oldQuery = "fromStreams('$ce-People').when({})"
-        Assert.Equal(Update "its definition changed", CustomProjectionSync.Decide Query (Some "Running") (Stored oldQuery true))
+        Assert.Equal(Relink, CustomProjectionSync.Decide Query (Some "Running") (Stored oldQuery true))
 
     [<Fact>]
     member this.``Updates a projection with emit disabled``() =
@@ -31,3 +31,7 @@ type CustomProjectionSyncTests() =
     [<Fact>]
     member this.``Updates without comparing when the definition can't be read``() =
         Assert.Equal(UpdateUnverified "GET failed", CustomProjectionSync.Decide Query (Some "Running") (Error "GET failed"))
+
+    [<Fact>]
+    member this.``Relinks a faulted projection whose definition changed``() =
+        Assert.Equal(Relink, CustomProjectionSync.Decide Query (Some "Faulted (Enabled)") (Stored "fromStreams('$ce-People').when({})" true))

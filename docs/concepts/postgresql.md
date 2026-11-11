@@ -142,7 +142,7 @@ builder.UseProjectionsWith<Stores.KurrentDB, Stores.RavenDB, Stores.PostgreSQL>(
   unless set. Set it when all your read model (and Aggregate state) tables live in one schema of their own. Rosetta qualifies every table
   with its schema, so the connection string's `Search Path` doesn't change where it writes.
 - Rosetta keeps its checkpoints in its own `rosetta.checkpoints` table (`id`, `value`, `version`, `updated_at`), and
-  the Outbox in `rosetta.outbox`, which it creates, so the user needs the `CREATE` privilege on the database. A missing
+  the Outbox in `rosetta.outbox` (and its publisher's lease in `rosetta.outbox_leases`), which it creates, so the user needs the `CREATE` privilege on the database. A missing
   database is created when the Projections start or the Outbox first records events, which needs `CREATEDB`; without
   it, create the database first. While PostgreSQL is still booting,
   that preparation retries for about a minute.
@@ -220,4 +220,4 @@ builder.UseOutboxWith<Stores.PostgreSQL>();
 
 - With state-based Aggregates in PostgreSQL, the events are recorded **in the state's transaction**: both are written, or neither. With Event-Sourced Aggregates or another state store, they're recorded right after the Aggregate is stored.
 - PostgreSQL has no TTL: with `Outbox:EventTTLMinutes`, each row has its `expires_at`, and the Outbox deletes the expired rows itself (see [Expiry](outbox.md#expiry)).
-- Publishing is the app's: poll the table in `recorded_at`, `position` order (see [Publish the Outbox](../guides/recipes.md#publish-the-outbox)).
+- `UseOutboxPublisher` publishes the rows `where published_at is null` and sets `published_at` (see [Publishing the events](outbox.md#publishing-the-events) and [Publish the Outbox](../guides/recipes.md#publish-the-outbox)). Its lease is a row of `rosetta.outbox_leases`, by the database's clock. On a table created before, the column is added and the rows already there count as unpublished.

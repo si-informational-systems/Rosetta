@@ -32,9 +32,7 @@ services:
       RAVEN_Security_UnsecuredAccessAllowed: PublicNetwork
       RAVEN_ServerUrl: http://0.0.0.0:8080
       RAVEN_PublicServerUrl: http://localhost:8080
-      RAVEN_ServerUrl_Tcp: tcp://0.0.0.0:38888      # data subscriptions (an Outbox publisher) use TCP
-      RAVEN_PublicServerUrl_Tcp: tcp://localhost:38888
-    ports: ["8080:8080", "38888:38888"]
+    ports: ["8080:8080"]
     volumes: [ravendb-data:/var/lib/ravendb/data]
 
   mongodb:
@@ -81,14 +79,19 @@ These settings are **unsecured, for development only**.
     ```
 
     Rosetta reads an event by its `DiscriminatedUnionCaseType` metadata, so that's the one header it needs.
-- **Delete a Custom Projection's stream** (they aren't deleted with the projection): `DELETE /streams/cp-…`.
+- **Custom Projections** are created, relinked and deleted by the application that defines them (see
+  [Custom Projections](../concepts/custom-projections.md#how-the-javascript-projections-are-deployed)). One left behind
+  from before an application kept its `RosettaCustomProjections-{owner}` record is deleted by hand: stop it, then
+  `DELETE /projection/{name}?deleteCheckpointStream=yes&deleteStateStream=yes`, and `DELETE /streams/cp-…`.
+- **Snapshots** live in `RosettaSnapshots-{Id}` streams, keeping only the latest. One that's missing or doesn't fit only
+  means the Aggregate loads from its whole stream, until the next is written.
 
 ## RavenDB
 
 - One `IDocumentStore` per service, created at startup: RavenDB must be reachable when the service starts.
 - Rosetta creates a missing database.
-- **Data subscriptions** (an Outbox publisher) connect over TCP to the server's advertised `PublicServerUrl.Tcp`: it
-  must be reachable from the service.
+- The Outbox publisher queries the Outbox over HTTP like everything else. **Data subscriptions** of your own connect
+  over TCP to the server's advertised `PublicServerUrl.Tcp`: it must be reachable from the service.
 - **Outbox expiry** needs Document Expiration; the Outbox turns it on with a frequency every licence allows (36 h). See
   [Outbox](../concepts/outbox.md#expiry).
 
@@ -100,8 +103,9 @@ These settings are **unsecured, for development only**.
 
 ## PostgreSQL
 
-- The connection's user needs `CREATE` on the database (for the `rosetta` schema, `rosetta.checkpoints` and
-  `rosetta.outbox`), and `CREATEDB` if Rosetta should create the database.
+- The connection's user needs `CREATE` on the database (for the `rosetta` schema, `rosetta.checkpoints`,
+  `rosetta.outbox` and `rosetta.outbox_leases`), and `CREATEDB` if Rosetta should create the database. An existing
+  Outbox table also gets its `published_at` column (`alter table`), so the user must own it.
 - Run the app's migrations before the Projections and the Aggregates; until the tables match, Projections retry and
   log what's missing, and commands on a state-based Aggregate fail with what's missing.
 - Rosetta keeps its own connection pool, one per host: size `Maximum Pool Size` for the Projections running at once
@@ -122,16 +126,21 @@ app.MapHealthChecks("/health") |> ignore
 | gauge `rosetta.projections.unhealthy` | sum > 0 |
 | counter `rosetta.projection.faults` | increases |
 | counter `rosetta.commands` with `rosetta.outcome=failed` | rate > 0 (rejections are `rejected`, not failures) |
+| counter `rosetta.outbox.published` | flat while `rosetta.outbox.events` grows (the publisher is stuck) |
 
 The logs say what happened to each Projection: `STARTED`, `RECOVERED`, `SKIPPED`, `DROPPED` (Error), `FAULTED`,
-`STOPPED` (Critical), `CANCELED`.
+`STOPPED` (Critical), `CANCELED`. The Outbox publisher logs each failure as an Error, the 5th in a row as Critical, and
+`RECOVERED`; it isn't in the health check.
 
 ## Deployments
 
 - **Readers before writers**: deploy the services that read a new event (Projections, consumers) before the ones that
   write it (Aggregates).
-- **Rebuilds** happen on start when a Projection's `ProjectionVersion` went up: its read models are partial until it
-  catches up.
+- **Rebuilds** happen on start when a Projection's `ProjectionVersion` went up, or its `cp-` stream was relinked (its
+  Custom Projection's definition changed): its read models are partial until it catches up.
+- **The Outbox publisher** runs in every instance, and one at a time publishes. When that instance stops (a
+  deployment), it hands its lease over and another takes over within half a lease (15 s); after a crash, once the
+  lease expires (up to 45 s). Events are published at least once.
 - **An older deployment** still running a Projection whose version is lower than the stored one refuses to start it
   (Stopped), so two versions never write the same read models.
 - **One instance per Projection.** A Projection has one checkpoint: running it in two instances would handle every event

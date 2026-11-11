@@ -26,8 +26,9 @@ builder.Services
 |---|---|---|
 | `{Aggregate} {Command}`, e.g. `Person RegisterPerson` | Internal | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.command`, `rosetta.events` (stored), `rosetta.outcome` (`handled`, `rejected`, `failed`), `rosetta.domain_error` |
 | `{Projection} {Event}`, e.g. `Person PersonRegistered` | Consumer | `rosetta.projection`, `rosetta.stream`, `rosetta.event`, `rosetta.checkpoint`, `rosetta.outcome` (`skipped`) |
+| `{Aggregate} {EventType} publish`, e.g. `Person PersonRegistered publish` | Producer | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.event`, `rosetta.outbox.event.id` |
 
-A command's trace context (W3C `traceparent`/`tracestate`) is stored in the metadata of the events it produces, and the projections handling those events continue it. So one trace runs from the request, through the command, to every read model it updates, even across services. A rejected command (`DomainException`) or a failing projection marks its span as an error. Spans of your own code and of instrumented clients nest inside Rosetta's.
+A command's trace context (W3C `traceparent`/`tracestate`) is stored in the metadata of the events it produces, and the projections handling those events continue it, as does the [Outbox publisher](outbox.md#publishing-the-events) for its PublishedEvents. So one trace runs from the request, through the command, to every read model it updates, even across services. A rejected command (`DomainException`) or a failing projection marks its span as an error. Spans of your own code and of instrumented clients nest inside Rosetta's.
 
 ## Metrics
 
@@ -37,6 +38,7 @@ A command's trace context (W3C `traceparent`/`tracestate`) is stored in the meta
 | `rosetta.command.duration` | `s` | `rosetta.aggregate`, `rosetta.command` |
 | `rosetta.events.stored` | `{event}` | `rosetta.aggregate` |
 | `rosetta.outbox.events` | `{event}` | `rosetta.aggregate` |
+| `rosetta.outbox.published` | `{event}` | `rosetta.aggregate` |
 | `rosetta.projection.events` | `{event}` | `rosetta.projection`, `rosetta.outcome` (`handled`, `failed`, `skipped`) |
 | `rosetta.projection.event.duration` | `s` | `rosetta.projection` |
 | `rosetta.projection.resubscriptions` | `{resubscription}` | `rosetta.projection` |

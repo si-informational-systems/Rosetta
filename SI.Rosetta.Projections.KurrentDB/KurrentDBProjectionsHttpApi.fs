@@ -68,6 +68,33 @@ type KurrentDBProjectionsHttpApi(conf: IConfiguration) =
             client.DefaultRequestHeaders.Authorization <- AuthenticationHeaderValue("Basic", token)
         client
 
+    /// Deletes a stopped projection with its checkpoint and state streams; its emitted streams stay (the gRPC client
+    /// can't delete projections). Tries each address until one answers; fails with the last error
+    member this.DeleteProjectionAsync(name: string) : Task =
+        task {
+            use client = CreateClient()
+            let mutable error = "no KurrentDB address in the connection string"
+            let mutable remaining = BaseAddresses
+            let mutable deleted = false
+            while not remaining.IsEmpty do
+                let address = remaining.Head
+                remaining <- remaining.Tail
+                let uri = Uri(address, sprintf "projection/%s?deleteCheckpointStream=yes&deleteStateStream=yes&deleteEmittedStreams=no" (Uri.EscapeDataString name))
+                try
+                    use request = new HttpRequestMessage(HttpMethod.Delete, uri)
+                    use! response = client.SendAsync(request).ConfigureAwait(false)
+                    if response.IsSuccessStatusCode || response.StatusCode = HttpStatusCode.NotFound then
+                        deleted <- true
+                        remaining <- []
+                    else
+                        let! body = response.Content.ReadAsStringAsync().ConfigureAwait(false)
+                        error <- sprintf "DELETE %s returned %d %O: %s" uri.AbsoluteUri (int response.StatusCode) response.StatusCode body
+                with ex ->
+                    error <- sprintf "DELETE %s failed: %s" uri.AbsoluteUri ex.Message
+            // Not an InvalidOperationException: the projections host retries it, as an outage
+            if not deleted then raise (HttpRequestException(sprintf "Projection %s couldn't be deleted: %s" name error))
+        } :> Task
+
     /// The stored query and emit setting, or why they couldn't be read
     member this.TryGetDefinitionAsync(name: string) : Task<Result<StoredProjectionDefinition, string>> =
         task {

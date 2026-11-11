@@ -33,6 +33,9 @@ type internal StateBasedAggregatesAdded() = class end
 /// Registered with the outbox, so it's added only once
 type internal OutboxAdded() = class end
 
+/// Registered with the outbox's publisher, so it's added only once
+type internal OutboxPublisherAdded() = class end
+
 [<AutoOpen>]
 module HostBuilderKurrentDBExtensionCommmon =
 
@@ -108,8 +111,18 @@ module OutboxConfiguration =
             | true, value when value > 0.0 -> Some (TimeSpan.FromMinutes value)
             | _ -> raise (InvalidOperationException(sprintf "Outbox:%s must be a positive number of minutes, not '%s'." key minutes))
 
+    /// A setting of the Outbox section that's a positive whole number, when it's set
+    let private PositiveOf (configuration: IConfiguration) (key: string) =
+        match configuration.["Outbox:" + key] with
+        | number when String.IsNullOrWhiteSpace number -> None
+        | number ->
+            match Int32.TryParse(number, Globalization.NumberStyles.Integer, Globalization.CultureInfo.InvariantCulture) with
+            | true, value when value > 0 -> Some value
+            | _ -> raise (InvalidOperationException(sprintf "Outbox:%s must be a positive whole number, not '%s'." key number))
+
     /// The outbox's settings from the Outbox configuration section: CollectionName (Outbox unless set),
-    /// EventTTLMinutes (no expiry unless set) and ExpirationFrequencyMinutes (36 hours unless set; RavenDB and PostgreSQL)
+    /// EventTTLMinutes (no expiry unless set), ExpirationFrequencyMinutes (36 hours unless set; RavenDB and PostgreSQL),
+    /// and for its publisher PublishBatchSize (100) and PublishPollIntervalMilliseconds (1000)
     let Read (configuration: IConfiguration) =
         let options = OutboxOptions()
         match configuration.["Outbox:CollectionName"] with
@@ -117,6 +130,8 @@ module OutboxConfiguration =
         | name -> options.CollectionName <- name.Trim()
         MinutesOf configuration "EventTTLMinutes" |> Option.iter (fun ttl -> options.EventTTL <- Nullable ttl)
         MinutesOf configuration "ExpirationFrequencyMinutes" |> Option.iter (fun frequency -> options.ExpirationFrequency <- frequency)
+        PositiveOf configuration "PublishBatchSize" |> Option.iter (fun size -> options.PublishBatchSize <- size)
+        PositiveOf configuration "PublishPollIntervalMilliseconds" |> Option.iter (fun interval -> options.PublishPollInterval <- TimeSpan.FromMilliseconds(float interval))
         options
 
 /// The registrations behind every Use…/Add… entry point: they only need the services and the configuration,
@@ -155,7 +170,11 @@ module ServiceCollectionExtensions =
             // The application's one client, shared with Projections when they're in the same host
             KurrentDBServices.AddKurrentDBClients services configuration
             services.AddSingleton<IEventSourcedAggregateRepository>(fun sp ->
-                KurrentDBAggregateRepository(sp.GetRequiredService<KurrentDBClient>(), sp.GetServices<IEventUpcaster>())
+                let logger =
+                    match sp.GetService<ILogger<KurrentDBAggregateRepository>>() with
+                    | null -> NullLogger<KurrentDBAggregateRepository>.Instance :> ILogger<KurrentDBAggregateRepository>
+                    | logger -> logger
+                KurrentDBAggregateRepository(sp.GetRequiredService<KurrentDBClient>(), sp.GetServices<IEventUpcaster>(), logger)
                 |> WithOutbox<IEventSourcedAggregateRepository> sp) |> ignore
         | _ -> raise (Exception("Only types extending `EventSourcedAggregateRepository` can be used as an Aggregate Repository generic option!"))
 
@@ -248,6 +267,11 @@ module ServiceCollectionExtensions =
         let options = OutboxConfiguration.Read configuration
         if not (isNull configure) then configure.Invoke options
         options.Validate()
+        services.AddSingleton<OutboxOptions>(options) |> ignore
+        // Resolved after every registration: with a publisher, the events expire from their publication
+        let Configured (sp: IServiceProvider) =
+            options.ExpiresFromPublication <- not (isNull (box (sp.GetService<OutboxPublisherAdded>())))
+            options
 
         match typeof<'OutboxStore> with
         | t when t = typeof<RavenDB> ->
@@ -258,10 +282,10 @@ module ServiceCollectionExtensions =
                     match sp.GetService<ILogger<RavenDBOutbox>>() with
                     | null -> NullLogger<RavenDBOutbox>.Instance :> ILogger<RavenDBOutbox>
                     | logger -> logger
-                RavenDBOutbox(sp.GetRequiredService<IDocumentStore>(), options, logger) :> IOutbox) |> ignore
+                RavenDBOutbox(sp.GetRequiredService<IDocumentStore>(), Configured sp, logger) :> IOutbox) |> ignore
         | t when t = typeof<MongoDB> ->
             RegisterMongoDatabase(services, configuration)
-            services.AddSingleton<IOutbox>(fun sp -> MongoDBOutbox(sp.GetRequiredService<IMongoDatabase>(), options) :> IOutbox) |> ignore
+            services.AddSingleton<IOutbox>(fun sp -> MongoDBOutbox(sp.GetRequiredService<IMongoDatabase>(), Configured sp) :> IOutbox) |> ignore
         | t when t = typeof<PostgreSQL> ->
             RegisterPostgreSqlDatabase(services, configuration)
             services.AddSingleton<IOutbox>(fun sp ->
@@ -269,7 +293,7 @@ module ServiceCollectionExtensions =
                     match sp.GetService<ILogger<PostgreSqlOutbox>>() with
                     | null -> NullLogger<PostgreSqlOutbox>.Instance :> ILogger<PostgreSqlOutbox>
                     | logger -> logger
-                PostgreSqlOutbox(sp.GetRequiredService<PostgreSqlDatabase>(), options, logger) :> IOutbox) |> ignore
+                PostgreSqlOutbox(sp.GetRequiredService<PostgreSqlDatabase>(), Configured sp, logger) :> IOutbox) |> ignore
         | _ -> raise (Exception("Only `RavenDB`, `MongoDB` and `PostgreSQL` can be used as an Outbox store generic option!"))
         services
 
@@ -280,6 +304,26 @@ module ServiceCollectionExtensions =
         when 'OutboxStore : not struct and 'OutboxStore : (new : unit -> 'OutboxStore) and 'OutboxStore :> StateBasedAggregateRepository>
         (services: IServiceCollection) (configuration: IConfiguration) =
         AddOutbox<'OutboxStore> services configuration null
+
+    /// Publishes the outbox's events with 'TPublisher (the app's, e.g. to RabbitMQ), registered as a singleton
+    /// IOutboxPublisher: a hosted service reads the unpublished events, publishes them in order and marks them
+    /// published, on one instance of the app at a time. With an EventTTL, the events then expire EventTTL after their
+    /// publication. Needs the outbox (UseOutboxWith), added before or after it
+    let AddOutboxPublisher<'TPublisher when 'TPublisher :> IOutboxPublisher and 'TPublisher : not struct>
+        (services: IServiceCollection) =
+        EnsureAddedOnce<OutboxPublisherAdded> services "The outbox's publisher can only be added once: by `UseOutboxPublisher` or `AddOutboxPublisher`."
+        services.AddSingleton<IOutboxPublisher, 'TPublisher>() |> ignore
+        services.AddHostedService<OutboxRelay>(fun sp ->
+            match box (sp.GetService<OutboxOptions>()) with
+            | null ->
+                raise (InvalidOperationException "The outbox's publisher needs the outbox: add it with `UseOutboxWith` or `AddOutboxWith`.")
+            | options ->
+                let logger =
+                    match sp.GetService<ILogger<OutboxRelay>>() with
+                    | null -> NullLogger<OutboxRelay>.Instance :> ILogger<OutboxRelay>
+                    | logger -> logger
+                new OutboxRelay(sp.GetRequiredService<IOutbox>(), sp.GetRequiredService<IOutboxPublisher>(), options :?> OutboxOptions, logger)) |> ignore
+        services
 
 [<AutoOpen>]
 module HostBuilderExtensions =
@@ -310,6 +354,10 @@ module HostBuilderExtensions =
         (hostBuilder: IHostBuilder) =
         hostBuilder.ConfigureServices(fun ctx services ->
             AddOutboxWith<'OutboxStore> services ctx.Configuration |> ignore)
+
+    /// Publishes the outbox's events with 'TPublisher (see AddOutboxPublisher)
+    let UseOutboxPublisher<'TPublisher when 'TPublisher :> IOutboxPublisher and 'TPublisher : not struct> (hostBuilder: IHostBuilder) =
+        hostBuilder.ConfigureServices(fun _ services -> AddOutboxPublisher<'TPublisher> services |> ignore)
 
 // C#-friendly (tupled) extension methods delegating to the F# functions above
 [<Extension>]
@@ -342,6 +390,11 @@ module CSharp_HostBuilderExtensions =
         (hostBuilder: IHostBuilder, [<Optional; DefaultParameterValue(null: Action<OutboxOptions>)>] configure: Action<OutboxOptions>) =
         hostBuilder.ConfigureServices(fun ctx services ->
             ServiceCollectionExtensions.AddOutbox<'OutboxStore> services ctx.Configuration configure |> ignore)
+
+    /// Publishes the outbox's events with 'TPublisher (see AddOutboxPublisher)
+    [<Extension>]
+    let UseOutboxPublisher<'TPublisher when 'TPublisher :> IOutboxPublisher and 'TPublisher : not struct> (hostBuilder: IHostBuilder) =
+        HostBuilderExtensions.UseOutboxPublisher<'TPublisher> hostBuilder
 
 /// Extension methods for IHostApplicationBuilder (Host.CreateApplicationBuilder, WebApplication.CreateBuilder)
 /// and IServiceCollection, from C# or F#, delegating to the F# functions above. The ones that take an
@@ -414,6 +467,20 @@ type AggregatesExtensions =
         when 'OutboxStore : not struct and 'OutboxStore : (new : unit -> 'OutboxStore) and 'OutboxStore :> StateBasedAggregateRepository>
         (services: IServiceCollection, configuration: IConfiguration, [<Optional; DefaultParameterValue(null: Action<OutboxOptions>)>] configure: Action<OutboxOptions>) =
         ServiceCollectionExtensions.AddOutbox<'OutboxStore> services configuration configure
+
+    /// Publishes the outbox's events with 'TPublisher, the app's IOutboxPublisher (e.g. to RabbitMQ): in order, on one
+    /// instance of the app at a time, at least once. Needs the outbox (UseOutboxWith), added before or after it
+    [<Extension>]
+    static member UseOutboxPublisher<'TPublisher when 'TPublisher :> IOutboxPublisher and 'TPublisher : not struct>
+        (builder: IHostApplicationBuilder) =
+        ServiceCollectionExtensions.AddOutboxPublisher<'TPublisher> builder.Services |> ignore
+        builder
+
+    /// Publishes the outbox's events with 'TPublisher (see UseOutboxPublisher)
+    [<Extension>]
+    static member AddOutboxPublisher<'TPublisher when 'TPublisher :> IOutboxPublisher and 'TPublisher : not struct>
+        (services: IServiceCollection) =
+        ServiceCollectionExtensions.AddOutboxPublisher<'TPublisher> services
 
     /// Event-sourced aggregates, with the handlers register names
     [<Extension>]

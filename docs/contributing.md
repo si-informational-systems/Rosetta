@@ -85,6 +85,12 @@ type IStateBasedAggregateRepository = inherit IAggregateRepository
 type IOutbox =
     abstract RecordAsync: events: OutboxEvent[] -> Task<int>   // records the ones it doesn't hold (by Id); returns how many
 
+// ...and, for UseOutboxPublisher to publish it, IOutboxRelayStore on the same object
+type IOutboxRelayStore =
+    abstract TryLeaseAsync: owner: string * duration: TimeSpan * cancellationToken: CancellationToken -> Task<bool>
+    abstract UnpublishedAsync: max: int * cancellationToken: CancellationToken -> Task<OutboxEvent[]>   // oldest first
+    abstract MarkPublishedAsync: events: OutboxEvent[] * publishedAt: DateTime * cancellationToken: CancellationToken -> Task
+
 // Projections: the read models, the checkpoints, and a transaction per event. While a Projection's Handlers run,
 // ProjectionTransaction.Current is the event's transaction: the store writes and reads in it
 type IProjectionTransaction =
