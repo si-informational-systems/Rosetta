@@ -407,3 +407,6 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Documentation site build output (zensical build)
+/site/

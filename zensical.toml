@@ -1,0 +1,150 @@
+# The documentation site: https://si-informational-systems.github.io/Rosetta/
+# Built with Zensical (the successor of Material for MkDocs) by .github/workflows/docs.yml on every push to master.
+# Locally: pip install zensical==0.1.1, then `zensical serve` (http://localhost:8000) or `zensical build --clean`.
+
+[project]
+site_name = "Rosetta"
+site_url = "https://si-informational-systems.github.io/Rosetta/"
+site_description = "DDD, Event Sourcing and CQRS projections for .NET and F#, on KurrentDB, RavenDB, MongoDB and PostgreSQL."
+site_author = "SI Informational Systems"
+copyright = "Copyright &copy; 2026 SI Informational Systems · MIT License"
+repo_url = "https://github.com/si-informational-systems/Rosetta"
+repo_name = "si-informational-systems/Rosetta"
+edit_uri = "edit/master/docs/"
+docs_dir = "docs"
+site_dir = "site"
+
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = [
+    "getting-started/installation.md",
+    "getting-started/configuration.md",
+    "getting-started/first-service.md",
+    "getting-started/project-structure.md",
+  ] },
+  { "Concepts" = [
+    "concepts/messages.md",
+    "concepts/aggregates.md",
+    "concepts/outbox.md",
+    "concepts/projections.md",
+    "concepts/postgresql.md",
+    "concepts/custom-projections.md",
+    "concepts/event-evolution.md",
+    "concepts/registration.md",
+    "concepts/observability.md",
+    "concepts/testing.md",
+  ] },
+  { "Guides" = [
+    "guides/guidelines.md",
+    "guides/recipes.md",
+    "guides/operations.md",
+    "guides/troubleshooting.md",
+    "guides/csharp.md",
+  ] },
+  { "Reference" = [
+    "reference/packages.md",
+    "reference/api.md",
+    "reference/configuration.md",
+    "reference/stored-format.md",
+    "reference/telemetry.md",
+  ] },
+  { "For AI agents" = "ai.md" },
+  { "Contributing" = "contributing.md" },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.action.edit",
+  "content.code.annotate",
+  "content.code.copy",
+  "content.code.select",
+  "content.tabs.link",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.instant.prefetch",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+  "toc.follow",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/si-informational-systems/Rosetta"
+
+[[project.extra.social]]
+icon = "simple/nuget"
+link = "https://www.nuget.org/packages?q=SI.Rosetta"
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.betterem = {}
+pymdownx.details = {}
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.magiclink = {}
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true
+pymdownx.tabbed.combine_header_slug = true
+pymdownx.tasklist.custom_checkbox = true
+pymdownx.tilde = {}
+
+# llms.txt (an index of the pages) and llms-full.txt (every page in one Markdown file), for AI agents
+[project.plugins.llmstxt]
+full_output = "llms-full.txt"
+markdown_description = """
+Rosetta is an opinionated F# framework for DDD + Event Sourcing + CQRS projections on .NET 11, published as the
+SI.Rosetta.* NuGet packages. Commands and events are F# discriminated unions whose cases each wrap one record.
+Aggregates are event-sourced in KurrentDB or state-based in RavenDB/MongoDB; projections subscribe to KurrentDB
+streams and write read models to RavenDB, MongoDB or PostgreSQL. Read llms-full.txt for the whole documentation.
+"""
+
+[project.plugins.llmstxt.sections]
+"Home" = ["index.md", "ai.md"]
+"Getting started" = ["getting-started/installation.md", "getting-started/configuration.md", "getting-started/first-service.md", "getting-started/project-structure.md"]
+"Concepts" = ["concepts/messages.md", "concepts/aggregates.md", "concepts/outbox.md", "concepts/projections.md", "concepts/postgresql.md", "concepts/custom-projections.md", "concepts/event-evolution.md", "concepts/registration.md", "concepts/observability.md", "concepts/testing.md"]
+"Guides" = ["guides/guidelines.md", "guides/recipes.md", "guides/operations.md", "guides/troubleshooting.md", "guides/csharp.md"]
+"Reference" = ["reference/packages.md", "reference/api.md", "reference/configuration.md", "reference/stored-format.md", "reference/telemetry.md"]
+"Contributing" = ["contributing.md"]

@@ -10,6 +10,9 @@
 ![RavenDB](https://img.shields.io/badge/RavenDB-Integrated-red)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Integrated-green)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Integrated-336791)
+[![Docs](https://img.shields.io/badge/docs-si--informational--systems.github.io%2FRosetta-indigo)](https://si-informational-systems.github.io/Rosetta/)
+
+📖 **Documentation: [si-informational-systems.github.io/Rosetta](https://si-informational-systems.github.io/Rosetta/)** — guides, recipes, troubleshooting and the API reference. For AI agents: [`llms-full.txt`](https://si-informational-systems.github.io/Rosetta/llms-full.txt), the whole documentation in one file.
 
 ---
 
@@ -445,7 +448,7 @@ A command that changed nothing, e.g. an idempotent repeat, stores nothing, but t
     else this.Register cmd
 ```
 
-The Outbox keeps **one record per event**. An event's `Id` comes from what makes it that event: the Aggregate, its `Version`, the event's position among the command's PublishedEvents, its type and its data. A repeat publishes the same events at the same `Version`, so they get the same `Id`s, and the Outbox only adds the ones it doesn't hold: the record that's there stays exactly as it was, so a RavenDB subscription or a MongoDB change stream doesn't see it again. RavenDB checks which events it holds, and saves the others on condition they're still new: if a concurrent repeat recorded one meanwhile, the save fails with a `ConcurrencyException` (and the command can be retried) instead of overwriting it. MongoDB upserts with `$setOnInsert`.
+The Outbox keeps **one record per event**. An event's `Id` comes from what makes it that event: the Aggregate, its `Version`, the event's position among the command's PublishedEvents, its type and its data. A repeat publishes the same events at the same `Version`, so they get the same `Id`s, and the Outbox only adds the ones it doesn't hold: the record that's there stays exactly as it was, so a RavenDB subscription or a MongoDB change stream doesn't see it again. RavenDB checks which events it holds, and saves the others on condition they're still new: if a concurrent repeat recorded one meanwhile, the save fails with RavenDB's own `ConcurrencyException` (`Raven.Client.Exceptions`; the command can be retried) instead of overwriting it. MongoDB upserts with `$setOnInsert`.
 
 An event published again after the Aggregate changed further has a later `Version`, so it's recorded again. Whatever consumes the events must still handle duplicates (as with any broker's redeliveries), and the `Id` serves as their message id.
 
@@ -676,7 +679,7 @@ builder.UseProjectionsWith<Stores.KurrentDB, Stores.RavenDB, Stores.PostgreSQL>(
 | `DateTime`, `DateTimeOffset` | `timestamptz` | written as UTC (a `DateTime` of unspecified kind is taken as UTC) |
 | `DateOnly`, `TimeOnly`, `TimeSpan` | `date`, `time`, `interval` | |
 | an enum, a union whose cases have no fields | `text` | the name of the value or case |
-| an array or F# list of the types above | an array (`text[]`, `int[]`…) | |
+| an array or F# list of the plain types in the first three rows | an array (`text[]`, `int[]`…) | arrays of enums or unions go to `jsonb` |
 | `'T option` | the column of `'T`, nullable | `None` is `NULL` |
 | anything else: records, unions with fields, maps | `jsonb` | as Rosetta writes events (System.Text.Json) |
 
@@ -875,6 +878,8 @@ A command's trace context (W3C `traceparent`/`tracestate`) is stored in the meta
 | `rosetta.projection.events` | `{event}` | `rosetta.projection`, `rosetta.outcome` (`handled`, `failed`, `skipped`) |
 | `rosetta.projection.event.duration` | `s` | `rosetta.projection` |
 | `rosetta.projection.resubscriptions` | `{resubscription}` | `rosetta.projection` |
+| `rosetta.projection.faults` | `{fault}` | `rosetta.projection`, `rosetta.state` (`faulted`, `stopped`) |
+| `rosetta.projections.unhealthy` (gauge) | `{projection}` | `rosetta.projection`, `rosetta.state`: 1 per Faulted or Stopped Projection, 0 for the others |
 
 **Logs** still go through `ILogger`, configured by your application as before. With OpenTelemetry logging (`builder.Logging.AddOpenTelemetry(…)`), every entry written during a command or a projection also carries its trace and span ids.
 
