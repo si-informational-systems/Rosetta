@@ -73,6 +73,7 @@ Every store sits behind a small interface; another event store or database plugs
 ```fsharp
 // Aggregates: store the AggregateState (state-based) or append its Changes (event-sourced)
 type IAggregateRepository =
+    // throws ConcurrencyException (SI.Rosetta.Common) when another write came first: the handler runs the command again
     abstract StoreAsync<'TState when 'TState :> IAggregateState> : aggregate: IAggregate<'TState> -> Task
     // An event-sourced store reads the events as state.EventsType and applies them with state.Mutate
     abstract GetAsync<'TState when 'TState : (new: unit -> 'TState) and 'TState :> IAggregateState> :
@@ -101,6 +102,11 @@ type IProjectionsUnitOfWork =
     abstract PrepareAsync: readModels: Type[] -> Task           // once per Projection at startup, with its IProjectInto types
     abstract BeginAsync: unit -> Task<IProjectionTransaction>
     abstract ClearAsync: readModels: Type[] -> Task             // a rebuilt Projection's read models
+
+// ...and, when the store has conflicts of its own (a write conflict, a deadlock), IRecognizeConflicts on the same
+// object: an event whose transaction fails on one is handled again at once, as on a ConcurrencyException
+type IRecognizeConflicts =
+    abstract IsConflict: ex: exn -> bool                        // called with each of the failure's causes
 
 type ICheckpointStore =
     abstract ReadAsync: id: string -> Task<Checkpoint>

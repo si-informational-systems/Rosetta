@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.Diagnostics
 open System.Runtime.ExceptionServices
+open System.Threading
 open System.Threading.Tasks
 open SI.Rosetta.Common
 
@@ -23,6 +24,9 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
     /// Begins each event's transaction, which its handlers write in and its checkpoint is committed with. Without one,
     /// the handlers write straight to the store and the checkpoint is stored after them, in its own write
     member val UnitOfWork = Unchecked.defaultof<IProjectionsUnitOfWork> with get, set
+    /// How an event that failed on a conflict is retried at once (3 times, after up to 50 ms each, unless the
+    /// application registers its own ConflictRetries); only in a transaction (with a UnitOfWork)
+    member val ConflictRetries = ConflictRetries.Default with get, set
 
     member this.CreateProjectionException (ev: obj) (checkpoint: uint64) (ae: AggregateException) =
         let msg = sprintf "PROJECTION FAILURE: Projection %s on Stream %s FAILED on Checkpoint %d during %s" 
@@ -75,8 +79,45 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
                 ExceptionDispatchInfo.Throw failure
         }
 
+    /// Whether the failure is a conflict trying again can resolve: Rosetta's ConcurrencyException (a handler's command
+    /// lost to another), or one the store recognizes (IRecognizeConflicts)
+    member private this.IsConflict(ex: exn) =
+        ExceptionCauses.Of ex
+        |> Seq.exists (fun cause ->
+            cause :? ConcurrencyException
+            || (match box this.UnitOfWork with
+                | :? IRecognizeConflicts as store -> store.IsConflict cause
+                | _ -> false))
+
+    /// The event's transaction, run again at once when it fails on a conflict (ConflictRetries), after a random pause:
+    /// nothing was written, so it's handled as if for the first time. Only then does the failure reach the subscription
+    member private this.HandleWithRetries (ev: 'TEvent) (c: uint64) (checkpoint: Checkpoint) : Task =
+        task {
+            let retries = this.ConflictRetries
+            let mutable attempt = 0
+            let mutable handled = false
+            while not handled do
+                let mutable retry = false
+                try
+                    do! this.HandleInTransaction ev c checkpoint
+                    handled <- true
+                with ex when attempt < retries.Retries && this.IsConflict ex ->
+                    retry <- true
+                if retry then
+                    attempt <- attempt + 1
+                    RosettaTelemetry.RetriedConflicts.Add(1L, RosettaTelemetry.Tag "rosetta.projection" this.Name)
+                    match Activity.Current with
+                    | null -> ()
+                    | activity -> activity.AddEvent(ActivityEvent("rosetta.conflict.retry")).SetTag("rosetta.attempts", attempt + 1) |> ignore
+                    do! retries.PauseAsync(CancellationToken.None).ConfigureAwait(false)
+                    // A commit that failed on the conflict may have been written after all
+                    let! committed = this.CommittedBefore(c).ConfigureAwait(false)
+                    if committed then handled <- true
+        } :> Task
+
     /// Handles the event in one transaction: its handlers, one at a time, then the checkpoint, committed together.
-    /// When a handler fails, nothing is written and a ProjectionException holds its failure
+    /// When a handler fails, nothing is written and a ProjectionException holds its failure; on a conflict, the
+    /// transaction is first retried at once (ConflictRetries)
     member this.HandleEvent(ev: 'TEvent, c: uint64) =
         task {
             let started = Stopwatch.GetTimestamp()
@@ -91,7 +132,7 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
                         do! this.RunHandlers ev c
                         do! this.CheckpointStore.StoreAsync(checkpoint).ConfigureAwait(false)
                     else
-                        do! this.HandleInTransaction ev c checkpoint
+                        do! this.HandleWithRetries ev c checkpoint
                 with :? ProjectionException as ex ->
                     RosettaTelemetry.ProjectionEvents.Add(1L, projectionTag, RosettaTelemetry.Tag "rosetta.outcome" "failed")
                     ExceptionDispatchInfo.Throw ex

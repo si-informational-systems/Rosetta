@@ -31,9 +31,9 @@ graph TD
 
 | Package | Contains | Depends on |
 |---|---|---|
-| `SI.Rosetta.Common` | `IAggregateCommands`, `IAggregateEvents`, `ICustomProjectionEvents`; `[<EventType>]`; `IEventUpcaster`, `StoredEvent`, `UnknownEventException`; `EventEncoding`, `OptionFormat`; `RosettaTelemetry`; `PluralizeName`, `TypeKeys` | FSharp.SystemTextJson 1.4, Pluralize.NET |
+| `SI.Rosetta.Common` | `IAggregateCommands`, `IAggregateEvents`, `ICustomProjectionEvents`; `[<EventType>]`; `IEventUpcaster`, `StoredEvent`, `UnknownEventException`; `EventEncoding`, `OptionFormat`; `ConcurrencyException`, `ConflictRetries`, `ExceptionCauses`; `RosettaTelemetry`; `PluralizeName`, `TypeKeys` | FSharp.SystemTextJson 1.4, Pluralize.NET |
 | `SI.Rosetta.Serialization` | `KurrentDBSerialization`: events as KurrentDB `EventData` and back, through upcasters | Common, KurrentDB.Client 1.6 |
-| `SI.Rosetta.Aggregates` | `AggregateState`, `Aggregate`, `AggregateHandler`, repository interfaces, `DomainException`, `ConcurrencyException`, `[<Snapshot>]`, the Outbox types (`OutboxOptions`, `OutboxEvent`, `IOutbox`, `IOutboxPublisher`, `IOutboxRelayStore`) | Common |
+| `SI.Rosetta.Aggregates` | `AggregateState`, `Aggregate`, `AggregateHandler`, repository interfaces, `DomainException`, `[<Snapshot>]`, the Outbox types (`OutboxOptions`, `OutboxEvent`, `IOutbox`, `IOutboxPublisher`, `IOutboxRelayStore`) | Common |
 | `SI.Rosetta.Persistence.KurrentDB` | `KurrentDBFactory`, `KurrentDBServices.AddKurrentDBClients` | KurrentDB.Client |
 | `SI.Rosetta.Persistence.RavenDB` | `RavenConfig`, `RavenDocumentStoreFactory` | RavenDB.Client 7.2 |
 | `SI.Rosetta.Persistence.MongoDB` | `MongoConfig`, `MongoClientFactory`, `MongoConventions`, the F# BSON serializers | MongoDB.Driver 3 |

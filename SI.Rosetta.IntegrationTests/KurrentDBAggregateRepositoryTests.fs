@@ -84,3 +84,21 @@ type KurrentDBAggregateRepositoryTests(databases: Databases) =
             Assert.Equal(id, stored.Value.State.Id)
             Assert.Equal("Ada", stored.Value.State.Recipient)
         }
+
+    [<Fact>]
+    member this.``Two commands racing on one aggregate both go through: the one that lost is retried at once``() =
+        task {
+            let repository = KurrentDBAggregateRepository(Client) :> IEventSourcedAggregateRepository
+            let id = NewId()
+            let handler () = ParcelAggregateHandler(repository) :> IAggregateHandler
+            do! handler().ExecuteAsync(ParcelCommands.Register { Id = id; Recipient = "Ada" })
+
+            let! _ =
+                Task.WhenAll(
+                    handler().ExecuteAsync(ParcelCommands.Readdress { Id = id; Recipient = "Grace" }),
+                    handler().ExecuteAsync(ParcelCommands.Readdress { Id = id; Recipient = "Linus" }))
+
+            let! stored = Get repository id
+            Assert.Equal(3L, stored.Value.Version)
+            Assert.Contains(stored.Value.State.Recipient, [ "Grace"; "Linus" ])
+        }

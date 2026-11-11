@@ -1,4 +1,4 @@
-namespace SI.Rosetta.Aggregates
+namespace SI.Rosetta.Common
 
 open System
 

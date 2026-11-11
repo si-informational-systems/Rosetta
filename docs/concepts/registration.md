@@ -131,6 +131,9 @@ Whatever is both named and found in an assembly is registered once. A named Proj
   function) and `AddProjectionsWith` on `IServiceCollection`. There's no curried F# function for it.
 - `ProjectionRetries` (the backoff and the Faulted threshold) is registered with `TryAddSingleton`: register your own
   `ProjectionRetries` first to change it, e.g. `{ ProjectionRetries.Default with FailuresBeforeFaulted = 10 }`.
+- A `ConflictRetries` registered in DI (before or after) applies to every Projection's
+  [immediate conflict retries](projections.md#conflicts-are-retried-at-once). Aggregate Handlers don't take it from
+  DI: each sets its own in its constructor (see [Conflicts](aggregates.md#conflicts)).
 - A plain `IServiceCollection` must also provide logging, `IHostApplicationLifetime` and `IConfiguration` for the
   Projections (a generic host does).
 - Both namespaces (`SI.Rosetta.Aggregates.HostBuilder`, `SI.Rosetta.Projections.HostBuilder`) define store marker

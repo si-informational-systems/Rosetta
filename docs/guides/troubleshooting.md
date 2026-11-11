@@ -78,11 +78,14 @@ Messages are quoted as Rosetta writes them; `{…}` stands for the names in your
 : Another command appended to the same Aggregate between this one's load and store (KurrentDB), or created or changed
   its stored state (state-based, in any store: "{State} {id} already exists: another command created it after this one
   found it missing." / "{State} {id} is no longer at version {n}: another command changed it after this one loaded
-  it."). Run the command again with a fresh handler; see [Recipes](recipes.md#handle-commands-from-a-message-bus).
+  it."), and kept doing so: the handler had already run the command again at once, 3 times
+  ([Conflicts](../concepts/aggregates.md#conflicts)). Run it again later with a fresh handler; see
+  [Recipes](recipes.md#handle-commands-from-a-message-bus). It's in `SI.Rosetta.Common` (`open SI.Rosetta.Common`).
 
 **`ConcurrencyException` from the RavenDB Outbox ("… was recorded in the outbox by another command meanwhile …")**
-: A concurrent repeat of the same command recorded the same event first. Run the command again; it's idempotent.
-  RavenDB's own exception is its `InnerException`.
+: A concurrent repeat of the same command recorded the same event first. The handler runs the command again at once
+  (it's idempotent), so this reaches the caller only when that kept failing; run it again. RavenDB's own exception is
+  its `InnerException`.
 
 **`UnknownEventException`: "Event {Name} (event {n} of stream {stream}) has no case in {Events}. Add the case or upcast the event with an IEventUpcaster; a projection can skip it with [<SkipUnknownEvents>]."**
 : An Aggregate's stream holds an event its DU doesn't know: a case was removed or renamed without `[<EventType>]`. Add
@@ -118,6 +121,12 @@ Messages are quoted as Rosetta writes them; `{…}` stands for the names in your
   `ProjectionException`: "PROJECTION FAILURE: Projection {Name} on Stream {Stream} FAILED on Checkpoint {n} during
   {Event}", with the Handler's exception inside. Fix the Handler (or the data) and deploy: it keeps retrying every
   30 s and recovers by itself.
+
+**A Projection DROPPED on a `ConcurrencyException`, a MongoDB write conflict or a PostgreSQL deadlock**
+: The event lost to other writers 4 times in a row (the first attempt and 3
+  [immediate retries](../concepts/projections.md#conflicts-are-retried-at-once)); it resubscribes and handles it again
+  after the backoff. Often: a Handler that runs a command on a hot Aggregate, or read models other writers change at
+  the same time. `rosetta.conflicts.retried` shows how often it happens.
 
 **The Projection is Stopped after an unknown event**
 : Its DU has no case for an event in the stream: deploy the version that handles it, or mark the Projection

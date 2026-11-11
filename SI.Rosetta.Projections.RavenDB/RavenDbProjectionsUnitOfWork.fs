@@ -68,6 +68,10 @@ type RavenDbProjectionTransaction(session: IAsyncDocumentSession) =
 
 /// One RavenDB session per event
 type RavenDbProjectionsUnitOfWork(store: IDocumentStore) =
+    /// A document saved on a change vector that another write changed meanwhile
+    interface IRecognizeConflicts with
+        member this.IsConflict(ex) = ex :? Raven.Client.Exceptions.ConcurrencyException
+
     interface IProjectionsUnitOfWork with
         member this.PrepareAsync(_readModels) = Task.CompletedTask
 

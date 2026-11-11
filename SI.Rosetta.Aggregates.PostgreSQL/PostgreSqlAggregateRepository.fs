@@ -5,6 +5,7 @@ open System.Collections.Concurrent
 open System.Threading.Tasks
 open Npgsql
 open SI.Rosetta.Aggregates
+open SI.Rosetta.Common
 open SI.Rosetta.Persistence.PostgreSQL
 
 /// Stores the AggregateState as a row of the app's table, mapped as read models are (see PostgreSqlTables): by default

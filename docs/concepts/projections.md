@@ -111,6 +111,27 @@ checkpoint (`Checkpoints-Person`), the logs, the traces, the metrics and the hea
 - **MongoDB needs a replica set** for the transactions (a single node is enough). On a standalone server the
   Projections don't start, with an error that says how to set one up.
 
+### Conflicts are retried at once
+
+When an event's transaction fails on a conflict, the event is handled again at once, in a new transaction, **up to 3
+more times**, each after a random pause of 1 to 50 ms, so writers that collided don't collide again in step. Only then
+does the failure reach the subscription, which backs off as below. A conflict that resolves isn't logged and doesn't
+resubscribe. A conflict is:
+
+- Rosetta's `ConcurrencyException`: a Handler that runs a command (a policy) lost to another command;
+- the store's own, recognized by its unit of work (`IRecognizeConflicts`): in MongoDB a write conflict (an error
+  labelled `TransientTransactionError`), in PostgreSQL a deadlock (`40P01`) or a serialization failure (`40001`), in
+  RavenDB its `ConcurrencyException`.
+
+Nothing was written, so the event is handled as if for the first time; a commit that failed is checked first, as above.
+Each retry is counted in `rosetta.conflicts.retried` and marked on the event's span. Register your own
+`ConflictRetries` (`SI.Rosetta.Common`) to change it for every Projection:
+
+```fsharp
+// ConflictRetries.None turns it off
+services.AddSingleton<ConflictRetries>({ Retries = 5; MaxJitter = TimeSpan.FromMilliseconds 100.0 }) |> ignore
+```
+
 ### Checkpoints
 
 - Each Projection stores its position as `Checkpoints-{Name}`, **one-based** (the number of events handled), with its
@@ -122,9 +143,9 @@ checkpoint (`Checkpoints-Person`), the logs, the traces, the metrics and the hea
 
 - Projections run in a `BackgroundService`. The application finishes starting right away, and stopping it cancels
   every subscription immediately.
-- When a Projection fails (KurrentDB or the read store unavailable, a Handler that throws), it resubscribes from its
-  last checkpoint, waiting **1, 2, 4, 8, 16 s, then 30 s** between attempts, for as long as it takes; the other
-  Projections keep running. Only progress resets the count: a handled event, or catching up with the stream.
+- When a Projection fails (KurrentDB or the read store unavailable, a Handler that throws, a conflict that outlasted
+  its [immediate retries](#conflicts-are-retried-at-once)), it resubscribes from its last checkpoint, waiting **1, 2,
+  4, 8, 16 s, then 30 s** between attempts, for as long as it takes; the other Projections keep running. Only progress resets the count: a handled event, or catching up with the stream.
 - After **5 failures in a row** without progress (usually the same event failing: a bug), it's **Faulted**: logged as
   Critical once and reported Unhealthy, and it keeps retrying every 30 s, so a fixed deployment picks it up. When it
   handles events again, it logs that it recovered.

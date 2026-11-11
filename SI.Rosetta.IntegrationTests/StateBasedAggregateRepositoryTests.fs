@@ -10,6 +10,7 @@ open MongoDB.Driver
 open Raven.Client.Documents
 open Xunit
 open SI.Rosetta.Aggregates
+open SI.Rosetta.Common
 open SI.Rosetta.Aggregates.HostBuilder
 open SI.Rosetta.Aggregates.RavenDB
 

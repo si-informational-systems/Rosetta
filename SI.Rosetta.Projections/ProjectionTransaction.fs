@@ -11,6 +11,13 @@ type IProjectionTransaction =
     inherit IAsyncDisposable
     abstract member CommitAsync: checkpoint: Checkpoint -> Task
 
+/// A unit of work whose store has conflicts of its own (a MongoDB write conflict, a PostgreSQL deadlock, a RavenDB
+/// ConcurrencyException): the event's transaction is retried at once on them (ConflictRetries), as on Rosetta's
+/// ConcurrencyException
+type IRecognizeConflicts =
+    /// Whether the exception (one of a failure's causes) is a conflict that trying again can resolve
+    abstract member IsConflict: ex: exn -> bool
+
 /// The read model store's transactions, one per event
 type IProjectionsUnitOfWork =
     /// Run for each projection when it starts, before its checkpoint is read, with the read model types it declares

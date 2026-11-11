@@ -33,6 +33,8 @@ description: Every configuration key Rosetta reads, with defaults, and every def
 
 | What | Value | Change it |
 |---|---|---|
+| A command's conflict retries (`ConcurrencyException`) | 3 at once, each after a random 1 to 50 ms | per handler: `do base.ConflictRetries <- …` in its constructor (`ConflictRetries.None` = off) |
+| An event's conflict retries (`ConcurrencyException`, a store's write conflict or deadlock) | 3 at once, each after a random 1 to 50 ms, before the backoff | every Projection: register a `ConflictRetries` (`ConflictRetries.None` = off) |
 | Projection resubscription backoff | 1, 2, 4, 8, 16, then 30 s | register a `ProjectionRetries` before `UseProjectionsWith` |
 | Failures in a row before Faulted | 5 | `ProjectionRetries.FailuresBeforeFaulted` |
 | PostgreSQL preparation retries (database booting) | 1, 2, 4, 8, 16, 30 s (about a minute) | — |

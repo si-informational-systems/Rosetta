@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.Diagnostics
 open System.Runtime.ExceptionServices
+open System.Threading
 open System.Threading.Tasks
 open Microsoft.FSharp.Reflection
 open SI.Rosetta.Common
@@ -32,9 +33,41 @@ type AggregateHandler<'TAggregate, 'TCommands
         member this.ExecuteAsync(arg) = this.ExecuteAsync(arg :?> 'TCommands)
         member this.GetPublishedEvents() = this.PublishedEvents
 
-    /// Loads the aggregate (a new one when it doesn't exist and mustExist is false), executes the command and stores
-    /// the aggregate when its version changed. When it didn't, a repository with an outbox records the events the
-    /// command published. Traced as "{Aggregate} {Command}" and counted in the rosetta.* metrics
+    /// How a command that hit a conflict (another command stored the aggregate first) is retried at once, on the
+    /// aggregate loaded again, before the caller sees the ConcurrencyException: 3 times, after up to 50 ms each, unless
+    /// set otherwise (ConflictRetries.None turns it off)
+    member val ConflictRetries = ConflictRetries.Default with get, set
+
+    /// One attempt: loads the aggregate (a new one when it doesn't exist and mustExist is false), executes the command
+    /// and stores the aggregate when its version changed. When it didn't, a repository with an outbox records the
+    /// events the command published
+    member private this.Attempt (id: string) (command: 'TCommands) (mustExist: bool) (activity: Activity) : Task =
+        task {
+            let aggregate = new 'TAggregate()
+            let! exists = aggregate.LoadAsync(this.AggregateRepository, id).ConfigureAwait(false)
+            if mustExist && not exists then
+                raise (DomainException.Named(NotFoundResponse, String.Empty))
+            let originalVersion = aggregate.Version
+
+            aggregate.Execute command
+            this.PublishedEvents <- aggregate.PublishedEvents
+
+            if originalVersion <> aggregate.Version then
+                do! aggregate.StoreAsync(this.AggregateRepository).ConfigureAwait(false)
+                let stored = aggregate.Version - originalVersion
+                RosettaTelemetry.EventsStored.Add(stored, RosettaTelemetry.Tag "rosetta.aggregate" AggregateName)
+                if not (isNull activity) then activity.SetTag("rosetta.events", stored) |> ignore
+            elif aggregate.PublishedEvents.Count > 0 then
+                // Nothing to store, e.g. an idempotent repeat, but the events it published again are recorded unless
+                // the outbox holds them: the attempt that stored the aggregate may have failed before it recorded them
+                match this.AggregateRepository with
+                | :? IRecordPublishedEvents as outbox ->
+                    do! outbox.RecordPublishedEventsAsync(aggregate).ConfigureAwait(false)
+                | _ -> ()
+        } :> Task
+
+    /// The command, attempted again on a conflict (ConflictRetries) until it goes through or the retries run out.
+    /// Traced as "{Aggregate} {Command}" and counted in the rosetta.* metrics
     member private this.Handle (id: string) (command: 'TCommands) (mustExist: bool) =
         task {
             let commandName = CommandName command
@@ -45,27 +78,22 @@ type AggregateHandler<'TAggregate, 'TCommands
             let mutable outcome = "handled"
             try
                 try
-                    let aggregate = new 'TAggregate()
-                    let! exists = aggregate.LoadAsync(this.AggregateRepository, id).ConfigureAwait(false)
-                    if mustExist && not exists then
-                        raise (DomainException.Named(NotFoundResponse, String.Empty))
-                    let originalVersion = aggregate.Version
-
-                    aggregate.Execute command
-                    this.PublishedEvents <- aggregate.PublishedEvents
-
-                    if originalVersion <> aggregate.Version then
-                        do! aggregate.StoreAsync(this.AggregateRepository).ConfigureAwait(false)
-                        let stored = aggregate.Version - originalVersion
-                        RosettaTelemetry.EventsStored.Add(stored, RosettaTelemetry.Tag "rosetta.aggregate" AggregateName)
-                        if not (isNull activity) then activity.SetTag("rosetta.events", stored) |> ignore
-                    elif aggregate.PublishedEvents.Count > 0 then
-                        // Nothing to store, e.g. an idempotent repeat, but the events it published again are recorded unless
-                        // the outbox holds them: the attempt that stored the aggregate may have failed before it recorded them
-                        match this.AggregateRepository with
-                        | :? IRecordPublishedEvents as outbox ->
-                            do! outbox.RecordPublishedEventsAsync(aggregate).ConfigureAwait(false)
-                        | _ -> ()
+                    let retries = this.ConflictRetries
+                    let mutable attempt = 0
+                    let mutable handled = false
+                    while not handled do
+                        let mutable retry = false
+                        try
+                            do! this.Attempt id command mustExist activity
+                            handled <- true
+                        with ex when attempt < retries.Retries && ExceptionCauses.IsConcurrencyConflict ex ->
+                            retry <- true
+                        if retry then
+                            attempt <- attempt + 1
+                            RosettaTelemetry.RetriedConflicts.Add(1L, RosettaTelemetry.Tag "rosetta.aggregate" AggregateName)
+                            if not (isNull activity) then
+                                activity.AddEvent(ActivityEvent("rosetta.conflict.retry")).SetTag("rosetta.attempts", attempt + 1) |> ignore
+                            do! retries.PauseAsync(CancellationToken.None).ConfigureAwait(false)
                 with
                 | :? DomainException as ex ->
                     outcome <- "rejected"

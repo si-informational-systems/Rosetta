@@ -34,6 +34,13 @@ builder.UseProjectionsWith<ProjectionStores.KurrentDB, ProjectionStores.MongoDB>
 builder.Services.AddHealthChecks().AddRosettaProjections();
 ```
 
+To change how every Projection retries a [conflict](../concepts/projections.md#conflicts-are-retried-at-once), register
+a `ConflictRetries` (`SI.Rosetta.Common`):
+
+```csharp
+builder.Services.AddSingleton(new ConflictRetries(5, TimeSpan.FromMilliseconds(100)));   // or ConflictRetries.None
+```
+
 On `IServiceCollection`: `services.AddAggregatesWith<…>(configuration, assembly)`,
 `services.AddProjectionsWith<…>(configuration, assembly)`, `services.AddOutboxWith<…>(configuration)`.
 
@@ -42,6 +49,9 @@ On `IServiceCollection`: `services.AddAggregatesWith<…>(configuration, assembl
 F# union cases are created with `New{Case}` and records with their constructor:
 
 ```csharp
+using SI.Rosetta.Aggregates;   // DomainException
+using SI.Rosetta.Common;       // ConcurrencyException
+
 app.MapPost("/people", async (RegisterPerson cmd, IPersonAggregateHandler people) =>
 {
     try
@@ -52,6 +62,10 @@ app.MapPost("/people", async (RegisterPerson cmd, IPersonAggregateHandler people
     catch (DomainException ex)
     {
         return Results.Conflict(ex.Name);
+    }
+    catch (ConcurrencyException)
+    {
+        return Results.Conflict("Conflict");   // still losing after the handler's immediate retries
     }
 });
 ```

@@ -61,7 +61,8 @@ Breaking one of these compiles fine and fails at runtime, or corrupts data later
 10. Create commands go to `IdempotentlyCreateAggregate`, all others to `IdempotentlyUpdateAggregate` (which raises
     `{Aggregate}DoesNotExist`).
 11. Ids are `{PluralCategory}-{id}`: the id is the KurrentDB stream.
-12. Resolve a fresh handler per command; retry `ConcurrencyException` with a fresh one.
+12. Resolve a fresh handler per command. It already retries a conflict at once (`ConflictRetries`, 3 times); a
+    `ConcurrencyException` (`SI.Rosetta.Common`) that still reaches the caller is retried later, with a fresh one.
 13. A state with `[<Snapshot(n)>]` keeps everything in public `member val … with get, set` properties (no
     `let mutable`, no private setters); raise the attribute's `Version` when `ApplyEvent` changes what it builds.
 
@@ -78,7 +79,8 @@ Breaking one of these compiles fine and fails at runtime, or corrupts data later
 16. Handlers write read models only through `INoSqlStore`/`ISqlStore`, never a raw database session (that escapes the
     event's transaction and makes retries double-apply). A Handler takes one store kind; never both.
 17. Updates are load → change → store; check `isNull (box x)` after `LoadAsync`.
-18. Side effects in Handlers (commands, messages, HTTP) must be idempotent: a failed event is handled again.
+18. Side effects in Handlers (commands, messages, HTTP) must be idempotent: a failed event is handled again (at once
+    on a conflict, then after a backoff).
 19. Changing what a Handler writes into existing read models requires bumping `[<ProjectionVersion(n)>]`. A Projection
     with a version above 0, or reading a `cp-` stream, must declare its read models with `IProjectInto` (registration
     fails otherwise); `[<RebuildWithoutClearing>]` only when every Handler overwrites whole documents or rows.

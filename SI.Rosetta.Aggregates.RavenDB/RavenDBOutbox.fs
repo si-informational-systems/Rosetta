@@ -169,7 +169,7 @@ type RavenDBOutbox(store: IDocumentStore, options: OutboxOptions, logger: ILogge
                     try
                         do! session.SaveChangesAsync().ConfigureAwait(false)
                     with :? Raven.Client.Exceptions.ConcurrencyException as conflict ->
-                        raise (SI.Rosetta.Aggregates.ConcurrencyException(
+                        raise (SI.Rosetta.Common.ConcurrencyException(
                                 sprintf "The outbox's event %s was recorded by another command meanwhile, so these events weren't: run the command again." conflict.Id,
                                 conflict))
                 return recorded.Length

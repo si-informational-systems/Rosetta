@@ -44,7 +44,9 @@ The rules Rosetta's design assumes, and the lessons of the applications built on
   current state matters. State-based Aggregates feed no Projections. Both kinds have optimistic concurrency in every
   store: a write never overwrites another command's (`ConcurrencyException`).
 - **Ids are `{PluralCategory}-{id}`**: they're the stream names, and the category feeds `$ce-{PluralCategory}`.
-- **Retry `ConcurrencyException`** by running the command again with a fresh handler (it reloads the state).
+- **Retry `ConcurrencyException` with a backoff.** The handler already ran the command again at once, 3 times, on the
+  reloaded state; what reaches the caller is a hot Aggregate: run the command again later with a fresh handler (see
+  [Recipes](recipes.md#handle-commands-from-a-message-bus)), or let the bus redeliver it.
 - **Use the Outbox** for integration events, published by an `IOutboxPublisher` registered with `UseOutboxPublisher`,
   with the Outbox `Id` as the message id; consumers dedupe on it (delivery is at least once).
 - **Snapshot only long-lived Aggregates** (`[<Snapshot(n)>]`, thousands of events), and raise its `Version` when
@@ -56,7 +58,8 @@ The rules Rosetta's design assumes, and the lessons of the applications built on
   owner; a document the API writes too isn't declared (a rebuild would delete it), so a Projection whose only read
   models the API also writes can be rebuilt only with `[<RebuildWithoutClearing>]` (below).
 - **Handlers only write read models.** Any other effect (a command, a message, an HTTP call) runs again when the event
-  is retried: make it idempotent and quick, or move it to a policy on the bus.
+  is retried (at once on a conflict, then after a backoff): make it idempotent and quick, or move it to a policy on the
+  bus.
 - **Load before updating, and decide about missing.** A missing document the stream itself creates is a bug: fail (the
   Projection retries and then reports Faulted). Skipping silently hides it.
 - **Bump `[<ProjectionVersion>]`** whenever a Handler changes what it writes into existing read models.

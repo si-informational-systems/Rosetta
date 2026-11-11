@@ -91,8 +91,8 @@ Applications built on Rosetta write the same few helpers. They're short; see [Re
 
 - `Guards.fs`: `Reject`/`Ensure` over `DomainException.Named`.
 - An `Emit` member on Aggregates that publish every event: `PublishedEvents.Add` + `Apply`.
-- A command-handling wrapper on the message bus: a `DomainException` is an outcome, a `ConcurrencyException` is retried
-  with a fresh handler.
+- A command-handling wrapper on the message bus: a `DomainException` is an outcome, a `ConcurrencyException` (one that
+  outlasted the handler's immediate retries) is retried with a fresh handler, after a longer pause.
 - An `IOutboxPublisher` that sends one recorded event to the broker, registered with `UseOutboxPublisher` (Rosetta runs
   it in order, with retries and a lease).
 - Projection helpers: `ChangeAsync` (load, change, store; fail when missing).

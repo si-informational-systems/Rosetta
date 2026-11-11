@@ -65,6 +65,32 @@ order on every event read from KurrentDB.
 
 A DU with two cases under one stored name throws `InvalidOperationException` on its first decode.
 
+### Conflicts
+
+```fsharp
+type ConcurrencyException(message: string, inner: exn) =        // every store: another write came first
+    inherit Exception
+    new: message: string -> ConcurrencyException
+    static member Created: stateType: Type * id: string * ?inner: exn -> ConcurrencyException
+    static member Changed: stateType: Type * id: string * loaded: int64 * ?inner: exn -> ConcurrencyException
+
+type ConflictRetries =
+    { Retries: int                       // attempts after the first; 0 = off
+      MaxJitter: TimeSpan }              // the longest random pause before a retry
+    static member Default: ConflictRetries   // 3 retries, 1 to 50 ms each
+    static member None: ConflictRetries      // no retries
+    member PauseAsync: cancellationToken: CancellationToken -> Task   // 1 ms to MaxJitter
+
+module ExceptionCauses =
+    val Of: ex: exn -> exn seq                   // the exception, its inner ones and each of an AggregateException's
+    val IsConcurrencyConflict: ex: exn -> bool   // a ConcurrencyException among them
+```
+
+`ConcurrencyException` is in `SI.Rosetta.Common` (`open SI.Rosetta.Common`), so the Aggregates and the Projections
+both recognize it. `ConflictRetries` is how a conflict is retried at once: by an `AggregateHandler` (its own property,
+see [Conflicts](../concepts/aggregates.md#conflicts)) and by every Projection (one registered in DI, see
+[Conflicts are retried at once](../concepts/projections.md#conflicts-are-retried-at-once)).
+
 ### `RosettaTelemetry` (module)
 
 `Name = "SI.Rosetta"`, `ActivitySource`, `Meter`, the instruments (see [Telemetry](telemetry.md)),
@@ -115,6 +141,7 @@ member aggregate.Apply(event: 'TEvents) : unit  // State.Mutate event; Changes.A
 type AggregateHandler<'TAggregate, 'TCommands>() =   // 'TAggregate :> IAggregateInstance<'TCommands>, new()
     member AggregateRepository: IAggregateRepository with get, set   // set it in the constructor
     member PublishedEvents: List<IAggregateEvents> with get, set     // the last command's
+    member ConflictRetries: ConflictRetries with get, set            // Default; set it in the constructor
     abstract ExecuteAsync: command: 'TCommands -> Task<unit>
     member IdempotentlyCreateAggregate: id: string -> command: 'TCommands -> Task<unit>
     member IdempotentlyUpdateAggregate: id: string -> command: 'TCommands -> Task<unit>   // {Aggregate}DoesNotExist when missing
@@ -126,7 +153,8 @@ type IAggregateHandler =
 ```
 
 Both `Idempotently…` methods load the Aggregate, run `Execute`, and store it when `Version` changed; when it didn't
-and the command published events, a repository with an Outbox records them. Each is traced and measured.
+and the command published events, a repository with an Outbox records them. On a `ConcurrencyException` they do it
+again on the reloaded Aggregate, as `ConflictRetries` says, before it reaches the caller. Each is traced and measured.
 
 ### Repositories
 
@@ -165,14 +193,10 @@ type DomainException(?message: string) =
     member Name: string                                   // "" unless created with Named
     static member Named: name: string * message: string -> DomainException
 
-type ConcurrencyException(message: string, inner: exn) =        // every store: another write came first
-    inherit Exception
-    new: message: string -> ConcurrencyException
-    static member Created: stateType: Type * id: string * ?inner: exn -> ConcurrencyException
-    static member Changed: stateType: Type * id: string * loaded: int64 * ?inner: exn -> ConcurrencyException
-
 val LoadedVersionOf: aggregate: IAggregate -> int64   // Version - Changes.Count: the version it was loaded at
 ```
+
+`ConcurrencyException` is in [`SI.Rosetta.Common`](#conflicts).
 
 ### Outbox
 
@@ -269,7 +293,10 @@ type ProjectionException(message, innerException) =   // a Handler failed; inner
 
 For custom stores and tests: `Checkpoint` (`Id`, `Value` one-based, `Version`), `ICheckpointStore`,
 `IProjectionTransaction` (`CommitAsync checkpoint`, dispose = rollback), `IProjectionsUnitOfWork` (`PrepareAsync`,
-`BeginAsync`, `ClearAsync`), `ProjectionTransaction.Current` (the event's transaction, an `AsyncLocal`),
+`BeginAsync`, `ClearAsync`), `IRecognizeConflicts` (`IsConflict: exn -> bool`: implemented by a unit of work whose
+store has conflicts of its own, retried like a `ConcurrencyException`; Rosetta's MongoDB, PostgreSQL and RavenDB units
+of work do), `ProjectionTransaction.Current` (the event's transaction, an `AsyncLocal`),
+`Projection.ConflictRetries` (set from DI by `ProjectionsFactory`),
 `ProjectionKeys` (`KeyPropertiesOf`, `KeyOf`, `ValuesOf`; delegates to `TypeKeys`), `ProjectionStoreKinds` (`Documents`, `Sql`, `Of`),
 `ProjectionReadModels`, `IProjectionsFactory`/`ProjectionsFactory` (`RebuildIfVersioned`, `RebuildIfReplaced`),
 `ISubscription`, `ISubscriptionFactory`, and `ISubscriptionHistory` (`ReplacedSinceAsync checkpoint`: why the read

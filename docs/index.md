@@ -27,7 +27,7 @@ graph LR
 
 | Feature | |
 |---|---|
-| **Aggregates** | State, behavior and a handler per Aggregate; idempotency, optimistic concurrency and named business errors built in. [Aggregates](concepts/aggregates.md) |
+| **Aggregates** | State, behavior and a handler per Aggregate; idempotency, optimistic concurrency (conflicts retried at once) and named business errors built in. [Aggregates](concepts/aggregates.md) |
 | **Event Sourcing** | Events stored in KurrentDB, one stream per Aggregate, with opt-in snapshots for long-lived ones; or **state-based** Aggregates in RavenDB, MongoDB or your own PostgreSQL tables; or both in one service. |
 | **Outbox** | The integration events an Aggregate publishes, recorded with its state, and published to your broker in order, at least once, from one instance at a time. [Outbox](concepts/outbox.md) |
 | **Projections** | KurrentDB subscriptions that keep read models in RavenDB, MongoDB or your own **PostgreSQL** tables, one transaction per event. [Projections](concepts/projections.md) |

@@ -48,6 +48,13 @@ type MongoDbProjectionsUnitOfWork(client: IMongoClient, db: IMongoDatabase) =
         "and a standalone MongoDB server has no transactions. A single-node replica set is enough: start mongod with " +
         "--replSet rs0, run rs.initiate() once, and connect with replicaSet=rs0 (or directConnection=true)."
 
+    /// A write conflict with another transaction: MongoDB labels it TransientTransactionError, to retry the transaction
+    interface IRecognizeConflicts with
+        member this.IsConflict(ex) =
+            match ex with
+            | :? MongoException as mongo -> mongo.HasErrorLabel "TransientTransactionError"
+            | _ -> false
+
     interface IProjectionsUnitOfWork with
         member this.PrepareAsync(_readModels) =
             task {

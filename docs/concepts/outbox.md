@@ -113,8 +113,8 @@ events at the same `Version`, so they get the same `Id`s, and the Outbox only ad
 that's there stays exactly as it was, published or not, so it isn't published again.
 
 - RavenDB checks which events it holds, and saves the others on condition they're still new: if a concurrent repeat
-  recorded one meanwhile, the save fails with `ConcurrencyException` (Rosetta's, wrapping RavenDB's; the command can be
-  run again) instead of overwriting it.
+  recorded one meanwhile, the save fails with `ConcurrencyException` (Rosetta's, wrapping RavenDB's; the handler runs
+  the command again at once, see [Conflicts](aggregates.md#conflicts)) instead of overwriting it.
 - MongoDB upserts with `$setOnInsert`.
 - PostgreSQL inserts with `on conflict (id) do nothing`.
 

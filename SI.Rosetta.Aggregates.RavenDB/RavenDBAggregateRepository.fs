@@ -4,6 +4,7 @@ open System
 open System.Threading.Tasks
 open Raven.Client.Documents
 open SI.Rosetta.Aggregates
+open SI.Rosetta.Common
 
 /// Every write is checked against the version the aggregate was loaded at (ConcurrencyException when another command got
 /// there first), so a command never overwrites another's.

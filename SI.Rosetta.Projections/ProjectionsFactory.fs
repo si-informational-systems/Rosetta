@@ -170,6 +170,10 @@ type ProjectionsFactory(provider: IServiceProvider) =
                 raise (InvalidOperationException(sprintf "Projection %s has no checkpoint store: register a projections store." projection.Name))
             // Every Rosetta store registers one. Without it, the handlers' writes and the checkpoint aren't atomic
             projection.UnitOfWork <- this.OfStore<IProjectionsUnitOfWork> kind
+            // The application's, when it registered one
+            match provider.GetService(typeof<ConflictRetries>) with
+            | :? ConflictRetries as retries -> projection.ConflictRetries <- retries
+            | _ -> ()
             if not (isNull (box projection.UnitOfWork)) then
                 do! projection.UnitOfWork.PrepareAsync(ProjectionReadModels.Of projectionType).ConfigureAwait(false)
             do! this.LoadCheckpoint(projection).ConfigureAwait(false)

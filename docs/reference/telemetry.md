@@ -12,13 +12,16 @@ recorded until something listens. See [Observability](../concepts/observability.
 
 | Name | Kind | Tags | Status |
 |---|---|---|---|
-| `{Aggregate} {Command}` (`Person RegisterPerson`) | Internal | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.command`, `rosetta.events` (stored, when any), `rosetta.outcome` (`handled`, `rejected`, `failed`), `rosetta.domain_error` | Error with the `DomainException.Name`, or the exception |
-| `{Projection} {Event}` (`Person PersonRegistered`) | Consumer | `rosetta.projection`, `rosetta.stream`, `rosetta.event`, `rosetta.checkpoint`, `rosetta.outcome` (`skipped`) | Error when a Handler fails |
+| `{Aggregate} {Command}` (`Person RegisterPerson`) | Internal | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.command`, `rosetta.events` (stored, when any), `rosetta.outcome` (`handled`, `rejected`, `failed`), `rosetta.domain_error`, `rosetta.attempts` (after a conflict retry) | Error with the `DomainException.Name`, or the exception |
+| `{Projection} {Event}` (`Person PersonRegistered`) | Consumer | `rosetta.projection`, `rosetta.stream`, `rosetta.event`, `rosetta.checkpoint`, `rosetta.outcome` (`skipped`), `rosetta.attempts` (after a conflict retry) | Error when a Handler fails |
 | `{Aggregate} {EventType} publish` (`Person PersonRegistered publish`) | Producer | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.event`, `rosetta.outbox.event.id` | Error with the exception when `PublishAsync` throws |
 
 - `{Command}` is the command's record type name; `{Event}` and `{EventType}` are the event's stored name.
 - A projection span's parent is the `traceparent` stored in the event's metadata, so a trace runs from the request,
   through the command, to every Projection, across services.
+- A conflict retried at once ([commands](../concepts/aggregates.md#conflicts),
+  [events](../concepts/projections.md#conflicts-are-retried-at-once)) adds the span event `rosetta.conflict.retry` and
+  sets `rosetta.attempts` to the attempt that follows (2, 3, …).
 - The Outbox publisher's span continues the trace of the command that recorded the event (its `TraceParent`), so
   spans of your broker client inside `PublishAsync` join it.
 
@@ -31,6 +34,7 @@ recorded until something listens. See [Observability](../concepts/observability.
 | `rosetta.events.stored` | Counter | `{event}` | `rosetta.aggregate` |
 | `rosetta.outbox.events` | Counter | `{event}` | `rosetta.aggregate` |
 | `rosetta.outbox.published` | Counter | `{event}` | `rosetta.aggregate` |
+| `rosetta.conflicts.retried` | Counter | `{retry}` | `rosetta.aggregate` (a command) or `rosetta.projection` (an event) |
 | `rosetta.projection.events` | Counter | `{event}` | `rosetta.projection`, `rosetta.outcome` (`handled`, `failed`, `skipped`) |
 | `rosetta.projection.event.duration` | Histogram | `s` | `rosetta.projection` |
 | `rosetta.projection.resubscriptions` | Counter | `{resubscription}` | `rosetta.projection` |
@@ -48,7 +52,7 @@ Through `ILogger`. The Projections log each state change, with the Projection's 
 | `STARTED` (from checkpoint n) | Information |
 | `RECOVERED` | Information |
 | `SKIPPED` an unknown event (with `[<SkipUnknownEvents>]`) | Warning the first time per event type, then Debug |
-| `DROPPED` (a failure; resubscribing) | Error |
+| `DROPPED` (a failure, or a conflict that outlasted its immediate retries; resubscribing) | Error |
 | `FAULTED` (5 failures in a row) | Critical, once |
 | `STOPPED` (an unknown event, or a permanent startup error) | Critical |
 | `CANCELED` (the application stopped) | Information |

@@ -3,6 +3,7 @@ namespace SI.Rosetta.Aggregates.UnitTests
 open System
 open Xunit
 open SI.Rosetta.Aggregates
+open SI.Rosetta.Common
 open SI.Rosetta.Aggregates.TestKit
 
 /// The TestKit's in-memory repository checks the version an aggregate was loaded at, as every store does

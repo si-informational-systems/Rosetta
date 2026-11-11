@@ -12,6 +12,8 @@
   <ItemGroup>
     <Compile Include="Pluralizer.fs" />
     <Compile Include="UnionCaseInfoUtils.fs" />
+    <Compile Include="ConcurrencyException.fs" />
+    <Compile Include="ConflictRetries.fs" />
     <Compile Include="Messages.fs" />
     <Compile Include="EventType.fs" />
     <Compile Include="TypeKeys.fs" />

@@ -78,6 +78,14 @@ type PostgreSqlProjectionsUnitOfWork(database: PostgreSqlDatabase) =
             | None -> ()
         } :> Task
 
+    /// A deadlock with another transaction, or a serialization failure
+    interface IRecognizeConflicts with
+        member this.IsConflict(ex) =
+            match ex with
+            | :? PostgresException as postgres ->
+                postgres.SqlState = PostgresErrorCodes.DeadlockDetected || postgres.SqlState = PostgresErrorCodes.SerializationFailure
+            | _ -> false
+
     interface IProjectionsUnitOfWork with
         member this.PrepareAsync(readModels: Type[]) =
             task {

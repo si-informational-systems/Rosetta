@@ -95,9 +95,16 @@ reproduces the same state.
 ## Handle commands from a message bus
 
 The message handler resolves a **fresh** Aggregate Handler for each attempt (they're transient and hold the last
-command's `PublishedEvents`), treats a `DomainException` as an outcome, and retries a `ConcurrencyException`:
+command's `PublishedEvents`), treats a `DomainException` as an outcome, and retries a `ConcurrencyException`. The
+handler has already run the command again at once, 3 times (see [Conflicts](../concepts/aggregates.md#conflicts)), so
+what reaches this loop is a hot Aggregate: it backs off longer before trying again.
 
 ```fsharp
+open System
+open System.Threading.Tasks
+open SI.Rosetta.Aggregates
+open SI.Rosetta.Common   // ConcurrencyException
+
 let ConflictAttempts = 4
 
 /// Runs the command through a fresh handler; re-runs it when another write to the same Aggregate won the race
@@ -112,7 +119,7 @@ let RunAsync (newHandler: unit -> IAggregateHandler) (command: IAggregateCommand
                 do! handler.ExecuteAsync command
                 published <- Some (List.ofSeq (handler.GetPublishedEvents()))
             with :? ConcurrencyException when attempt < ConflictAttempts ->
-                do! Task.Delay(Random.Shared.Next(20, 80) * attempt)
+                do! Task.Delay(Random.Shared.Next(100, 300) * attempt)
         return published.Value
     }
 ```
@@ -225,7 +232,8 @@ document both write:
 
 - don't declare it with `IProjectInto` (a rebuild would delete the API's documents);
 - write it from the Handler on a session of your own, with `OptimisticConcurrencyMode.Writes`, retrying on RavenDB's
-  `ConcurrencyException`;
+  `ConcurrencyException` (or letting it propagate: in a RavenDB Projection the event is then
+  [handled again at once](../concepts/projections.md#conflicts-are-retried-at-once));
 - make the change idempotent (the event may be handled twice: the Handler's own session isn't part of the event's
   transaction).
 

@@ -119,11 +119,15 @@ type PersonAggregateHandler(repo: IEventSourcedAggregateRepository) =
   it when its `Version` changed.
 - `IdempotentlyUpdateAggregate id command` does the same, but raises `DomainException.Named("{Aggregate}DoesNotExist")`
   (e.g. `PersonDoesNotExist`) when the Aggregate is missing. The name is the Aggregate type's name without "Aggregate".
+- A command that loses a race to another is run again at once (see [Conflicts](#conflicts)).
 - Each command is traced and measured (see [Observability](observability.md)).
 
 ### Calling it
 
 ```fsharp
+open SI.Rosetta.Aggregates   // DomainException
+open SI.Rosetta.Common       // ConcurrencyException
+
 type PeopleEndpoints(people: IPersonAggregateHandler) =
     member this.Register(cmd: RegisterPerson) =
         task {
@@ -133,12 +137,41 @@ type PeopleEndpoints(people: IPersonAggregateHandler) =
                 return Ok published
             with
             | :? DomainException as ex -> return Error ex.Name           // a rule said no: 4xx
-            | :? ConcurrencyException -> return Error "Conflict"          // another write won: retry the command
+            | :? ConcurrencyException -> return Error "Conflict"          // still losing after the handler's retries
         }
 ```
 
 `ExecuteAsync` takes the commands DU (`IAggregateCommands`). A handler instance holds the last command's
 `PublishedEvents`, so resolve it per request or message (it's transient).
+
+### Conflicts
+
+When another command stored the same Aggregate first (`ConcurrencyException`, in any store), the handler runs the
+command again at once: it loads the Aggregate as it is now, executes the command and stores it, **up to 3 more times**,
+each after a random pause of 1 to 50 ms, so commands that collided don't collide again in step. Only then does the
+caller see the `ConcurrencyException`.
+
+- Only the load, `Execute` and store are run again, not the rest of your `ExecuteAsync`: the Aggregate's decision is
+  pure, so running it again is safe.
+- A create that lost the race runs again on the Aggregate the other command created, so its idempotency check or its
+  `DomainException` applies.
+- `PublishedEvents` are the last attempt's.
+- Each retry is counted in `rosetta.conflicts.retried` and marked on the command's span (see
+  [Telemetry](../reference/telemetry.md)).
+
+Change it per handler, in its constructor (`ConflictRetries` is in `SI.Rosetta.Common`):
+
+```fsharp
+type PersonAggregateHandler(repo: IEventSourcedAggregateRepository) =
+    inherit AggregateHandler<PersonAggregate, PersonCommands>()
+    do base.AggregateRepository <- repo
+    do base.ConflictRetries <- { Retries = 5; MaxJitter = TimeSpan.FromMilliseconds 100.0 }   // or ConflictRetries.None
+    interface IPersonAggregateHandler
+    …
+```
+
+A `ConflictRetries` registered in DI applies to [Projections](projections.md#conflicts-are-retried-at-once) only, not
+to handlers.
 
 ## Storage
 
@@ -152,7 +185,8 @@ The Aggregate's handler constructor decides how it's stored.
   [upcasters](event-evolution.md#upcasters)). An event the DU doesn't know fails the load (`UnknownEventException`):
   rebuilding state without it would be wrong.
 - Storing appends `Changes` expecting the version that was loaded: **optimistic concurrency**. When another write got
-  there first, it throws `ConcurrencyException`; run the command again (it reloads the state).
+  there first, it throws `ConcurrencyException`, and the handler runs the command again on the reloaded state (see
+  [Conflicts](#conflicts)).
 - Event data is the record as JSON; metadata carries the stored name, CLR type names and the trace context. See
   [Stored format](../reference/stored-format.md).
 
@@ -197,7 +231,7 @@ type AccountAggregateState() =
 - **Optimistic concurrency**, as with KurrentDB, in every store: a write never overwrites another command's. A new
   Aggregate is stored only while its `Id` doesn't exist, a loaded one only while the stored state is still at the
   version it was loaded at; otherwise `ConcurrencyException`, nothing is written (its Outbox events included), and the
-  command can be run again (it reloads the state).
+  handler runs the command again on the reloaded state (see [Conflicts](#conflicts)).
 
     | Store | New Aggregate | Loaded Aggregate |
     |---|---|---|

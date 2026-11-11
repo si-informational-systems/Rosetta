@@ -357,6 +357,7 @@ type PersonAggregateHandler(repo: IEventSourcedAggregateRepository) =
 
 - `IdempotentlyUpdateAggregate` raises `DomainException.Named("PersonDoesNotExist")` when the Aggregate doesn't exist.
 - The Aggregate is stored only when its `Version` changed.
+- **A conflict is retried at once.** When another command stored the same Aggregate first (`ConcurrencyException`, in any store), the handler loads it again, executes the command and stores it, up to 3 more times, each after a random pause of 1 to 50 ms, so commands that collided don't collide again in step. Only then does the caller see the `ConcurrencyException` (in `SI.Rosetta.Common`). Only the load, `Execute` and store run again, not the rest of `ExecuteAsync`; a create that lost the race runs again on the Aggregate the other command created (its idempotency or `DomainException` applies), and `PublishedEvents` are the last attempt's. Change it per handler, in its constructor: `do base.ConflictRetries <- { Retries = 5; MaxJitter = TimeSpan.FromMilliseconds 100.0 }`, or `ConflictRetries.None`.
 - With KurrentDB the stream name is the Aggregate `Id` - use ids like `People-1` so that the `$ce-People` category stream can feed Projections.
 
 ### Snapshots
@@ -395,7 +396,7 @@ type PersonConsumer(handler: IPersonAggregateHandler) =
 | MongoDB | the AggregateState document, in the pluralized state type name collection | a regular `version` field |
 | PostgreSQL | a row of your table, the snake_case plural of the state type name (`PersonAggregateState` → `person_aggregate_states`), a column per property | a regular `version` column |
 
-Every store has optimistic concurrency, as KurrentDB does: a write never overwrites another command's. A new Aggregate is stored only while its `Id` doesn't exist (RavenDB: an empty change vector; MongoDB: `InsertOne`; PostgreSQL: `insert … on conflict (id) do nothing`), a loaded one only while the stored state is still at the version it was loaded at (RavenDB: the `@metadata` version checked, then saved over that document's change vector; MongoDB: `ReplaceOne` filtered on `_id` and `version`; PostgreSQL: `update … where id = … and version = …`); otherwise `ConcurrencyException`, and nothing is written, its Outbox events included.
+Every store has optimistic concurrency, as KurrentDB does: a write never overwrites another command's. A new Aggregate is stored only while its `Id` doesn't exist (RavenDB: an empty change vector; MongoDB: `InsertOne`; PostgreSQL: `insert … on conflict (id) do nothing`), a loaded one only while the stored state is still at the version it was loaded at (RavenDB: the `@metadata` version checked, then saved over that document's change vector; MongoDB: `ReplaceOne` filtered on `_id` and `version`; PostgreSQL: `update … where id = … and version = …`); otherwise `ConcurrencyException`, and nothing is written, its Outbox events included, and the handler runs the command again at once (see [Handler](#handler)).
 
 The PostgreSQL tables are yours, mapped [as read models are](#how-the-rows-are-mapped) (`[<Table>]`, `[<Column>]`, the same column types; `Id` the key, `Version` a `bigint`), and the app can query them with SQL. Rosetta never creates or changes them: the first time a state type is used, its table is checked (it exists, has a column per property, and a primary key or unique index on `id`), and until it matches, every command on that type fails with an `InvalidOperationException` saying what's missing.
 
@@ -490,7 +491,7 @@ A command that changed nothing, e.g. an idempotent repeat, stores nothing, but t
     else this.Register cmd
 ```
 
-The Outbox keeps **one record per event**. An event's `Id` comes from what makes it that event: the Aggregate, its `Version`, the event's position among the command's PublishedEvents, its type and its data. A repeat publishes the same events at the same `Version`, so they get the same `Id`s, and the Outbox only adds the ones it doesn't hold: the record that's there stays exactly as it was, published or not, so it isn't published again. RavenDB checks which events it holds, and saves the others on condition they're still new: if a concurrent repeat recorded one meanwhile, the save fails with `ConcurrencyException` (Rosetta's, wrapping RavenDB's; the command can be run again) instead of overwriting it. MongoDB upserts with `$setOnInsert`, PostgreSQL inserts with `on conflict (id) do nothing`.
+The Outbox keeps **one record per event**. An event's `Id` comes from what makes it that event: the Aggregate, its `Version`, the event's position among the command's PublishedEvents, its type and its data. A repeat publishes the same events at the same `Version`, so they get the same `Id`s, and the Outbox only adds the ones it doesn't hold: the record that's there stays exactly as it was, published or not, so it isn't published again. RavenDB checks which events it holds, and saves the others on condition they're still new: if a concurrent repeat recorded one meanwhile, the save fails with `ConcurrencyException` (Rosetta's, wrapping RavenDB's; the handler runs the command again at once) instead of overwriting it. MongoDB upserts with `$setOnInsert`, PostgreSQL inserts with `on conflict (id) do nothing`.
 
 An event published again after the Aggregate changed further has a later `Version`, so it's recorded again. Whatever consumes the events must still handle duplicates (as with any broker's redeliveries), and the `Id` serves as their message id.
 
@@ -600,11 +601,12 @@ and PersonProjectionHandler(store: INoSqlStore) =
 - Projections run in a `BackgroundService`. The application finishes starting right away, and stopping it (Ctrl+C) cancels every subscription immediately.
 - **Each event is one transaction.** The Projection's Handlers run inside it **one at a time, in the order the Projection declares them** (`IAmHandledBy`), so a Handler sees what the ones before it wrote. Then the event's checkpoint is written in the same transaction, and it's committed: one session's `SaveChanges` in RavenDB, a transaction in MongoDB or PostgreSQL.
 - When a Handler fails, the event stops there: the `ProjectionException` holds that failure, and **nothing is written**, neither the earlier Handlers' writes nor the checkpoint. The event is handled again, by every Handler, from the read models as they were. So a read model that adds one for each event (analytics, totals) counts each event once, however often it's retried. A commit that failed may still have been written (its reply lost): before the event is handled again, the stored checkpoint is read, and an event it already includes isn't handled twice.
+- **A conflict is retried at once.** When the event's transaction fails on Rosetta's `ConcurrencyException` (a Handler that runs a command lost to another) or on a conflict of the store itself (MongoDB a write conflict, labelled `TransientTransactionError`; PostgreSQL a deadlock `40P01` or a serialization failure `40001`; RavenDB its `ConcurrencyException`), the event is handled again in a new transaction, up to 3 more times, each after a random pause of 1 to 50 ms. Only then does the failure reach the subscription, which backs off as below; a conflict that resolves isn't logged and doesn't resubscribe. To change it for every Projection, register a `ConflictRetries` (`SI.Rosetta.Common`): `services.AddSingleton<ConflictRetries>({ Retries = 5; MaxJitter = TimeSpan.FromMilliseconds 100.0 })`, or `ConflictRetries.None`.
 - The transaction stays open while the Handlers run. Effects outside the read models (a command to an Aggregate, a message, an HTTP call) aren't in it: they run before the commit, and again when the event is retried, so they must be idempotent, and quick.
 - In RavenDB, a document loaded in the event and changed in place is saved with it too, as in any session. Storing a new object under a loaded document's Id (an F# record copied with `with`) replaces it.
 - Every store call joins the event's transaction, so a Handler just calls `StoreAsync`, `StoreManyAsync`, `DeleteAsync` or `DeleteManyAsync`. Outside a Projection's Handlers (in an API, say), the stores write straight away: each `StoreAsync` on its own, and each `StoreManyAsync`/`DeleteManyAsync` all or nothing.
 - **MongoDB needs a replica set** for the transactions (a single node is enough). On a standalone server the Projections don't start, with an error that says how to set one up.
-- **A Projection never stops the application.** When it fails (KurrentDB or the read store unavailable, a Handler that throws), it resubscribes from its last checkpoint, waiting **1, 2, 4, 8, 16 s, then 30 s** between attempts, for as long as it takes; the other Projections keep running. Only progress resets the count: a handled event, or catching up with the stream (not the subscription's confirmation).
+- **A Projection never stops the application.** When it fails (KurrentDB or the read store unavailable, a Handler that throws, a conflict that outlasted its immediate retries), it resubscribes from its last checkpoint, waiting **1, 2, 4, 8, 16 s, then 30 s** between attempts, for as long as it takes; the other Projections keep running. Only progress resets the count: a handled event, or catching up with the stream (not the subscription's confirmation).
 - After **5 failures in a row** without progress (usually the same event failing: a bug), it's **Faulted**: logged as Critical once and reported Unhealthy, and it keeps retrying every 30 s, so a fixed version picks it up. When it handles events again, it logs that it recovered.
 - An event the Projection's events DU has no case for **stops** that Projection at once, since retrying can't help (see [Evolving events](#-evolving-events-upcasting-and-unknown-events)). So does a startup error that's the same on every attempt: a configuration mistake, MongoDB without a replica set, or a [ProjectionVersion](#rebuilding-a-projection) older than its read models. A startup error that can heal (a database still booting) is retried like a failure.
 - The **health check** reports every Projection: `builder.Services.AddHealthChecks().AddRosettaProjections()` adds `rosetta-projections`, **Healthy** when they all run, **Degraded** while one starts or retries, **Unhealthy** when one is Faulted or stopped. Its data has each Projection's state, stream, checkpoint, failures in a row, last error and since when. For metrics-based alerting, the gauge `rosetta.projections.unhealthy` reports 1 for each Projection that is Faulted or stopped and 0 for the others, tagged `rosetta.projection` and `rosetta.state`: alert when its sum is above 0. The counter `rosetta.projection.faults` counts the faults and stops as they happen.
@@ -933,7 +935,7 @@ builder.Services
 | `{Projection} {Event}`, e.g. `Person PersonRegistered` | Consumer | `rosetta.projection`, `rosetta.stream`, `rosetta.event`, `rosetta.checkpoint`, `rosetta.outcome` (`skipped`) |
 | `{Aggregate} {EventType} publish`, e.g. `Person PersonRegistered publish` | Producer | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.event`, `rosetta.outbox.event.id` |
 
-A command's trace context (W3C `traceparent`/`tracestate`) is stored in the metadata of the events it produces, and the projections handling those events continue it, as does the Outbox publisher for its PublishedEvents. So one trace runs from the request, through the command, to every read model it updates, even across services. A rejected command (`DomainException`) or a failing projection marks its span as an error. Spans of your own code and of instrumented clients nest inside Rosetta's.
+A command's trace context (W3C `traceparent`/`tracestate`) is stored in the metadata of the events it produces, and the projections handling those events continue it, as does the Outbox publisher for its PublishedEvents. So one trace runs from the request, through the command, to every read model it updates, even across services. A rejected command (`DomainException`) or a failing projection marks its span as an error. A conflict retried at once adds the span event `rosetta.conflict.retry` and the tag `rosetta.attempts`. Spans of your own code and of instrumented clients nest inside Rosetta's.
 
 **Metrics**
 
@@ -944,6 +946,7 @@ A command's trace context (W3C `traceparent`/`tracestate`) is stored in the meta
 | `rosetta.events.stored` | `{event}` | `rosetta.aggregate` |
 | `rosetta.outbox.events` | `{event}` | `rosetta.aggregate` |
 | `rosetta.outbox.published` | `{event}` | `rosetta.aggregate` |
+| `rosetta.conflicts.retried` | `{retry}` | `rosetta.aggregate` (a command) or `rosetta.projection` (an event): conflicts retried at once |
 | `rosetta.projection.events` | `{event}` | `rosetta.projection`, `rosetta.outcome` (`handled`, `failed`, `skipped`) |
 | `rosetta.projection.event.duration` | `s` | `rosetta.projection` |
 | `rosetta.projection.resubscriptions` | `{resubscription}` | `rosetta.projection` |
@@ -1062,6 +1065,7 @@ Rosetta is opinionated in its choice of technologies, but every store sits behin
 ```fsharp
 //Implementing the db for Aggregates (either to save the entire AggregateState all at once or to save the produced Events for Event Sourcing purposes)
 type IAggregateRepository =
+    // Throws ConcurrencyException (SI.Rosetta.Common) when another write came first: the handler runs the command again
     abstract member StoreAsync<'TAggregateState
             when 'TAggregateState :> IAggregateState> :
             aggregate: IAggregate<'TAggregateState> -> Task
@@ -1096,6 +1100,11 @@ type IProjectionsUnitOfWork =
     abstract member PrepareAsync: readModels: Type[] -> Task   // once per Projection at startup, with its IProjectInto types
     abstract member BeginAsync: unit -> Task<IProjectionTransaction>
     abstract member ClearAsync: readModels: Type[] -> Task     // a rebuilt Projection's read models
+
+//...and, when the store has conflicts of its own (a write conflict, a deadlock), IRecognizeConflicts on the same object:
+//an event whose transaction fails on one is handled again at once, as on a ConcurrencyException
+type IRecognizeConflicts =
+    abstract member IsConflict: ex: exn -> bool                // called with each of the failure's causes
 
 type ICheckpointStore =
     abstract member ReadAsync: id: string -> Task<Checkpoint> 
