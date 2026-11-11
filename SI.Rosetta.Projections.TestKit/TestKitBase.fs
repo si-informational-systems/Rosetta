@@ -1,4 +1,4 @@
-﻿namespace SI.Rosetta.Projections.TestKit
+namespace SI.Rosetta.Projections.TestKit
 
 open SI.Rosetta.Projections
 open SI.Rosetta.TestKit
@@ -29,6 +29,7 @@ type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent
         serviceCollection.AddSingleton<IProjectionsStore>(store) |> ignore
         serviceCollection.AddSingleton<INoSqlStore>(store) |> ignore
         serviceCollection.AddSingleton<ISqlStore>(store) |> ignore
+        serviceCollection.AddSingleton<IProjectionsUnitOfWork>(store) |> ignore
 
         // Allow derived classes to configure additional services
         this.ConfigureServices(serviceCollection)
@@ -39,13 +40,15 @@ type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent
         projectionsStore <- serviceProvider.GetRequiredService<IProjectionsStore>()
     )
 
+    /// The read model's key as LoadAsync takes it: its Id, or a tuple of its [<Key>] values
     let GetIdFromObject(obj: obj) =
-        let property = obj.GetType().GetProperty("Id")
-        if property = null then
-            raise (System.InvalidOperationException($"Type {obj.GetType().Name} does not have an 'Id' property"))
-        let value = property.GetValue(obj)
-        IdValidator.ValidateIdType(value)
-        value
+        let values = ProjectionKeys.KeyOf obj
+        values |> Array.iter IdValidator.ValidateIdType
+        match values with
+        | [| id |] -> id
+        | values ->
+            let types = ProjectionKeys.KeyPropertiesOf (obj.GetType()) |> Array.map (fun property -> property.PropertyType)
+            Microsoft.FSharp.Reflection.FSharpValue.MakeTuple(values, Microsoft.FSharp.Reflection.FSharpType.MakeTupleType types)
 
     member this.ProjectionStore = 
         let _ = lazyServices.Value
@@ -76,8 +79,8 @@ type TestKitBase<'TProjection, 'TProjectionHandler, 'TEvent
                 raise (XunitException(difference))
         }
 
+    // Every test has its own in-memory store: nothing to clean up
     member private this.ResetState() =
-        this.ProjectionStore.DeleteAsync(DocumentId).GetAwaiter().GetResult()
         DocumentId <- obj
         TestValid <- false
 

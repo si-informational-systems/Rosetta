@@ -1,4 +1,4 @@
-﻿namespace SI.Rosetta.Projections.HostBuilder
+namespace SI.Rosetta.Projections.HostBuilder
 
 open System
 open System.Collections.Generic
@@ -60,6 +60,15 @@ type ProjectionsRegistration internal () =
     /// Every active projection in the assembly that holds 'T, and its custom projections
     member this.FromAssemblyOf<'T>() =
         this.FromAssembly typeof<'T>.Assembly
+
+    /// Stops the application (Environment.ExitCode 1) when a projection faults (fails again and again without progress),
+    /// stops on an event it has no case for, or fails to start, instead of reporting it through the "rosetta-projections"
+    /// health check and keeping the application running. For a process that only runs projections, under an orchestrator
+    /// that restarts it. An F# main must return Environment.ExitCode for the exit code to reach it
+    member this.StopApplicationOnFailure() =
+        this.StopsApplicationOnFailure <- true
+
+    member val internal StopsApplicationOnFailure = false with get, set
 
     member internal this.Assemblies = Scanned :> IReadOnlyList<Assembly>
     member internal this.NamedProjections = Named :> IReadOnlyList<NamedProjection>

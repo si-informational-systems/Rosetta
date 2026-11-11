@@ -23,10 +23,13 @@
     <Compile Include="HandlesStreamAttribute.fs" />
     <Compile Include="DisabledProjectionAttribute.fs" />
     <Compile Include="SkipUnknownEventsAttribute.fs" />
+    <Compile Include="ProjectionVersionAttribute.fs" />
     <Compile Include="CustomProjectionStreamAttribute.fs" />
     <Compile Include="ISubscription.fs" />
     <Compile Include="ISubscriptionFactory.fs" />
     <Compile Include="IProjectionsStore.fs" />
+    <Compile Include="ProjectionReadModels.fs" />
+    <Compile Include="ProjectionTransaction.fs" />
     <Compile Include="IProjection.fs" />
     <Compile Include="IProjectionsFactory.fs" />
     <Compile Include="ProjectionHandlerFactory.fs" />

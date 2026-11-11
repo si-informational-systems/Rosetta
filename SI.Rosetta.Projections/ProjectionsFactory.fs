@@ -57,11 +57,41 @@ type ProjectionsFactory(provider: IServiceProvider) =
         proj.Name <- pi.Name
         proj.SubscriptionStreamName <- pi.SubscriptionStreamName
         
+    /// The store's service: the one registered under its kind (ProjectionStoreKinds) when there are two stores, the
+    /// one registered on its own otherwise
+    member private this.OfStore<'T when 'T : not struct>(kind: string) : 'T =
+        match box (provider.GetKeyedService<'T>(kind)) with
+        | null -> provider.GetService<'T>()
+        | service -> unbox<'T> service
+
     member this.LoadCheckpoint(proj: Projection<_>) =
         task {
-            let cr = provider.GetRequiredService<ICheckpointStore>()
-            let! checkpoint = cr.ReadAsync(sprintf "%s-%s" CheckpointsPrefix proj.Name).ConfigureAwait(false)
+            let! checkpoint = proj.CheckpointStore.ReadAsync(sprintf "%s-%s" CheckpointsPrefix proj.Name).ConfigureAwait(false)
             proj.Checkpoint <- checkpoint
+        }
+
+    /// A projection whose [<ProjectionVersion>] went up is rebuilt: its read models' tables or collections (IProjectInto)
+    /// are emptied, then its checkpoint starts again from 0 with the new version. In that order, so a crash between them
+    /// clears again
+    member this.RebuildIfVersioned(t: Type, proj: Projection<_>) =
+        task {
+            let version =
+                match t.GetCustomAttribute(typeof<ProjectionVersion>) with
+                | :? ProjectionVersion as attribute -> attribute.Version
+                | _ -> 0
+            let clear = ProjectionReadModels.Of t
+            let stored = proj.Checkpoint.Version
+            if stored > version then
+                raise (InvalidOperationException(
+                    sprintf "Projection %s is at version %d, but its read models were built by version %d: a newer version of it runs elsewhere." proj.Name version stored))
+            if stored < version then
+                if clear.Length > 0 then
+                    if isNull (box proj.UnitOfWork) then
+                        raise (InvalidOperationException(sprintf "Projection %s can't clear its read models: its store has no unit of work." proj.Name))
+                    do! proj.UnitOfWork.ClearAsync(clear).ConfigureAwait(false)
+                let reset = Checkpoint(Id = proj.Checkpoint.Id, Value = 0UL, Version = version)
+                do! proj.CheckpointStore.StoreAsync(reset).ConfigureAwait(false)
+                proj.Checkpoint <- reset
         }
         
     member this.CreateSubscription<'TEvent when 'TEvent :> IAggregateEvents>(proj: Projection<'TEvent>) =
@@ -103,8 +133,17 @@ type ProjectionsFactory(provider: IServiceProvider) =
             let projection = Projection<'TEvent>()
             this.SetNameAndStreamName projectionType projection
             projection.SkipUnknownEvents <- this.SkipsUnknownEvents projectionType
+            // The store its handlers write to: its transactions and its checkpoints
+            let kind = ProjectionStoreKinds.Of projectionType
+            projection.CheckpointStore <- this.OfStore<ICheckpointStore> kind
+            if isNull (box projection.CheckpointStore) then
+                raise (InvalidOperationException(sprintf "Projection %s has no checkpoint store: register a projections store." projection.Name))
+            // Every Rosetta store registers one. Without it, the handlers' writes and the checkpoint aren't atomic
+            projection.UnitOfWork <- this.OfStore<IProjectionsUnitOfWork> kind
+            if not (isNull (box projection.UnitOfWork)) then
+                do! projection.UnitOfWork.PrepareAsync(ProjectionReadModels.Of projectionType).ConfigureAwait(false)
             do! this.LoadCheckpoint(projection).ConfigureAwait(false)
-            projection.CheckpointStore <- provider.GetRequiredService<ICheckpointStore>()
+            do! this.RebuildIfVersioned(projectionType, projection).ConfigureAwait(false)
             projection.Subscription <- this.CreateSubscription projection
             projection.Handlers <- this.CreateHandlers<'TEvent> projectionType
             return projection :> IProjection

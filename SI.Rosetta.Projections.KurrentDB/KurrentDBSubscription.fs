@@ -1,4 +1,4 @@
-﻿namespace SI.Rosetta.Projections.KurrentDB
+namespace SI.Rosetta.Projections.KurrentDB
 
 open System
 open System.Diagnostics
@@ -12,8 +12,13 @@ open SI.Rosetta.Common
 open FSharp.Control
 open SI.Rosetta.Serialization
 
+/// A catch-up subscription that never gives up on its own: it resubscribes after any failure, waiting longer each time
+/// (ProjectionRetries), and reports how it's doing in ProjectionStatuses. Failing FailuresBeforeFaulted times in a row
+/// without progress makes it Faulted (logged Critical once), and it keeps retrying. Only an event 'TEvent has no case
+/// for (without SkipUnknownEvents) stops it, since retrying can't help: StartAsync then fails with UnknownEventException
 type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
-    (logger: ILogger<KurrentDBSubscription<'TEvent>>, client: KurrentDBClient, upcasters: IEventUpcaster seq) =
+    (logger: ILogger<KurrentDBSubscription<'TEvent>>, client: KurrentDBClient, upcasters: IEventUpcaster seq,
+     statuses: ProjectionStatuses, retries: ProjectionRetries) =
     let Upcasters = Seq.toArray upcasters
     let mutable name = String.Empty
     let mutable streamName = String.Empty
@@ -25,12 +30,6 @@ type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
     let mutable skipUnknownEvents = false
     // Each skipped event type is logged as a warning the first time only
     let SkippedEventTypes = Collections.Generic.HashSet<string>()
-    let MaxResubscriptionAttempts = 5
-    let InitialResubscriptionDelay = TimeSpan.FromSeconds(1.0)
-
-    // Exponential backoff before each resubscription attempt: 1s, 2s, 4s, 8s, 16s
-    let ResubscriptionDelay (attempt: int) =
-        TimeSpan.FromTicks(InitialResubscriptionDelay.Ticks * (1L <<< (attempt - 1)))
 
     let IsDisposal (ex: exn) =
         match ex with
@@ -48,8 +47,23 @@ type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
     let isNotDeleted (event: ResolvedEvent) =
         event.Event <> null
 
+    new(logger: ILogger<KurrentDBSubscription<'TEvent>>, client: KurrentDBClient, upcasters: IEventUpcaster seq) =
+        KurrentDBSubscription<'TEvent>(logger, client, upcasters, ProjectionStatuses(), ProjectionRetries.Default)
+
     new(logger: ILogger<KurrentDBSubscription<'TEvent>>, client: KurrentDBClient) =
         KurrentDBSubscription<'TEvent>(logger, client, Seq.empty)
+
+    /// This projection's status (its Name is set after it's created)
+    member private this.Status = statuses.Of(name, streamName)
+
+    /// A handled event or catching up: the failures in a row start again from 0
+    member private this.Progressed(checkpoint: uint64) =
+        resubscriptionAttempt <- 0
+        match this.Status.Progressed checkpoint with
+        | ProjectionState.Faulted ->
+            logger.LogInformation("Projection {Name} on stream {StreamName} RECOVERED: it handles events again, from checkpoint {Checkpoint}.",
+                this.Name, this.StreamName, checkpoint)
+        | _ -> ()
 
     member private this.LogSkipped (event: ResolvedEvent) =
         let typeName = event.Event.EventType
@@ -93,8 +107,7 @@ type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
                     ExceptionDispatchInfo.Throw ex
 
             currentCheckpoint <- oneBasedCheckPoint
-            if resubscriptionAttempt > 0 then
-                resubscriptionAttempt <- 0
+            this.Progressed oneBasedCheckPoint
         }
 
     interface ISubscription<'TEvent> with
@@ -146,10 +159,11 @@ type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
                                                 logger.LogInformation(
                                                     "Projection {Name} STARTED on stream {StreamName}.",
                                                     this.Name, this.StreamName)
-                                            // Only progress resets the attempts: a handled event (HandleEvent) or catching up.
-                                            // Not the confirmation, or a projection failing on the same event would retry forever
+                                                this.Status.Started currentCheckpoint
+                                            // Only progress resets the failures in a row: a handled event (HandleEvent) or catching up.
+                                            // Not the confirmation, or a projection failing on the same event would never be Faulted
                                             | :? StreamMessage.CaughtUp ->
-                                                resubscriptionAttempt <- 0
+                                                this.Progressed currentCheckpoint
                                             | :? StreamMessage.Event as evnt ->
                                                 do! this.HandleEvent evnt.ResolvedEvent |> Async.AwaitTask
                                                 checkpoint <- FromStream.After(evnt.ResolvedEvent.OriginalEventNumber)
@@ -173,27 +187,31 @@ type KurrentDBSubscription<'TEvent when 'TEvent :> IAggregateEvents>
                     | Some (UnknownEvent unknown) ->
                         hasFailed <- true
                         error <- unknown.Message
+                        this.Status.Stopped unknown.Message
+                        RosettaTelemetry.ProjectionFaults.Add(
+                            1L, RosettaTelemetry.Tag "rosetta.projection" this.Name, RosettaTelemetry.Tag "rosetta.state" "stopped")
                         logger.LogCritical(unknown, "Projection {Name} on stream {StreamName} STOPPED on an event it has no case for.",
                             this.Name, this.StreamName)
                         ExceptionDispatchInfo.Capture(unknown).Throw()
                     | Some ex ->
                         resubscriptionAttempt <- resubscriptionAttempt + 1
                         RosettaTelemetry.Resubscriptions.Add(1L, RosettaTelemetry.Tag "rosetta.projection" this.Name)
-                        if resubscriptionAttempt > MaxResubscriptionAttempts then
-                            hasFailed <- true
-                            error <- ex.Message
-                            logger.LogCritical(ex, "FAILED to RESUBSCRIBE Projection {Name} on stream {StreamName} after {Attempts} attempts.",
-                                this.Name, this.StreamName, MaxResubscriptionAttempts)
-                            ExceptionDispatchInfo.Capture(ex).Throw()
+                        error <- ex.Message
+                        this.Status.Failed(resubscriptionAttempt, ex.Message, retries.FailuresBeforeFaulted) |> ignore
+                        let delay = retries.Delay resubscriptionAttempt
+                        if resubscriptionAttempt = retries.FailuresBeforeFaulted then
+                            RosettaTelemetry.ProjectionFaults.Add(
+                                1L, RosettaTelemetry.Tag "rosetta.projection" this.Name, RosettaTelemetry.Tag "rosetta.state" "faulted")
+                            logger.LogCritical(ex, "Projection {Name} on stream {StreamName} is FAULTED: it failed {Failures} times in a row on the event after checkpoint {Checkpoint}. It keeps retrying, every {MaxDelay} at most.",
+                                this.Name, this.StreamName, resubscriptionAttempt, currentCheckpoint, retries.MaxDelay)
                         else
-                            let delay = ResubscriptionDelay resubscriptionAttempt
-                            logger.LogError(ex, "Subscription {Name} on stream {StreamName} DROPPED. Resubscribing in {Delay} (attempt {Attempt} of {MaxAttempts}).",
-                                this.Name, this.StreamName, delay, resubscriptionAttempt, MaxResubscriptionAttempts)
-                            try
-                                do! Task.Delay(delay, cancellationToken).ConfigureAwait(false)
-                            with :? OperationCanceledException ->
-                                logger.LogInformation("Subscription {Name} on stream {StreamName} was CANCELED.", this.Name, this.StreamName)
-                                stopped <- true
+                            logger.LogError(ex, "Subscription {Name} on stream {StreamName} DROPPED after checkpoint {Checkpoint}. Resubscribing in {Delay} (failure {Failures} in a row).",
+                                this.Name, this.StreamName, currentCheckpoint, delay, resubscriptionAttempt)
+                        try
+                            do! Task.Delay(delay, cancellationToken).ConfigureAwait(false)
+                        with :? OperationCanceledException ->
+                            logger.LogInformation("Subscription {Name} on stream {StreamName} was CANCELED.", this.Name, this.StreamName)
+                            stopped <- true
             }
 
     member this.Name

@@ -1,4 +1,4 @@
-namespace SI.Rosetta.Projections.UnitTests
+﻿namespace SI.Rosetta.Projections.UnitTests
 
 open System
 open Microsoft.Extensions.Configuration
@@ -69,7 +69,8 @@ type ProjectionsRegistrationTests() =
             projections.FromAssembly typeof<OrganizationProjection>.Assembly
             registration <- projections) |> ignore
 
-        Assert.Equal<Type>([ typeof<OrganizationProjection> ], registration.ProjectionTypes)
+        // LedgerProjection (ProjectionFailureTests) is the assembly's other active projection
+        Assert.Equal<Type>([ typeof<OrganizationProjection>; typeof<LedgerProjection> ], registration.ProjectionTypes)
         let handlers = services |> Seq.filter (fun descriptor -> descriptor.ServiceType = typeof<OrganizationProjectionHandler>)
         Assert.Single(handlers) |> ignore
 

@@ -3,6 +3,7 @@
 open System
 open Microsoft.Extensions.Configuration
 open MongoDB.Bson
+open MongoDB.Bson.Serialization
 open MongoDB.Bson.Serialization.Conventions
 open MongoDB.Driver
 
@@ -64,8 +65,9 @@ module MongoConventions =
     let private Lock = obj()
     let mutable private Registered = false
 
-    /// Registers Rosetta's BSON conventions (camelCase, ignored extra elements, enums as strings) once per process,
-    /// so documents look the same whether Aggregates, Projections or both use MongoDB
+    /// Registers Rosetta's BSON conventions (camelCase, ignored extra elements, enums as strings) and its serializers
+    /// for F# lists, maps and unions (FSharpSerializationProvider) once per process, so documents look the same whether
+    /// Aggregates, Projections or both use MongoDB
     let Register() =
         lock Lock (fun () ->
             if not Registered then
@@ -74,6 +76,7 @@ module MongoConventions =
                 conventions.Add(IgnoreExtraElementsConvention(true))
                 conventions.Add(EnumRepresentationConvention(BsonType.String))
                 ConventionRegistry.Register("FSharpConventions", conventions, fun _ -> true)
+                BsonSerializer.RegisterSerializationProvider(FSharpSerializationProvider())
                 Registered <- true)
 
 module MongoClientFactory =

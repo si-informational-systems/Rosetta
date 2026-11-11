@@ -11,6 +11,11 @@ open SI.Rosetta.Projections
 open SI.Rosetta.Projections.HostBuilder
 
 type HostingTests(databases: Databases) =
+    /// The document projections: the assembly also holds ParcelSqlProjection, which is PostgreSQL's (ISqlStore)
+    let DocumentProjections (projections: ProjectionsRegistration) =
+        projections.Projection<ParcelProjection, ParcelEvents>()
+        projections.Projection<ParcelRouteProjection, ParcelEvents>()
+
     [<Fact>]
     member this.``A HostApplicationBuilder app handles commands and projects their events``() =
         task {
@@ -18,7 +23,7 @@ type HostingTests(databases: Databases) =
             builder.Configuration.AddConfiguration(databases.Configuration "Rosetta-HostingTests") |> ignore
             let assembly = typeof<ParcelProjection>.Assembly
             builder.UseAggregatesWithEventSourcing<SI.Rosetta.Aggregates.HostBuilder.KurrentDB>(assembly) |> ignore
-            builder.UseProjectionsWith<SI.Rosetta.Projections.HostBuilder.KurrentDB, RavenDB>(assembly) |> ignore
+            builder.UseProjectionsWith<SI.Rosetta.Projections.HostBuilder.KurrentDB, RavenDB>(Action<ProjectionsRegistration> DocumentProjections) |> ignore
             // Aggregates and Projections share the one client
             Assert.Single(builder.Services, fun descriptor -> descriptor.ServiceType = typeof<global.KurrentDB.Client.KurrentDBClient>) |> ignore
             use host = builder.Build()
@@ -48,7 +53,7 @@ type HostingTests(databases: Databases) =
             builder.Configuration.AddConfiguration(databases.Configuration "Rosetta-HostingTests") |> ignore
             let assembly = typeof<ParcelProjection>.Assembly
             builder.UseAggregatesWithEventSourcing<SI.Rosetta.Aggregates.HostBuilder.KurrentDB>(assembly) |> ignore
-            builder.UseProjectionsWith<SI.Rosetta.Projections.HostBuilder.KurrentDB, RavenDB>(assembly) |> ignore
+            builder.UseProjectionsWith<SI.Rosetta.Projections.HostBuilder.KurrentDB, RavenDB>(Action<ProjectionsRegistration> DocumentProjections) |> ignore
             use host = builder.Build()
             // Before the trace starts, so the projections can only continue it through the event's metadata
             do! host.StartAsync()
@@ -101,3 +106,38 @@ type HostingTests(databases: Databases) =
             Assert.Null(box route)
             do! host.StopAsync()
         }
+
+    /// Projects Parcels into 'ProjectionsStore through the hosted service, with the Parcel and ParcelRoute projections
+    member private this.ProjectsInto<'ProjectionsStore
+        when 'ProjectionsStore : not struct and 'ProjectionsStore : (new : unit -> 'ProjectionsStore)
+        and 'ProjectionsStore :> ProjectionStore>(storeSettings: (string * string) list) =
+        task {
+            let builder = Host.CreateApplicationBuilder(HostApplicationBuilderSettings(DisableDefaults = true))
+            builder.Configuration.AddConfiguration(databases.Configuration("Rosetta-HostingTests", storeSettings)) |> ignore
+            let assembly = typeof<ParcelProjection>.Assembly
+            builder.UseAggregatesWithEventSourcing<SI.Rosetta.Aggregates.HostBuilder.KurrentDB>(assembly) |> ignore
+            builder.UseProjectionsWith<SI.Rosetta.Projections.HostBuilder.KurrentDB, 'ProjectionsStore>(Action<ProjectionsRegistration> DocumentProjections) |> ignore
+            use host = builder.Build()
+            do! host.StartAsync()
+
+            let id = sprintf "Parcels-%s" (Guid.NewGuid().ToString("N"))
+            let handler = host.Services.GetRequiredService<IParcelAggregateHandler>()
+            do! handler.ExecuteAsync(ParcelCommands.Register { Id = id; Recipient = "Ada" })
+            do! handler.ExecuteAsync(ParcelCommands.Readdress { Id = id; Recipient = "Grace" })
+
+            let store = host.Services.GetRequiredService<INoSqlStore>()
+            do! Eventually (TimeSpan.FromSeconds 60.0) "the Parcel and ParcelRoute projections catch up" (fun () ->
+                    task {
+                        let! parcel = store.LoadAsync<Parcel>(id)
+                        let! route = store.LoadAsync<ParcelRoute>(sprintf "Routes-%s" id)
+                        return not (isNull (box parcel)) && parcel.Recipient = "Grace"
+                            && not (isNull (box route)) && route.Recipients = [ "Ada"; "Grace" ]
+                    })
+            do! host.StopAsync()
+        }
+
+    [<Fact>]
+    member this.``An app projects into MongoDB``() =
+        this.ProjectsInto<MongoDB>([
+            "MongoDB:ConnectionString", databases.MongoReplicaSetUrl.ToString()
+            "MongoDB:DatabaseName", "Rosetta-HostingTests" ])

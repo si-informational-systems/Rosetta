@@ -10,7 +10,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="MongoDbDocuments.fs" />
     <Compile Include="MongoDbCheckpointStore.fs" />
+    <Compile Include="MongoDbProjectionsUnitOfWork.fs" />
     <Compile Include="MongoDbProjectionsStore.fs" />
   </ItemGroup>
 

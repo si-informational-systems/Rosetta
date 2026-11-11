@@ -27,6 +27,9 @@ module RosettaTelemetry =
     let ProjectionEventDuration = Meter.CreateHistogram<double>("rosetta.projection.event.duration", "s", "How long projections took to handle an event")
     /// Times projection subscriptions dropped and resubscribed, by projection
     let Resubscriptions = Meter.CreateCounter<int64>("rosetta.projection.resubscriptions", "{resubscription}", "Projection resubscriptions")
+    /// Times projections faulted (failed again and again without progress) or stopped (an unknown event, or a startup
+    /// error retrying can't heal), by projection and state (faulted, stopped)
+    let ProjectionFaults = Meter.CreateCounter<int64>("rosetta.projection.faults", "{fault}", "Projections that faulted or stopped")
 
     /// The W3C trace context of the command that stored an event, kept in the event's metadata, so the projections
     /// handling it continue that trace

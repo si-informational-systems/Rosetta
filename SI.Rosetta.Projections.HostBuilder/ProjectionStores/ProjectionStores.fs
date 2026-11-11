@@ -1,4 +1,4 @@
-﻿namespace SI.Rosetta.Projections.HostBuilder
+namespace SI.Rosetta.Projections.HostBuilder
 
 // The stores Projections can write to. The set is closed: the base can't be inherited outside Rosetta (internal
 // constructor), the stores can't be inherited at all (sealed), and UseProjectionsWith/AddProjectionsWith require a
@@ -7,10 +7,23 @@
 /// The read model stores
 type ProjectionStore internal () = class end
 
-[<Sealed>]
-type MongoDB() =
+/// The document stores, whose projections' handlers take INoSqlStore
+type DocumentProjectionStore internal () =
+    inherit ProjectionStore()
+
+/// The SQL store, whose projections' handlers take ISqlStore
+type SqlProjectionStore internal () =
     inherit ProjectionStore()
 
 [<Sealed>]
+type MongoDB() =
+    inherit DocumentProjectionStore()
+
+[<Sealed>]
 type RavenDB() =
-    inherit ProjectionStore()
+    inherit DocumentProjectionStore()
+
+/// Read models as rows of the app's tables, a table for each read model type
+[<Sealed>]
+type PostgreSQL() =
+    inherit SqlProjectionStore()

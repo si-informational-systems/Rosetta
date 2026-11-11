@@ -11,8 +11,10 @@ type IProjectionsStore =
     abstract member DeleteAsync<'T when 'T : not struct>: id: obj -> Task
     abstract member DeleteInUnitOfWorkAsync<'T when 'T : not struct>: ids: obj[] -> Task
 
+/// The document stores: RavenDB and MongoDB
 type INoSqlStore =
     inherit IProjectionsStore
 
+/// The SQL store: PostgreSQL. The same typed calls, by key, on rows of the read model types' tables
 type ISqlStore =
-    inherit IProjectionsStore 
+    inherit IProjectionsStore

@@ -1,4 +1,4 @@
-﻿namespace SI.Rosetta.Projections.UnitTests
+namespace SI.Rosetta.Projections.UnitTests
 
 open SI.Rosetta.Projections
 
@@ -13,6 +13,7 @@ type Organization = {
 type OrganizationProjection() =
     inherit Projection<OrganizationEvents>()
     interface IAmHandledBy<OrganizationProjectionHandler, OrganizationEvents>
+    interface IProjectInto<Organization>
 
 and OrganizationProjectionHandler(store: INoSqlStore) =
     let Store = store
@@ -41,3 +42,10 @@ and OrganizationProjectionHandler(store: INoSqlStore) =
             do! Store.StoreAsync(updated).ConfigureAwait(false)
         }
 
+/// Declares the Organization read model too: two owners, which registering them both refuses. Disabled, so the
+/// assembly's projections stay as they are
+[<HandlesStream(ProjectionStreamNames.OrganizationStream); DisabledProjection>]
+type SecondOrganizationProjection() =
+    inherit Projection<OrganizationEvents>()
+    interface IAmHandledBy<OrganizationProjectionHandler, OrganizationEvents>
+    interface IProjectInto<Organization>

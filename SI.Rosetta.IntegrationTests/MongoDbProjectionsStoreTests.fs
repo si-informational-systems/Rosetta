@@ -17,6 +17,14 @@ type Courier = { Id: string; Name: string }
 [<CLIMutable>]
 type Fault = { Id: string; Ratio: int }
 
+/// F# lists, maps and unions, which Rosetta's serializers write and read back
+type Leg =
+    | Walk
+    | Drive of Vehicle: string * Stops: string list
+
+[<CLIMutable>]
+type Itinerary = { Id: string; Legs: Leg list; Recipients: string list; Weights: Map<string, decimal>; ByStop: Map<int, Leg> }
+
 type MongoDbProjectionsStoreTests(databases: Databases) =
     do MongoConventions.Register()
     let Client = new MongoClient(databases.MongoReplicaSetUrl)
@@ -66,4 +74,22 @@ type MongoDbProjectionsStoreTests(databases: Databases) =
             let! _ = Assert.ThrowsAnyAsync<MongoException>(fun () -> Store.LoadAsync<Fault>("Faults-1") :> Task)
             let! _ = Assert.ThrowsAnyAsync<MongoException>(fun () -> Store.LoadManyAsync<Fault>([| "Faults-1" |]) :> Task)
             ()
+        }
+
+    [<Fact>]
+    member this.``F# lists, maps and unions are stored and loaded``() =
+        task {
+            let itinerary =
+                { Id = NewId "Itineraries"
+                  Legs = [ Walk; Drive("van", [ "Depot"; "Ada" ]) ]
+                  Recipients = [ "Ada"; "Grace" ]
+                  Weights = Map [ "Parcels-1", 1.5m ]
+                  ByStop = Map [ 1, Walk; 2, Drive("bike", []) ] }
+
+            do! Store.StoreAsync(itinerary)
+            let! loaded = Store.LoadAsync<Itinerary>(itinerary.Id)
+            let! many = Store.LoadManyAsync<Itinerary>([| box itinerary.Id |])
+
+            Assert.Equal(itinerary, loaded)
+            Assert.Equal(itinerary, many.[itinerary.Id])
         }

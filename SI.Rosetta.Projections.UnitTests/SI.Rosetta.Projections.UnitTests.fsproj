@@ -16,9 +16,13 @@
     <Compile Include="ObjectComparerTests.fs" />
     <Compile Include="TestKitProjectionStoreTests.fs" />
     <Compile Include="ProjectionTests.fs" />
+    <Compile Include="ProjectionUnitOfWorkTests.fs" />
+    <Compile Include="ProjectionReadModelsTests.fs" />
+    <Compile Include="MongoFSharpSerializationTests.fs" />
     <Compile Include="SerializationTests.fs" />
     <Compile Include="EventFormatTests.fs" />
     <Compile Include="HostingTests.fs" />
+    <Compile Include="ProjectionFailureTests.fs" />
     <Compile Include="ProjectionsRegistrationTests.fs" />
   </ItemGroup>
 

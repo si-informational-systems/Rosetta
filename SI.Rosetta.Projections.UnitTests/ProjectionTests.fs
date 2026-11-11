@@ -31,9 +31,9 @@ type ProjectionTests() =
             Handlers = (handlers :> seq<_>))
 
     [<Fact>]
-    member this.``Stores the checkpoint once every handler is done``() =
+    member this.``Runs the handlers one at a time, in order, then stores the checkpoint``() =
         task {
-            let handled = Collections.Concurrent.ConcurrentBag<string>()
+            let handled = List<string>()
             let projection =
                 CreateProjection [
                     Handler (fun () ->
@@ -45,28 +45,26 @@ type ProjectionTests() =
 
             do! projection.ProjectAsync(Registered, 3UL)
 
-            Assert.Equal(2, handled.Count)
+            Assert.Equal<string>([ "first"; "second" ], handled)
             Assert.Equal<uint64>([ 3UL ], StoredCheckpoints)
         }
 
     [<Fact>]
-    member this.``Every handler's failure is in the ProjectionException, and the checkpoint isn't stored``() =
+    member this.``The first handler that fails stops the event, and the checkpoint isn't stored``() =
         task {
+            let ran = List<string>()
             let projection =
                 CreateProjection [
-                    Handler (fun () ->
-                        task {
-                            do! Task.Yield()
-                            failwith "async failure"
-                        } :> Task)
+                    Handler (fun () -> task { ran.Add "first" } :> Task)
                     // Throws before it returns a Task
                     Handler (fun () -> raise (InvalidOperationException "sync failure"))
-                    Handler (fun () -> Task.CompletedTask) ]
+                    Handler (fun () -> task { ran.Add "third" } :> Task) ]
 
             let! ex = Assert.ThrowsAsync<ProjectionException>(fun () -> projection.ProjectAsync(Registered, 3UL) :> Task)
 
-            let failures = (ex.InnerException :?> AggregateException).InnerExceptions |> Seq.map (fun e -> e.Message) |> Seq.sort
-            Assert.Equal<string>([ "async failure"; "sync failure" ], failures)
+            let failure = Assert.Single((ex.InnerException :?> AggregateException).InnerExceptions)
+            Assert.Equal("sync failure", failure.Message)
+            Assert.Equal<string>([ "first" ], ran)
             Assert.Equal("Organization", ex.ProjectionName)
             Assert.Equal(3UL, ex.Checkpoint)
             Assert.Empty(StoredCheckpoints)

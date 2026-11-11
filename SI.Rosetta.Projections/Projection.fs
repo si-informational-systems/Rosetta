@@ -3,10 +3,14 @@ namespace SI.Rosetta.Projections
 open System
 open System.Collections.Generic
 open System.Diagnostics
+open System.Runtime.ExceptionServices
 open System.Threading.Tasks
 open SI.Rosetta.Common
 
 type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
+    // A commit that failed may still have been written (the reply was lost): the event's next attempt checks first
+    let mutable CommitUncertain = false
+
     member val Name = "" with get, set
     member val SubscriptionStreamName = "" with get, set
     member val Subscription = Unchecked.defaultof<ISubscription<'TEvent>> with get, set
@@ -14,6 +18,11 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
     member val CheckpointStore = Unchecked.defaultof<ICheckpointStore> with get, set
     member val Checkpoint = Unchecked.defaultof<Checkpoint> with get, set
     member val SkipUnknownEvents = false with get, set
+    /// Commits each event's writes with its checkpoint. Without one, the handlers write straight to the store and the
+    /// checkpoint is stored after them, in its own write
+    /// Begins each event's transaction, which its handlers write in and its checkpoint is committed with. Without one,
+    /// the handlers write straight to the store and the checkpoint is stored after them, in its own write
+    member val UnitOfWork = Unchecked.defaultof<IProjectionsUnitOfWork> with get, set
 
     member this.CreateProjectionException (ev: obj) (checkpoint: uint64) (ae: AggregateException) =
         let msg = sprintf "PROJECTION FAILURE: Projection %s on Stream %s FAILED on Checkpoint %d during %s" 
@@ -24,31 +33,71 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
         ex.Checkpoint <- checkpoint
         ex.SubscriptionStreamName <- this.SubscriptionStreamName
         ex
-        
-    member this.StartHandlingTasks (e: 'TEvent) (c: uint64) =
-        let tasks = List<Task>()
-        for d in this.Handlers do
-            // A handler that throws before returning its Task fails like one whose Task faults
-            tasks.Add(try d.Handle(e, c) with ex -> Task.FromException ex)
-        tasks.ToArray()
 
-    /// Runs every handler on the event in parallel, then stores the checkpoint.
-    /// Throws a ProjectionException holding every handler's failure when any fails
+    /// Runs the handlers one at a time, in the order the projection declares them, so a handler sees what the ones
+    /// before it wrote. The first one that fails stops the event: a ProjectionException holds its failure
+    member private this.RunHandlers (ev: 'TEvent) (c: uint64) : Task =
+        task {
+            for handler in this.Handlers do
+                try
+                    // A handler that throws before returning its Task fails like one whose Task faults
+                    do! handler.Handle(ev, c).ConfigureAwait(false)
+                with ex ->
+                    raise (this.CreateProjectionException ev c (AggregateException(ex)))
+        }
+
+    /// Whether a commit that failed on this event was written after all: the stored checkpoint has reached it
+    member private this.CommittedBefore(c: uint64) =
+        task {
+            if not CommitUncertain then
+                return false
+            else
+                let! stored = this.CheckpointStore.ReadAsync(this.Checkpoint.Id).ConfigureAwait(false)
+                CommitUncertain <- false
+                return stored.Value >= c
+        }
+
+    member private this.HandleInTransaction (ev: 'TEvent) (c: uint64) (checkpoint: Checkpoint) =
+        task {
+            let! transaction = this.UnitOfWork.BeginAsync().ConfigureAwait(false)
+            let mutable failure: exn = null
+            try
+                do! ProjectionTransaction.Within(transaction, fun () -> this.RunHandlers ev c).ConfigureAwait(false)
+                try
+                    do! transaction.CommitAsync(checkpoint).ConfigureAwait(false)
+                with ex ->
+                    CommitUncertain <- true
+                    failure <- ex
+            with ex -> failure <- ex
+            // Rolls back what wasn't committed
+            do! transaction.DisposeAsync().ConfigureAwait(false)
+            if not (isNull failure) then
+                ExceptionDispatchInfo.Throw failure
+        }
+
+    /// Handles the event in one transaction: its handlers, one at a time, then the checkpoint, committed together.
+    /// When a handler fails, nothing is written and a ProjectionException holds its failure
     member this.HandleEvent(ev: 'TEvent, c: uint64) =
         task {
             let started = Stopwatch.GetTimestamp()
             let projectionTag = RosettaTelemetry.Tag "rosetta.projection" this.Name
-            this.Checkpoint.Value <- c
-            let handling = Task.WhenAll(this.StartHandlingTasks ev c)
-            try
-                do! handling.ConfigureAwait(false)
-            with _ when handling.IsFaulted ->
-                RosettaTelemetry.ProjectionEvents.Add(1L, projectionTag, RosettaTelemetry.Tag "rosetta.outcome" "failed")
-                // Awaiting rethrows only the first failure: handling.Exception has them all
-                raise (this.CreateProjectionException ev c handling.Exception)
-            do! this.CheckpointStore.StoreAsync(this.Checkpoint).ConfigureAwait(false)
-            RosettaTelemetry.ProjectionEvents.Add(1L, projectionTag, RosettaTelemetry.Tag "rosetta.outcome" "handled")
-            RosettaTelemetry.ProjectionEventDuration.Record(RosettaTelemetry.SecondsSince started, projectionTag)
+            let! committed = this.CommittedBefore(c).ConfigureAwait(false)
+            if committed then
+                this.Checkpoint.Value <- c
+            else
+                let checkpoint = Checkpoint(Id = this.Checkpoint.Id, Value = c, Version = this.Checkpoint.Version)
+                try
+                    if isNull (box this.UnitOfWork) then
+                        do! this.RunHandlers ev c
+                        do! this.CheckpointStore.StoreAsync(checkpoint).ConfigureAwait(false)
+                    else
+                        do! this.HandleInTransaction ev c checkpoint
+                with :? ProjectionException as ex ->
+                    RosettaTelemetry.ProjectionEvents.Add(1L, projectionTag, RosettaTelemetry.Tag "rosetta.outcome" "failed")
+                    ExceptionDispatchInfo.Throw ex
+                this.Checkpoint.Value <- c
+                RosettaTelemetry.ProjectionEvents.Add(1L, projectionTag, RosettaTelemetry.Tag "rosetta.outcome" "handled")
+                RosettaTelemetry.ProjectionEventDuration.Record(RosettaTelemetry.SecondsSince started, projectionTag)
         }
         
     interface IProjectionOf<'TEvent> with

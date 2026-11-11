@@ -19,13 +19,9 @@ type TestKitSubscription<'TEvent when 'TEvent :> IAggregateEvents>() =
             and set(value) = eventReceived <- value        
         member this.StartAsync(fromCheckpoint, _cancellationToken) =
             task {
-                let tasks = 
-                    inMemoryEventStream
-                    |> Seq.filter (fun kvp -> kvp.Key >= fromCheckpoint)
-                    |> Seq.map (fun kvp -> eventReceived(kvp.Value, kvp.Key))
-                    |> Seq.toArray
-                let! _ = Task.WhenAll(tasks).ConfigureAwait(false)
-                return ()
+                // One at a time, in order, as a subscription delivers them
+                for kvp in inMemoryEventStream |> Seq.filter (fun kvp -> kvp.Key >= fromCheckpoint) |> Seq.sortBy (fun kvp -> kvp.Key) do
+                    do! eventReceived(kvp.Value, kvp.Key).ConfigureAwait(false)
             } :> Task
 
     member this.StoreEvents(events: 'TEvent[]) =

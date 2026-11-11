@@ -10,11 +10,12 @@ open MongoDB.Bson
 open MongoDB.Driver
 open Testcontainers.KurrentDb
 open Testcontainers.MongoDb
+open Testcontainers.PostgreSql
 open Testcontainers.RavenDb
 open Xunit
 open KurrentDB.Client
 
-/// KurrentDB, RavenDB and MongoDB in Docker, started once for every test (the images the compose stack uses)
+/// KurrentDB, RavenDB, MongoDB and PostgreSQL in Docker, started once for every test (the images the compose stack uses)
 type Databases() =
     let KurrentDBContainer =
         KurrentDbBuilder("kurrentplatform/kurrentdb:26.2")
@@ -47,7 +48,10 @@ type Databases() =
     // A standalone server for the credentials tests: Host and Port reach it without the replica set's internal addresses
     let MongoWithAuthContainer = MongoDbBuilder("mongo:8").Build()
 
-    let Containers: IContainer list = [ KurrentDBContainer; RavenDBContainer; MongoReplicaSetContainer; MongoWithAuthContainer ]
+    let PostgreSqlContainer = PostgreSqlBuilder("postgres:18-alpine").Build()
+
+    let Containers: IContainer list =
+        [ KurrentDBContainer; RavenDBContainer; MongoReplicaSetContainer; MongoWithAuthContainer; PostgreSqlContainer ]
 
     let mutable kurrentDBClient = Unchecked.defaultof<KurrentDBClient>
 
@@ -67,6 +71,13 @@ type Databases() =
         let builder = MongoUrlBuilder(MongoReplicaSetContainer.GetConnectionString())
         builder.DirectConnection <- true
         builder.ToMongoUrl()
+
+    /// The standalone server, as its root user
+    member _.MongoStandaloneUrl = MongoUrl(MongoWithAuthContainer.GetConnectionString())
+
+    /// A connection string to the database, which Rosetta creates when the projections start
+    member _.PostgreSqlConnectionString(database: string) =
+        Npgsql.NpgsqlConnectionStringBuilder(PostgreSqlContainer.GetConnectionString(), Database = database).ConnectionString
 
     member _.MongoWithAuthHost = MongoWithAuthContainer.Hostname
     member _.MongoWithAuthPort = int (MongoWithAuthContainer.GetMappedPublicPort(27017))

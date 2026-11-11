@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="FSharpSerializers.fs" />
     <Compile Include="MongoClientFactory.fs" />
   </ItemGroup>
 
