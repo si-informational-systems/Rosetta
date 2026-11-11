@@ -35,6 +35,8 @@ type PostgreSqlOutbox(database: PostgreSqlDatabase, options: OutboxOptions, logg
             "    aggregate_id text not null,"
             "    version bigint not null,"
             "    position int not null,"
+            "    events_union_clr_type text,"
+            "    event_clr_type text,"
             "    event_type text not null,"
             "    data json not null,"
             "    recorded_at timestamptz not null,"
@@ -44,6 +46,8 @@ type PostgreSqlOutbox(database: PostgreSqlDatabase, options: OutboxOptions, logg
             "    published_at timestamptz);"
             // A table created before the outbox had a publisher
             sprintf "alter table %s add column if not exists published_at timestamptz;" QualifiedTable
+            // A table created before the outbox recorded the events' types (Rosetta 1.38)
+            sprintf "alter table %s add column if not exists events_union_clr_type text, add column if not exists event_clr_type text;" QualifiedTable
             sprintf "create index if not exists %s on %s (expires_at) where expires_at is not null;" (PostgreSqlTable.Quote(TableName + "_expires_at")) QualifiedTable
             sprintf "create index if not exists %s on %s (recorded_at, position) where published_at is null;" (PostgreSqlTable.Quote(TableName + "_unpublished")) QualifiedTable
             "create table if not exists rosetta.outbox_leases (name text primary key, owner text not null, expires_at timestamptz not null);" ]
@@ -91,6 +95,8 @@ type PostgreSqlOutbox(database: PostgreSqlDatabase, options: OutboxOptions, logg
                        NpgsqlParameter(Value = event.AggregateId)
                        NpgsqlParameter(Value = event.Version, NpgsqlDbType = NpgsqlDbType.Bigint)
                        NpgsqlParameter(Value = event.Position, NpgsqlDbType = NpgsqlDbType.Integer)
+                       NpgsqlParameter(Value = Nullable event.EventsUnionClrType, NpgsqlDbType = NpgsqlDbType.Text)
+                       NpgsqlParameter(Value = Nullable event.EventClrType, NpgsqlDbType = NpgsqlDbType.Text)
                        NpgsqlParameter(Value = event.EventType)
                        NpgsqlParameter(Value = event.Data, NpgsqlDbType = NpgsqlDbType.Json)
                        NpgsqlParameter(Value = At event.RecordedAt, NpgsqlDbType = NpgsqlDbType.TimestampTz)
@@ -106,7 +112,7 @@ type PostgreSqlOutbox(database: PostgreSqlDatabase, options: OutboxOptions, logg
                 let first = i * values.Length
                 "(" + String.Join(", ", values |> Array.mapi (fun j _ -> sprintf "$%d" (first + j + 1))) + ")")
         command.CommandText <-
-            sprintf "insert into %s (id, aggregate, aggregate_id, version, position, event_type, data, recorded_at, expires_at, trace_parent, trace_state) values %s on conflict (id) do nothing"
+            sprintf "insert into %s (id, aggregate, aggregate_id, version, position, events_union_clr_type, event_clr_type, event_type, data, recorded_at, expires_at, trace_parent, trace_state) values %s on conflict (id) do nothing"
                 QualifiedTable (String.Join(", ", rows))
         command
 
@@ -171,7 +177,7 @@ type PostgreSqlOutbox(database: PostgreSqlDatabase, options: OutboxOptions, logg
                 use! connection = database.DataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false)
                 use select =
                     new NpgsqlCommand(
-                        sprintf "select id, aggregate, aggregate_id, version, position, event_type, data::text, recorded_at, trace_parent, trace_state from %s where published_at is null order by recorded_at, position limit $1" QualifiedTable,
+                        sprintf "select id, aggregate, aggregate_id, version, position, event_type, data::text, recorded_at, trace_parent, trace_state, events_union_clr_type, event_clr_type from %s where published_at is null order by recorded_at, position limit $1" QualifiedTable,
                         connection)
                 select.Parameters.Add(NpgsqlParameter(Value = max, NpgsqlDbType = NpgsqlDbType.Integer)) |> ignore
                 use! reader = select.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false)
@@ -186,6 +192,8 @@ type PostgreSqlOutbox(database: PostgreSqlDatabase, options: OutboxOptions, logg
                               AggregateId = reader.GetString 2
                               Version = reader.GetInt64 3
                               Position = reader.GetInt32 4
+                              EventsUnionClrType = if reader.IsDBNull 10 then null else reader.GetString 10
+                              EventClrType = if reader.IsDBNull 11 then null else reader.GetString 11
                               EventType = reader.GetString 5
                               Data = reader.GetString 6
                               RecordedAt = reader.GetDateTime 7

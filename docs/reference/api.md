@@ -58,6 +58,8 @@ order on every event read from KurrentDB.
 | `JsonOptions` | `JsonSerializerOptions` | the System.Text.Json options events are written and read with (FSharp.SystemTextJson, Newtonsoft-like shapes, enums as strings, case-insensitive) |
 | `WriteOptionsAs` | `mutable OptionFormat` | how `Encode` writes F# options: `Plain` (default, the value or `null`) or `Newtonsoft` (`{"Case":"Some","Fields":[v]}`); both are always read |
 | `TypeNameOf` | `Type -> string` | a record's stored name: its `[<EventType>]` name or its type name |
+| `EventsUnionClrTypeOf` | `IAggregateEvents -> string` | the events union the event is a case of, as `Namespace.Type, Assembly` (no version): the union, not the class .NET gives a case with fields |
+| `EventClrTypeOf` | `IAggregateEvents -> string` | the case's record type, as `Namespace.Type, Assembly` (no version) |
 | `Encode` | `IAggregateEvents -> string * string` | (stored name, record JSON) |
 | `EncodeWith` | `OptionFormat -> IAggregateEvents -> string * string` | the same, with an option format |
 | `Decode<'TEvents>` | `IEventUpcaster seq -> string -> string -> Result<'TEvents, string>` | upcasts, then reads into the DU's case; `Error` holds the unknown stored name |
@@ -211,15 +213,32 @@ type OutboxOptions() =
     member ExpiresFromPublication: bool with get, set     // set by registration when there's a publisher
     member Validate: unit -> unit
 
-type OutboxEvent =
+type OutboxEvent =                                             // a record, as the stores read and write it
     { Id: Guid; Aggregate: string; AggregateId: string; Version: int64; Position: int
+      EventsUnionClrType: string; EventClrType: string         // since 1.38; null in older records
       EventType: string; Data: string; RecordedAt: DateTime; TraceParent: string; TraceState: string }
 
 type IOutbox =
     abstract RecordAsync: events: OutboxEvent[] -> Task<int>   // records the ones it doesn't hold; returns how many
 
+type OutboxPublication =                                       // what the publisher is handed; built per call, never stored
+    { Event: IAggregateEvents                                  // the union case, decoded through the upcasters
+      EventRecord: obj; EventRecordType: Type; EventsUnionType: Type
+      EventTypeName: string; EventJson: string                 // as stored
+      EventId: Guid
+      AggregateName: string; AggregateId: string; AggregateVersion: int64; PositionInCommand: int; RecordedAt: DateTime
+      CommandTrace: ActivityContext
+      Attempt: int }                                           // 1, more after PublishAsync threw
+
 type IOutboxPublisher =                                        // yours: sends one event to the broker
-    abstract PublishAsync: event: OutboxEvent * cancellationToken: CancellationToken -> Task
+    abstract PublishAsync: publication: OutboxPublication * cancellationToken: CancellationToken -> Task
+
+[<RequireQualifiedAccess>]
+type OutboxDecodeError =
+    | NoEventsUnion                                            // recorded before 1.38
+    | UnknownEventsUnion of eventsUnionClrType: string         // the type doesn't resolve: assembly not loaded, or renamed
+    | UnknownEventType of eventsUnion: Type * eventType: string   // no case for the name, after the upcasters
+    member Reason: string                                      // what went wrong, and what fixes it
 
 type IOutboxRelayStore =                                       // Rosetta's outboxes, as the publisher reads them
     abstract TryLeaseAsync: owner: string * duration: TimeSpan * cancellationToken: CancellationToken -> Task<bool>
@@ -228,10 +247,14 @@ type IOutboxRelayStore =                                       // Rosetta's outb
 ```
 
 `OutboxEvents.Of aggregate` builds an Aggregate's `OutboxEvent`s; `OutboxEvents.IdOf` computes the deterministic id;
-`OutboxEvents.InPublishingOrder` sorts events as the publisher sends them.
+`OutboxEvents.InPublishingOrder` sorts events as the publisher sends them;
+`OutboxEvents.Decode : IEventUpcaster seq -> OutboxEvent -> Result<IAggregateEvents, OutboxDecodeError>` reads a
+record back into its events union (resolved once per name), as the publisher does.
 `OutboxAggregateRepository(repository, outbox)` *(infrastructure)* stores, then records. The store packages'
 `RavenDBOutbox`, `MongoDBOutbox` and `PostgreSqlOutbox` implement `IOutbox` and `IOutboxRelayStore`; their
-`RavenDBOutboxEvent` and `MongoDBOutboxEvent` records have a `PublishedAt: Nullable<DateTime>`.
+`RavenDBOutboxEvent` and `MongoDBOutboxEvent` records have a `PublishedAt: Nullable<DateTime>`. `OutboxRelay`
+*(infrastructure, Aggregates.HostBuilder)* is the hosted service `UseOutboxPublisher` registers: `OutboxRelay(outbox,
+publisher, upcasters, options, logger)`, or without upcasters.
 
 ## SI.Rosetta.Projections
 

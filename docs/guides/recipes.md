@@ -149,11 +149,17 @@ Name errors consistently and map them by convention, in one place:
 ## Publish the Outbox
 
 Implement `IOutboxPublisher` for your broker and register it with `UseOutboxPublisher`: Rosetta reads the unpublished
-events, hands them to it one at a time in order, retries a failure, marks what's published, and publishes from one
-instance at a time (see [Outbox](../concepts/outbox.md#publishing-the-events)). With RabbitMQ (RabbitMQ.Client 7):
+events, decodes each into its events union, hands them to it one at a time in order (an `OutboxPublication`), retries a
+failure, marks what's published, and publishes from one instance at a time (see
+[Outbox](../concepts/outbox.md#publishing-the-events)).
+
+### Forward the bytes: RabbitMQ
+
+With RabbitMQ.Client 7, sending the record's JSON as it's stored, typed by its stored name:
 
 ```fsharp
 open System
+open System.Diagnostics
 open System.Text
 open System.Threading.Tasks
 open RabbitMQ.Client
@@ -165,7 +171,7 @@ type RabbitMqPublisher(connection: IConnection) =   // the app's IConnection sin
     let mutable Channel: IChannel = null
 
     interface IOutboxPublisher with
-        member this.PublishAsync(event, cancellationToken) =
+        member this.PublishAsync(publication, cancellationToken) =
             task {
                 if isNull Channel || Channel.IsClosed then
                     // With confirmation tracking, BasicPublishAsync waits for the broker's ack, and throws on a nack
@@ -174,11 +180,16 @@ type RabbitMqPublisher(connection: IConnection) =   // the app's IConnection sin
                     Channel <- channel
                 let properties =
                     BasicProperties(
-                        MessageId = event.Id.ToString(),   // the same for every repeat: consumers dedupe on it
-                        Type = event.EventType,            // the stored name, for EventEncoding.Decode
+                        MessageId = publication.EventId.ToString(),   // the same for every repeat: consumers dedupe on it
+                        Type = publication.EventTypeName,             // the stored name, for EventEncoding.Decode
                         ContentType = "application/json",
                         Persistent = true)
-                do! Channel.BasicPublishAsync(Exchange, event.EventType, false, properties, ReadOnlyMemory(Encoding.UTF8.GetBytes event.Data), cancellationToken)
+                // Rosetta's publish span, a child of the command's: the consumers continue the trace
+                match Activity.Current with
+                | null -> ()
+                | activity -> properties.Headers <- dict [ "traceparent", box activity.Id ]
+                let body = ReadOnlyMemory(Encoding.UTF8.GetBytes publication.EventJson)
+                do! Channel.BasicPublishAsync(Exchange, publication.EventTypeName, false, properties, body, cancellationToken)
             } :> Task
 ```
 
@@ -191,6 +202,34 @@ builder.UseOutboxPublisher<RabbitMqPublisher>() |> ignore
   nack), the event is published again after a growing delay, and the ones after it wait: the order holds.
 - Delivery is **at least once**: dedupe on the message id in consumers. A consumer reads the event back into its DU with
   `EventEncoding.Decode<PersonEvents> upcasters message.Type json`.
+
+### Publish the event: Rebus
+
+A typed bus routes by the message's .NET type, so the publisher sends `publication.Event`, the events union's case, as
+the Aggregate published it (MassTransit is the same with `publishEndpoint.Publish(publication.Event, …)`):
+
+```fsharp
+open System.Collections.Generic
+open System.Diagnostics
+open Rebus.Bus
+open Rebus.Messages
+open SI.Rosetta.Aggregates
+
+type RebusOutboxPublisher(bus: IBus) =
+    interface IOutboxPublisher with
+        member _.PublishAsync(publication, _cancellationToken) =
+            let headers = Dictionary<string, string>()
+            headers.[Headers.MessageId] <- string publication.EventId   // the same for every repeat: consumers dedupe on it
+            match Activity.Current with
+            | null -> ()
+            | activity -> headers.["traceparent"] <- activity.Id
+            bus.Publish(publication.Event, headers)
+```
+
+Subscribers handle the union (`IHandleMessages<ReservationEvents>`) and match its cases. To route per event instead,
+publish `publication.EventRecord`: subscribers then handle the record types (`IHandleMessages<ReservationMade>`).
+
+### Either way
 - `Outbox:EventTTLMinutes` then deletes events that long after they were **published**; unpublished ones are kept.
 - To publish the records yourself instead (a RavenDB data subscription, a MongoDB change stream, a connector of your
   broker), leave `UseOutboxPublisher` out: see [Your own publisher](../concepts/outbox.md#your-own-publisher).

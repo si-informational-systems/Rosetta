@@ -3,6 +3,7 @@ namespace SI.Rosetta.IntegrationTests
 open System
 open System.Threading.Tasks
 open Xunit
+open FSharp.Control
 open KurrentDB.Client
 open SI.Rosetta.Aggregates
 open SI.Rosetta.Aggregates.KurrentDB
@@ -34,6 +35,28 @@ type KurrentDBAggregateRepositoryTests(databases: Databases) =
 
             Assert.Equal("Grace", stored.Value.State.Recipient)
             Assert.Equal(2L, stored.Value.Version)
+        }
+
+    [<Fact>]
+    member this.``A stored event's metadata names its events union and record as the outbox does``() =
+        task {
+            let repository = KurrentDBAggregateRepository(Client) :> IAggregateRepository
+            let id = NewId()
+            let parcel = ParcelAggregate()
+            parcel.Execute(ParcelCommands.Register { Id = id; Recipient = "Ada" })
+            do! repository.StoreAsync(parcel)
+
+            let! events = Client.ReadStreamAsync(Direction.Forwards, id, StreamPosition.Start) |> TaskSeq.toListAsync
+
+            use metadata = Text.Json.JsonDocument.Parse(events.Head.Event.Metadata)
+            let Header (name: string) = metadata.RootElement.GetProperty(name).GetString()
+            let recorded = Assert.Single(OutboxEvents.Of parcel)
+            Assert.Equal("SI.Rosetta.IntegrationTests.ParcelEvents, SI.Rosetta.IntegrationTests", recorded.EventsUnionClrType)
+            Assert.Equal(recorded.EventsUnionClrType, Header "EventsUnionClrType")
+            Assert.Equal(recorded.EventClrType, Header "EventClrType")
+            // The older headers are still written
+            Assert.Equal(recorded.EventsUnionClrType, Header "EventsDiscriminatedUnionClrTypeName")
+            Assert.Equal(typeof<ParcelRegistered>.AssemblyQualifiedName, Header "EventClrTypeName")
         }
 
     [<Fact>]

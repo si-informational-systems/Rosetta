@@ -126,7 +126,7 @@ app.MapHealthChecks("/health") |> ignore
 | gauge `rosetta.projections.unhealthy` | sum > 0 |
 | counter `rosetta.projection.faults` | increases |
 | counter `rosetta.commands` with `rosetta.outcome=failed` | rate > 0 (rejections are `rejected`, not failures) |
-| counter `rosetta.outbox.published` | flat while `rosetta.outbox.events` grows (the publisher is stuck) |
+| counter `rosetta.outbox.published` | `rosetta.outcome` = `published` flat while `rosetta.outbox.events` grows (the publisher is stuck); any `undecodable` (an event its union can't be read back as: see the Critical log) |
 
 The logs say what happened to each Projection: `STARTED`, `RECOVERED`, `SKIPPED`, `DROPPED` (Error), `FAULTED`,
 `STOPPED` (Critical), `CANCELED`. The Outbox publisher logs each failure as an Error, the 5th in a row as Critical, and

@@ -19,6 +19,7 @@
     <Compile Include="OutboxTests.fs" />
     <Compile Include="TestKitRepositoryTests.fs" />
     <Compile Include="OutboxRelayTests.fs" />
+    <Compile Include="OutboxPublicationTests.fs" />
     <Compile Include="HandlerConflictRetryTests.fs" />
   </ItemGroup>
 

@@ -14,7 +14,7 @@ recorded until something listens. See [Observability](../concepts/observability.
 |---|---|---|---|
 | `{Aggregate} {Command}` (`Person RegisterPerson`) | Internal | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.command`, `rosetta.events` (stored, when any), `rosetta.outcome` (`handled`, `rejected`, `failed`), `rosetta.domain_error`, `rosetta.attempts` (after a conflict retry) | Error with the `DomainException.Name`, or the exception |
 | `{Projection} {Event}` (`Person PersonRegistered`) | Consumer | `rosetta.projection`, `rosetta.stream`, `rosetta.event`, `rosetta.checkpoint`, `rosetta.outcome` (`skipped`), `rosetta.attempts` (after a conflict retry) | Error when a Handler fails |
-| `{Aggregate} {EventType} publish` (`Person PersonRegistered publish`) | Producer | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.event`, `rosetta.outbox.event.id` | Error with the exception when `PublishAsync` throws |
+| `{Aggregate} {EventType} publish` (`Person PersonRegistered publish`) | Producer | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.event`, `rosetta.outbox.event.id`, `rosetta.event.case` (the union case, once decoded) | Error with the exception when `PublishAsync` throws, or when the event can't be decoded |
 
 - `{Command}` is the command's record type name; `{Event}` and `{EventType}` are the event's stored name.
 - A projection span's parent is the `traceparent` stored in the event's metadata, so a trace runs from the request,
@@ -33,7 +33,7 @@ recorded until something listens. See [Observability](../concepts/observability.
 | `rosetta.command.duration` | Histogram | `s` | `rosetta.aggregate`, `rosetta.command` |
 | `rosetta.events.stored` | Counter | `{event}` | `rosetta.aggregate` |
 | `rosetta.outbox.events` | Counter | `{event}` | `rosetta.aggregate` |
-| `rosetta.outbox.published` | Counter | `{event}` | `rosetta.aggregate` |
+| `rosetta.outbox.published` | Counter | `{event}` | `rosetta.aggregate`, `rosetta.outcome` (`published`; `failed`: `PublishAsync` threw; `undecodable`: it couldn't be read back as its events union) |
 | `rosetta.conflicts.retried` | Counter | `{retry}` | `rosetta.aggregate` (a command) or `rosetta.projection` (an event) |
 | `rosetta.projection.events` | Counter | `{event}` | `rosetta.projection`, `rosetta.outcome` (`handled`, `failed`, `skipped`) |
 | `rosetta.projection.event.duration` | Histogram | `s` | `rosetta.projection` |
@@ -68,6 +68,8 @@ The Outbox logs a Warning once when RavenDB's licence refuses its Document Expir
 | `The outbox {Collection} is published by this instance ({Owner}).` / `… by another instance: this one ({Owner}) waits to take over.` | Information |
 | `The outbox {Collection} FAILED to publish. Retrying in {Delay} …` | Error |
 | `The outbox {Collection} FAILED to publish {Failures} times in a row. …` (the 5th) | Critical |
+| `The outbox {Collection} cannot decode {EventType} as {EventsUnionClrType}: {Reason}. Retrying in {Delay} …` | Error |
+| `The outbox {Collection} cannot decode {EventType} as {EventsUnionClrType}: {Reason} ({Failures} times in a row). …` (the 5th) | Critical |
 | `The outbox {Collection} RECOVERED: it publishes again.` | Information |
 
 The KurrentDB Aggregate repository logs a Warning when a [snapshot](../concepts/aggregates.md#snapshots) couldn't be

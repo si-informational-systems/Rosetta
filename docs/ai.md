@@ -69,8 +69,10 @@ Breaking one of these compiles fine and fails at runtime, or corrupts data later
 **Outbox**
 
 14. Integration events go to the outside world through an `IOutboxPublisher` registered with `UseOutboxPublisher`
-    (next to `UseOutboxWith`). `PublishAsync` returns only once the broker has the event (publisher confirms), and
-    sends the event's `Id` as the message id; consumers dedupe on it (delivery is at least once).
+    (next to `UseOutboxWith`). `PublishAsync` gets an `OutboxPublication`, the event already decoded (`Event`, the
+    union case; `EventRecord`; `EventJson` as stored): keep no mapping from Aggregates to unions. It returns only once
+    the broker has the event (publisher confirms), and sends `EventId` as the message id; consumers dedupe on it
+    (delivery is at least once).
 
 **Projections**
 

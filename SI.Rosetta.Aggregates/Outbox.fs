@@ -1,11 +1,13 @@
 namespace SI.Rosetta.Aggregates
 
 open System
+open System.Collections.Concurrent
 open System.Diagnostics
 open System.Security.Cryptography
 open System.Text
 open System.Threading
 open System.Threading.Tasks
+open Microsoft.FSharp.Reflection
 open SI.Rosetta.Common
 
 /// The outbox's settings. UseOutboxWith/AddOutboxWith read them from the Outbox configuration section
@@ -63,6 +65,13 @@ type OutboxEvent =
       Version: int64
       /// The event's place among the events its command published, from 0
       Position: int
+      /// The events union the event is a case of, as "Namespace.Type, Assembly" (EventEncoding.EventsUnionClrTypeOf):
+      /// what OutboxEvents.Decode reads the event back as. Null in a record from before Rosetta 1.38
+      EventsUnionClrType: string
+      /// The event's record type, the case's data, as "Namespace.Type, Assembly" (EventEncoding.EventClrTypeOf), as it
+      /// was when the event was recorded: for tools, and for reading a record without its union. Null in a record from
+      /// before Rosetta 1.38
+      EventClrType: string
       /// The name the event's record is stored under: its [<EventType>] name, or else its type name. With Data, it's
       /// what EventEncoding.Decode reads the event back from
       EventType: string
@@ -86,12 +95,83 @@ type IOutbox =
 type IRecordPublishedEvents =
     abstract member RecordPublishedEventsAsync: aggregate: IAggregate -> Task
 
+/// An event the outbox's publisher hands over to be published: the event itself, and everything known about it.
+/// Rosetta builds it for each PublishAsync call; it's never stored
+type OutboxPublication =
+    { // The event
+      /// The event as the aggregate published it: a case of its events union, decoded through the registered upcasters
+      Event: IAggregateEvents
+      /// The event's record, the case's data as a plain .NET value (a ReservationMade)
+      EventRecord: obj
+      /// The record's type (ReservationMade), after upcasting
+      EventRecordType: Type
+      /// The events union it's a case of (ReservationEvents)
+      EventsUnionType: Type
+      /// The name the record is stored under: its [<EventType>] name, or else its type name
+      EventTypeName: string
+      /// The record as JSON, exactly as stored, for forwarding the bytes as they are
+      EventJson: string
+
+      // Its identity
+      /// The same for every repeat of the event: give it to the message as its id, so consumers can drop duplicates
+      EventId: Guid
+
+      // Where it came from
+      /// The aggregate that published it, as Rosetta names it (Reservation)
+      AggregateName: string
+      AggregateId: string
+      /// The aggregate's version after the command that published the event
+      AggregateVersion: int64
+      /// The event's place among the events its command published, from 0
+      PositionInCommand: int
+      /// When the outbox recorded it, in UTC
+      RecordedAt: DateTime
+      /// The trace of the command that published it. While PublishAsync runs, Activity.Current is Rosetta's publish
+      /// span, a child of this one: propagate Activity.Current to continue the trace through the broker
+      CommandTrace: ActivityContext
+
+      // This attempt
+      /// 1 the first time the event is handed over, more when earlier attempts threw
+      Attempt: int }
+
 /// Sends the outbox's events to the outside world (a message broker, e.g. RabbitMQ): the app implements it, and
-/// UseOutboxPublisher runs it. Called one event at a time, in the order they were recorded. Delivery is at least once:
-/// an event whose publication wasn't marked (a crash in between) is published again, so give the message the event's
-/// Id as its message id and let consumers ignore one they've seen. A thrown exception is retried, from that event on
+/// UseOutboxPublisher runs it. Called one event at a time, in the order they were recorded, each decoded into its
+/// events union. Delivery is at least once: an event whose publication wasn't marked (a crash in between) is published
+/// again, so give the message the publication's EventId as its message id and let consumers ignore one they've seen.
+/// A thrown exception is retried, from that event on. Which value to send: Event for a typed bus that routes per union
+/// (Rebus, MassTransit), EventRecord to route per event or map it to a contract, EventJson with EventTypeName to
+/// forward the bytes as they are (raw RabbitMQ, Kafka)
 type IOutboxPublisher =
-    abstract member PublishAsync: event: OutboxEvent * cancellationToken: CancellationToken -> Task
+    abstract member PublishAsync: publication: OutboxPublication * cancellationToken: CancellationToken -> Task
+
+/// Why an outbox event can't be read back as its events union
+[<RequireQualifiedAccess>]
+type OutboxDecodeError =
+    /// The record names no events union: it was recorded before Rosetta 1.38
+    | NoEventsUnion
+    /// The events union doesn't resolve: its assembly isn't loaded in this process, or the type was renamed
+    | UnknownEventsUnion of eventsUnionClrType: string
+    /// The events union has no case for the event's type name, after the upcasters
+    | UnknownEventType of eventsUnion: Type * eventType: string
+
+    /// What went wrong, and what fixes it
+    member this.Reason =
+        match this with
+        | NoEventsUnion ->
+            "it was recorded before Rosetta 1.38, which didn't record its events union. Publish it with Rosetta 1.37's publisher, or delete it"
+        | UnknownEventsUnion name ->
+            sprintf "the events union %s doesn't resolve: its assembly isn't loaded in this process, or the type was renamed. Load the assembly, or publish or delete the event" name
+        | UnknownEventType (union, eventType) ->
+            sprintf "%s has no case for the event type %s, after the upcasters. Register an upcaster for it, or publish or delete the event" union.Name eventType
+
+/// An outbox event that can't be read back as its events union: the outbox's publisher holds it, and the events after
+/// it, until it's fixed or deleted
+type OutboxDecodeException(event: OutboxEvent, error: OutboxDecodeError) =
+    inherit Exception(
+        sprintf "Cannot decode %s as %s: %s." event.EventType
+            (if String.IsNullOrEmpty event.EventsUnionClrType then "(no events union)" else event.EventsUnionClrType) error.Reason)
+    member this.Event = event
+    member this.Error = error
 
 /// The outbox as its publisher reads it: Rosetta's outboxes implement it
 type IOutboxRelayStore =
@@ -129,6 +209,8 @@ module OutboxEvents =
               AggregateId = aggregate.Id
               Version = aggregate.Version
               Position = position
+              EventsUnionClrType = EventEncoding.EventsUnionClrTypeOf event
+              EventClrType = EventEncoding.EventClrTypeOf event
               EventType = eventType
               Data = data
               RecordedAt = recordedAt
@@ -147,6 +229,33 @@ module OutboxEvents =
             |> Array.map (fun (key, events) -> key, Collections.Generic.Queue(events |> Array.sortBy (fun event -> event.Version, event.Position)))
             |> dict
         recorded |> Array.map (fun event -> byAggregate.[(event.Aggregate, event.AggregateId)].Dequeue())
+
+    let private Unions = ConcurrentDictionary<string, Type>()
+
+    /// The events union a record names, resolved once. A name that doesn't resolve is looked up again the next time:
+    /// its assembly may be loaded by then
+    let private UnionOf (name: string) =
+        match Unions.TryGetValue name with
+        | true, union -> Some union
+        | false, _ ->
+            match Type.GetType(name, false) with
+            | null -> None
+            | union when FSharpType.IsUnion union && typeof<IAggregateEvents>.IsAssignableFrom union ->
+                Unions.[name] <- union
+                Some union
+            | _ -> None
+
+    /// The event as the aggregate published it, a case of the events union it was recorded with, read through the
+    /// upcasters, as the outbox's publisher reads it. The record is the case's field
+    let Decode (upcasters: IEventUpcaster seq) (event: OutboxEvent) : Result<IAggregateEvents, OutboxDecodeError> =
+        if String.IsNullOrEmpty event.EventsUnionClrType then Error OutboxDecodeError.NoEventsUnion
+        else
+            match UnionOf event.EventsUnionClrType with
+            | None -> Error (OutboxDecodeError.UnknownEventsUnion event.EventsUnionClrType)
+            | Some union ->
+                match EventEncoding.DecodeAs union upcasters event.EventType event.Data with
+                | Ok decoded -> Ok decoded
+                | Error eventType -> Error (OutboxDecodeError.UnknownEventType(union, eventType))
 
     /// Counts the events the outbox recorded in rosetta.outbox.events
     let Recorded (aggregate: string) (recorded: int) =

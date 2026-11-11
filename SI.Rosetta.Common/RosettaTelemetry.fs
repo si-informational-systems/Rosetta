@@ -22,8 +22,9 @@ module RosettaTelemetry =
     let EventsStored = Meter.CreateCounter<int64>("rosetta.events.stored", "{event}", "Events aggregates produced and stored")
     /// Events recorded in the outbox, by aggregate
     let OutboxEvents = Meter.CreateCounter<int64>("rosetta.outbox.events", "{event}", "Events recorded in the outbox")
-    /// Events the outbox's publisher published, by aggregate
-    let OutboxPublished = Meter.CreateCounter<int64>("rosetta.outbox.published", "{event}", "Events the outbox's publisher published")
+    /// Events the outbox's publisher handed over, by aggregate and outcome (published; failed: the publisher threw;
+    /// undecodable: it couldn't be read back as its events union)
+    let OutboxPublished = Meter.CreateCounter<int64>("rosetta.outbox.published", "{event}", "Events the outbox's publisher handed over")
     /// Conflicts retried at once (ConflictRetries), by aggregate (a command) or projection (an event)
     let RetriedConflicts = Meter.CreateCounter<int64>("rosetta.conflicts.retried", "{retry}", "Conflicts retried at once")
     /// Events projections received, by projection and outcome (handled, failed, skipped)

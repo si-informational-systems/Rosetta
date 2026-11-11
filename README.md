@@ -507,6 +507,8 @@ Each PublishedEvent is one document (`RavenDBOutboxEvent`, `MongoDBOutboxEvent`)
 | `Aggregate`, `AggregateId` | the Aggregate that published it, e.g. `Person` and `People-1` |
 | `Version` | the Aggregate's `Version` after the command |
 | `Position` | the event's place among the PublishedEvents of its command, from 0 |
+| `EventsUnionClrType` | the events union it's a case of, as `Namespace.Type, Assembly` (no version), e.g. `MyApp.PL.PersonEvents, MyApp.PL`: what the publisher decodes it as. `null` in records from before 1.38 |
+| `EventClrType` | the case's record type as it was when recorded, e.g. `MyApp.PL.PersonRegistered, MyApp.PL`, for tools. `null` in records from before 1.38 |
 | `EventType`, `Data` | the event as KurrentDB stores it: the name its record is stored under, and the record as JSON, exactly as written |
 | `RecordedAt` | when it was first recorded, in UTC. In `RecordedAt` and `Position` order, the events read back in the order they were recorded |
 | `TraceParent`, `TraceState` | the command's W3C trace context, so publishing the event can continue the command's trace |
@@ -514,31 +516,53 @@ Each PublishedEvent is one document (`RavenDBOutboxEvent`, `MongoDBOutboxEvent`)
 
 ### Publishing the events
 
-Implement `IOutboxPublisher` (one event to your broker: `PublishAsync(event: OutboxEvent, cancellationToken)`), and register it with `UseOutboxPublisher<T>()` on `IHostApplicationBuilder`/`IHostBuilder`, or `AddOutboxPublisher<T>()` on `IServiceCollection`. It's a singleton made by DI, so it can take services; it needs `UseOutboxWith`, before or after it.
+Implement `IOutboxPublisher` (one event to your broker: `PublishAsync(publication: OutboxPublication, cancellationToken)`), and register it with `UseOutboxPublisher<T>()` on `IHostApplicationBuilder`/`IHostBuilder`, or `AddOutboxPublisher<T>()` on `IServiceCollection`. It's a singleton made by DI, so it can take services; it needs `UseOutboxWith`, before or after it, and runs in any process that can load the events' assembly.
+
+Rosetta decodes each event through the registered upcasters, so your app keeps no mapping from Aggregates to events unions. The `OutboxPublication` (built per call, never stored) holds:
+
+- the event: `Event` (the union case, as the Aggregate published it), `EventRecord` and `EventRecordType` (the case's record), `EventsUnionType`, `EventTypeName` and `EventJson` (as stored);
+- its identity: `EventId`, the same for every repeat (the message id);
+- its origin: `AggregateName`, `AggregateId`, `AggregateVersion`, `PositionInCommand`, `RecordedAt`, `CommandTrace` (while `PublishAsync` runs, `Activity.Current` is Rosetta's publish span, a child of it: propagate that);
+- `Attempt`: 1, more when earlier attempts threw.
+
+A typed bus routing per union (Rebus, MassTransit) sends `Event`; routing per event or mapping to a contract, `EventRecord`; forwarding bytes (raw RabbitMQ, Kafka), `EventJson` typed by `EventTypeName`:
 
 ```fsharp
 type RabbitMqPublisher(channel: IChannel) =
     interface IOutboxPublisher with
-        member this.PublishAsync(event, cancellationToken) =
-            // send event.Data as event.EventType, with event.Id as the message id, and return once the broker confirms it
+        member this.PublishAsync(publication, cancellationToken) =
+            // send publication.EventJson as publication.EventTypeName, with publication.EventId as the message id,
+            // and return once the broker confirms it
             …
+
+type RebusOutboxPublisher(bus: IBus) =
+    interface IOutboxPublisher with
+        member _.PublishAsync(publication, _) =
+            let headers = Dictionary<string, string>()
+            headers.[Headers.MessageId] <- string publication.EventId
+            match Activity.Current with
+            | null -> ()
+            | activity -> headers.["traceparent"] <- activity.Id
+            bus.Publish(publication.Event, headers)
 ```
 
 A hosted service then loops: it takes or renews the Outbox's **lease** (one instance of the app publishes at a time, renewing it during a long batch; the others check every half lease and take over when it's handed over, as a stopping instance does, or has expired, 30 s by default), reads up to `PublishBatchSize` unpublished events, publishes them **one at a time, in order** (as recorded, and each Aggregate's in `Version` order even if the instances' clocks disagree), and marks the published ones (`PublishedAt`). A full batch is followed by the next at once; otherwise it waits `PublishPollIntervalMilliseconds`.
 
 - **Failures**: when `PublishAsync` throws, the events before it are marked, and publishing restarts from the failed one after 1, 2, 4, 8, 16, then every 30 s, logged as an Error, as Critical at the 5th failure in a row, and "RECOVERED" once it publishes again. The later events wait: the order holds.
+- **An event that can't be decoded** (a record from before 1.38, a union whose assembly isn't loaded or was renamed, a case the union lacks after the upcasters) is held the same way: "The outbox {Collection} cannot decode {EventType} as {EventsUnionClrType}: {Reason}", Critical at the 5th. Fix or delete the record and publishing goes on, in order; nothing is skipped.
 - **At least once**: a crash between publishing and marking publishes the event again, with the same `Id`. Use it as the message id, and dedupe on it in consumers.
 - **Marked, not deleted**: the Outbox records an event once because it still holds it, so a repeat of the command doesn't record, and publish, it again. With `EventTTLMinutes`, an event expires that long after its publication; an unpublished one never expires.
 - **What's unpublished**: `PublishedAt` explicitly `null`. In RavenDB and MongoDB a record without the field (recorded before the publisher was registered) is taken to be your own former publisher's, and isn't published. PostgreSQL adds a `published_at` column to an existing table, so the rows already there **are** published: delete the ones already sent first.
 - **The lease** is the document `OutboxLeases/{CollectionName}` in RavenDB, a document of the `OutboxLeases` collection (`_id` = `CollectionName`) in MongoDB, a row of `rosetta.outbox_leases` (by the database's clock) in PostgreSQL.
-- Each publication is a Producer span `{Aggregate} {EventType} publish` continuing the command's trace, counted in `rosetta.outbox.published`.
+- Each publication is a Producer span `{Aggregate} {EventType} publish` continuing the command's trace (tagged `rosetta.event.case`), counted in `rosetta.outbox.published` by `rosetta.outcome` (`published`, `failed`, `undecodable`).
+- **Upgrading from 1.37**: `PublishAsync` takes an `OutboxPublication` instead of the `OutboxEvent` (`EventJson`, `EventTypeName`, `EventId`, `CommandTrace` for `Data`, `EventType`, `Id`, `TraceParent`). Records written by 1.37 have no `EventsUnionClrType`: let 1.37's publisher drain the Outbox before deploying 1.38; a record still left holds the publisher until you publish or delete it.
 
-Without `UseOutboxPublisher`, publishing is up to you (a RavenDB data subscription, a MongoDB change stream, a connector of your broker). `EventEncoding.Decode` reads a recorded event back into its DU, through the upcasters:
+Without `UseOutboxPublisher`, publishing is up to you (a RavenDB data subscription, a MongoDB change stream, a connector of your broker). `OutboxEvents.Decode` reads a recorded event back into its events union, through the upcasters, as the built-in publisher does:
 
 ```fsharp
-match EventEncoding.Decode<PersonEvents> upcasters recorded.EventType recorded.Data with
-| Ok event -> ()            // publish it
-| Error unknownEvent -> ()  // a record type PersonEvents has no case for
+match OutboxEvents.Decode upcasters recorded with
+| Ok event -> ()     // publish it: a PersonEvents case, say
+| Error error -> ()  // OutboxDecodeError.NoEventsUnion, UnknownEventsUnion or UnknownEventType; error.Reason says why
 ```
 
 ### Expiry
@@ -933,7 +957,7 @@ builder.Services
 |---|---|---|
 | `{Aggregate} {Command}`, e.g. `Person RegisterPerson` | Internal | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.command`, `rosetta.events` (stored), `rosetta.outcome` (`handled`, `rejected`, `failed`), `rosetta.domain_error` |
 | `{Projection} {Event}`, e.g. `Person PersonRegistered` | Consumer | `rosetta.projection`, `rosetta.stream`, `rosetta.event`, `rosetta.checkpoint`, `rosetta.outcome` (`skipped`) |
-| `{Aggregate} {EventType} publish`, e.g. `Person PersonRegistered publish` | Producer | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.event`, `rosetta.outbox.event.id` |
+| `{Aggregate} {EventType} publish`, e.g. `Person PersonRegistered publish` | Producer | `rosetta.aggregate`, `rosetta.aggregate.id`, `rosetta.event`, `rosetta.outbox.event.id`, `rosetta.event.case` (the union case, once decoded) |
 
 A command's trace context (W3C `traceparent`/`tracestate`) is stored in the metadata of the events it produces, and the projections handling those events continue it, as does the Outbox publisher for its PublishedEvents. So one trace runs from the request, through the command, to every read model it updates, even across services. A rejected command (`DomainException`) or a failing projection marks its span as an error. A conflict retried at once adds the span event `rosetta.conflict.retry` and the tag `rosetta.attempts`. Spans of your own code and of instrumented clients nest inside Rosetta's.
 
@@ -945,7 +969,7 @@ A command's trace context (W3C `traceparent`/`tracestate`) is stored in the meta
 | `rosetta.command.duration` | `s` | `rosetta.aggregate`, `rosetta.command` |
 | `rosetta.events.stored` | `{event}` | `rosetta.aggregate` |
 | `rosetta.outbox.events` | `{event}` | `rosetta.aggregate` |
-| `rosetta.outbox.published` | `{event}` | `rosetta.aggregate` |
+| `rosetta.outbox.published` | `{event}` | `rosetta.aggregate`, `rosetta.outcome` (`published`, `failed`, `undecodable`) |
 | `rosetta.conflicts.retried` | `{retry}` | `rosetta.aggregate` (a command) or `rosetta.projection` (an event): conflicts retried at once |
 | `rosetta.projection.events` | `{event}` | `rosetta.projection`, `rosetta.outcome` (`handled`, `failed`, `skipped`) |
 | `rosetta.projection.event.duration` | `s` | `rosetta.projection` |

@@ -14,6 +14,10 @@ module KurrentDBSerialization =
     let AggregateClrTypeNameHeader = "AggregateClrTypeName"
     let EventClrTypeNameHeader = "EventClrTypeName"
     let EventsDUClrTypeNameHeader = "EventsDiscriminatedUnionClrTypeName"
+    /// The events union, as EventEncoding.EventsUnionClrTypeOf names it (and the outbox records it)
+    let EventsUnionClrTypeHeader = "EventsUnionClrType"
+    /// The event's record type, as EventEncoding.EventClrTypeOf names it (and the outbox records it)
+    let EventClrTypeHeader = "EventClrType"
     let DiscriminatedUnionCaseTypeHeader = "DiscriminatedUnionCaseType"
 
     let JsonOptions = EventEncoding.JsonOptions
@@ -31,10 +35,14 @@ module KurrentDBSerialization =
         let case, _ = FSharpValue.GetUnionFields(event, event.GetType())
         let fieldType = GetUnionCaseType case
 
+        let eventsUnionClrType = EventEncoding.EventsUnionClrTypeOf event
         let eventHeaders =
             let dict = Dictionary<string, obj> headers
+            // The older headers, still written: Rosetta never read them, but the metadata already stored has them
             dict.Add(EventClrTypeNameHeader, fieldType.AssemblyQualifiedName)
-            dict.Add(EventsDUClrTypeNameHeader, event.GetType().AssemblyQualifiedName)
+            dict.Add(EventsDUClrTypeNameHeader, eventsUnionClrType)
+            dict.Add(EventsUnionClrTypeHeader, eventsUnionClrType)
+            dict.Add(EventClrTypeHeader, EventEncoding.EventClrTypeOf event)
             dict.Add(DiscriminatedUnionCaseTypeHeader, typeName)
             // The command's trace, which the projections handling the event continue
             match Activity.Current with

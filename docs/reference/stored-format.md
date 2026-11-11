@@ -20,8 +20,10 @@ description: How Rosetta writes events to KurrentDB and the Outbox — data, met
 
 ```json title="metadata"
 {
-  "EventClrTypeName": "People.PL.PersonRegistered, People.PL",
+  "EventClrTypeName": "People.PL.PersonRegistered, People.PL, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
   "EventsDiscriminatedUnionClrTypeName": "People.PL.PersonEvents, People.PL",
+  "EventsUnionClrType": "People.PL.PersonEvents, People.PL",
+  "EventClrType": "People.PL.PersonRegistered, People.PL",
   "DiscriminatedUnionCaseType": "PersonRegistered",
   "AggregateClrTypeName": "People.Domain.PersonAggregate, People.Domain",
   "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
@@ -30,6 +32,13 @@ description: How Rosetta writes events to KurrentDB and the Outbox — data, met
 
 - **`DiscriminatedUnionCaseType`** is the stored name, and the only header Rosetta needs to read an event: it finds the
   DU case whose record has that name. The CLR type names are informational.
+- **`EventsUnionClrType`** and **`EventClrType`** (since 1.38) name the events union and the case's record as
+  `Namespace.Type, Assembly`, without a version, exactly as the [Outbox](#an-event-in-the-outbox) records them
+  (`EventEncoding.EventsUnionClrTypeOf` and `EventClrTypeOf`), so KurrentDB events and Outbox records describe
+  themselves the same way.
+- `EventClrTypeName` and `EventsDiscriminatedUnionClrTypeName` are still written, for the events already stored. Before
+  1.38, `EventsDiscriminatedUnionClrTypeName` named the class .NET gives a case with fields
+  (`People.PL.PersonEvents+Registered, …`) with its assembly's version; it now names the union, like `EventsUnionClrType`.
 - `traceparent`/`tracestate` are written when the command ran inside a trace.
 
 ## JSON shapes
@@ -65,6 +74,8 @@ The same stored name and data, in a document per event (see [Outbox](../concepts
   "AggregateId": "People-1",
   "Version": 1,
   "Position": 0,
+  "EventsUnionClrType": "People.PL.PersonEvents, People.PL",
+  "EventClrType": "People.PL.PersonRegistered, People.PL",
   "EventType": "PersonRegistered",
   "Data": "{\"Id\":\"People-1\",\"Name\":\"Ada\"}",
   "RecordedAt": "2026-11-11T10:15:00Z",
@@ -77,7 +88,11 @@ The same stored name and data, in a document per event (see [Outbox](../concepts
 `PublishedAt` is set when the Outbox's [publisher](../concepts/outbox.md#publishing-the-events) has published the
 event; until then it's `null`. A document recorded before the publisher was registered has no `PublishedAt` at all,
 and isn't published (RavenDB, MongoDB). With `EventTTLMinutes` and a publisher, the expiry (`@expires` in RavenDB,
-`expiresAt` in MongoDB) is set when the event is published. MongoDB writes the fields in camelCase (`publishedAt`).
+`expiresAt` in MongoDB) is set when the event is published. MongoDB writes the fields in camelCase (`publishedAt`,
+`eventsUnionClrType`, `eventClrType`).
+
+`EventsUnionClrType` and `EventClrType` are recorded since 1.38; a record from before has neither (`null`), and the
+built-in publisher can't decode it (see [Upgrading from 1.37](../concepts/outbox.md#upgrading-from-137)).
 
 In PostgreSQL, a row of `rosetta.outbox` (`rosetta.` and the snake_case of `Outbox:CollectionName`), which the Outbox
 creates:
@@ -89,6 +104,8 @@ create table rosetta.outbox (
     aggregate_id text not null,
     version bigint not null,
     position int not null,
+    events_union_clr_type text,      -- since 1.38; null in rows recorded before
+    event_clr_type text,             -- since 1.38; null in rows recorded before
     event_type text not null,
     data json not null,              -- json, not jsonb: the record's JSON text exactly as KurrentDB stores it
     recorded_at timestamptz not null,
@@ -98,14 +115,14 @@ create table rosetta.outbox (
     published_at timestamptz);       -- set by the publisher; a partial index on (recorded_at, position) where it's null
 ```
 
-`published_at` is added to a table created without it (`alter table … add column if not exists`). The publisher's
-lease is a row of a table the Outbox also creates:
+`published_at`, `events_union_clr_type` and `event_clr_type` are added to a table created without them (`alter table
+… add column if not exists`). The publisher's lease is a row of a table the Outbox also creates:
 
 ```sql
 create table rosetta.outbox_leases (name text primary key, owner text not null, expires_at timestamptz not null);
 ```
 
-`EventEncoding.Decode<PersonEvents> upcasters recorded.EventType recorded.Data` reads it back.
+`OutboxEvents.Decode upcasters recorded` reads it back into its events union, as the publisher does.
 
 ## The Outbox publisher's lease
 

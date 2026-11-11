@@ -308,7 +308,8 @@ module ServiceCollectionExtensions =
     /// Publishes the outbox's events with 'TPublisher (the app's, e.g. to RabbitMQ), registered as a singleton
     /// IOutboxPublisher: a hosted service reads the unpublished events, publishes them in order and marks them
     /// published, on one instance of the app at a time. With an EventTTL, the events then expire EventTTL after their
-    /// publication. Needs the outbox (UseOutboxWith), added before or after it
+    /// publication. Each event is decoded into its events union through the registered IEventUpcasters, so publishing
+    /// works in any process that can load the events' assembly. Needs the outbox (UseOutboxWith), added before or after it
     let AddOutboxPublisher<'TPublisher when 'TPublisher :> IOutboxPublisher and 'TPublisher : not struct>
         (services: IServiceCollection) =
         EnsureAddedOnce<OutboxPublisherAdded> services "The outbox's publisher can only be added once: by `UseOutboxPublisher` or `AddOutboxPublisher`."
@@ -322,7 +323,7 @@ module ServiceCollectionExtensions =
                     match sp.GetService<ILogger<OutboxRelay>>() with
                     | null -> NullLogger<OutboxRelay>.Instance :> ILogger<OutboxRelay>
                     | logger -> logger
-                new OutboxRelay(sp.GetRequiredService<IOutbox>(), sp.GetRequiredService<IOutboxPublisher>(), options :?> OutboxOptions, logger)) |> ignore
+                new OutboxRelay(sp.GetRequiredService<IOutbox>(), sp.GetRequiredService<IOutboxPublisher>(), sp.GetServices<IEventUpcaster>(), options :?> OutboxOptions, logger)) |> ignore
         services
 
 [<AutoOpen>]

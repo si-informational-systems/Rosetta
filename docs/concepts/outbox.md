@@ -132,6 +132,8 @@ with the same fields as snake_case columns (see [Stored format](../reference/sto
 | `Aggregate`, `AggregateId` | the Aggregate that published it, e.g. `Person` and `People-1` |
 | `Version` | the Aggregate's `Version` after the command |
 | `Position` | the event's place among the PublishedEvents of its command, from 0 |
+| `EventsUnionClrType` | the events union the event is a case of, as `Namespace.Type, Assembly`, e.g. `MyApp.PL.PersonEvents, MyApp.PL`: what the publisher decodes it as. No version, culture or public key token, so it still resolves after the assembly's version changes. `null` in records from before 1.38 |
+| `EventClrType` | the case's record type as it was when the event was recorded, e.g. `MyApp.PL.PersonRegistered, MyApp.PL`: for tools, and for reading a record without its union. `null` in records from before 1.38 |
 | `EventType`, `Data` | the event as KurrentDB stores it: the name its record is stored under, and the record as JSON, exactly as written |
 | `RecordedAt` | when it was first recorded, in UTC. In `RecordedAt` and `Position` order, the events read back in the order they were recorded |
 | `TraceParent`, `TraceState` | the command's W3C trace context, so publishing the event can continue the command's trace |
@@ -140,20 +142,49 @@ with the same fields as snake_case columns (see [Stored format](../reference/sto
 ## Publishing the events
 
 Implement `IOutboxPublisher`, which sends one event to your broker, and register it with `UseOutboxPublisher`: Rosetta
-reads the unpublished events, publishes them in order and marks them published.
+reads the unpublished events, decodes each one, hands it to your publisher in order, and marks it published.
 
 ```fsharp
 type IOutboxPublisher =
-    abstract PublishAsync: event: OutboxEvent * cancellationToken: CancellationToken -> Task
+    abstract PublishAsync: publication: OutboxPublication * cancellationToken: CancellationToken -> Task
 ```
+
+`OutboxPublication` is the event exactly as the Aggregate published it, and everything known about it. Rosetta builds
+it for each call (it's never stored), decoding the event through the registered [upcasters](event-evolution.md), so your app
+keeps no mapping from Aggregates to events unions:
+
+| Field | |
+|---|---|
+| `Event` | the event as the Aggregate published it: a case of its events union (`PersonEvents.Registered …`) |
+| `EventRecord` | the case's record, a plain .NET value (a `PersonRegistered`) |
+| `EventRecordType` | the record's type, after upcasting (`PersonRegistered`) |
+| `EventsUnionType` | the events union it's a case of (`PersonEvents`) |
+| `EventTypeName` | the name the record is stored under: its `[<EventType>]` name, or else its type name |
+| `EventJson` | the record as JSON, exactly as stored |
+| `EventId` | the same for every repeat of the event: give it to the message as its id, so consumers can drop duplicates |
+| `AggregateName`, `AggregateId` | the Aggregate that published it (`Person`, `People-1`) |
+| `AggregateVersion` | the Aggregate's version after the command that published the event |
+| `PositionInCommand` | the event's place among the events its command published, from 0 |
+| `RecordedAt` | when the Outbox recorded it, in UTC |
+| `CommandTrace` | the trace of the command that published it (an `ActivityContext`). While `PublishAsync` runs, `Activity.Current` is Rosetta's publish span, a child of it: propagate `Activity.Current` to continue the trace through the broker |
+| `Attempt` | 1 the first time the event is handed over, more when earlier attempts threw |
+
+Which one to send depends on the broker:
+
+| Your publisher | Sends |
+|---|---|
+| a typed bus that routes per union (Rebus, MassTransit) | `Event` |
+| routing per event, a webhook contract, a mapper | `EventRecord` (and `EventRecordType`) |
+| forwarding bytes (raw RabbitMQ, Kafka) | `EventJson`, with `EventTypeName` as its type |
 
 === "F#"
 
     ```fsharp
     type RabbitMqPublisher(channel: IChannel) =
         interface IOutboxPublisher with
-            member this.PublishAsync(event, cancellationToken) =
-                // send event.Data as event.EventType, with event.Id as the message id, and return once the broker has it
+            member this.PublishAsync(publication, cancellationToken) =
+                // send publication.EventJson as publication.EventTypeName, with publication.EventId as the message id,
+                // and return once the broker has it
                 …
     ```
 
@@ -171,13 +202,14 @@ type IOutboxPublisher =
     // or services.AddOutboxPublisher<RabbitMqPublisher>();
     ```
 
-A whole RabbitMQ publisher is in [Recipes](../guides/recipes.md#publish-the-outbox).
+A whole RabbitMQ publisher, and one on Rebus, are in [Recipes](../guides/recipes.md#publish-the-outbox).
 
 - The publisher is a **singleton made by DI**, so its constructor can take services (a connection, a logger).
 - **Return only once the broker has the event** (e.g. RabbitMQ's publisher confirms): when `PublishAsync` returns, the
   event is marked published.
 - It needs the Outbox: `UseOutboxWith`, before or after it. Without it the host fails to start: "The outbox's publisher
   needs the outbox: add it with `UseOutboxWith` or `AddOutboxWith`." It's added once per service collection.
+- It runs in any process that can load the events' assembly (the PL project), with or without Aggregates registered.
 
 ### How it publishes
 
@@ -185,7 +217,8 @@ A hosted service, until the application stops:
 
 1. takes or renews the [lease](#one-instance-at-a-time);
 2. reads the oldest unpublished events, `PublishBatchSize` at most;
-3. publishes them **one at a time, in order**, each `PublishAsync` awaited before the next;
+3. decodes each one into its events union (`EventsUnionClrType`, resolved once, then `EventType` and `Data` through the
+   upcasters) and publishes them **one at a time, in order**, each `PublishAsync` awaited before the next;
 4. marks the published ones (`PublishedAt`).
 
 After a full batch it reads the next at once; otherwise it waits `PublishPollIntervalMilliseconds`.
@@ -197,10 +230,32 @@ After a full batch it reads the next at once; otherwise it waits `PublishPollInt
   Critical ("The outbox {Collection} FAILED to publish 5 times in a row …"), and "The outbox {Collection} RECOVERED" once
   it publishes again. It never gives up, and keeps the order: an event that can't be published holds up the ones after
   it until it can.
-- **At least once**: a crash between publishing an event and marking it publishes it again. The event's `Id` is the
-  same every time: give it to the message as its id, and let consumers ignore one they've seen.
+- **An event that can't be decoded is held**, the same as a failed `PublishAsync`: retried with the same delays, the
+  events after it wait, and nothing is skipped or lost. Each attempt is logged as an Error, the 5th in a row as Critical:
+  "The outbox {Collection} cannot decode {EventType} as {EventsUnionClrType}: {Reason} …". The reason says what fixes it:
+    - a record from before 1.38 has no `EventsUnionClrType` (`OutboxDecodeError.NoEventsUnion`): publish it with 1.37's
+      publisher, or delete it (see [Upgrading](#upgrading-from-137));
+    - the union doesn't resolve (`UnknownEventsUnion`): its assembly isn't loaded in this process, or the type was
+      renamed;
+    - the union has no case for the event's type name after the upcasters (`UnknownEventType`): register an upcaster.
+
+    Once the record is fixed or deleted, publishing goes on, in order.
+- **At least once**: a crash between publishing an event and marking it publishes it again. The event's `EventId` is
+  the same every time: give it to the message as its id, and let consumers ignore one they've seen.
 - **Traced and measured**: each publication is a Producer span `{Aggregate} {EventType} publish` that continues the
-  command's trace, and counts in `rosetta.outbox.published` (see [Telemetry](../reference/telemetry.md)).
+  command's trace, tagged `rosetta.event.case` (the union case's name), and counts in `rosetta.outbox.published` with
+  `rosetta.outcome` = `published`, `failed` (`PublishAsync` threw) or `undecodable` (see
+  [Telemetry](../reference/telemetry.md)).
+
+### Upgrading from 1.37
+
+`IOutboxPublisher.PublishAsync` takes an `OutboxPublication` instead of the `OutboxEvent`: move from `event.Data`,
+`event.EventType`, `event.Id`, `event.TraceParent` to `EventJson`, `EventTypeName`, `EventId`, `CommandTrace` (or
+`Activity.Current`), and drop your own decoding for `Event` or `EventRecord`.
+
+Records written by 1.37 have no `EventsUnionClrType`, so 1.38 can't decode them. **Let 1.37's publisher drain the
+Outbox before deploying 1.38.** A record still left holds the publisher, with a Critical log naming the fix: publish it
+yourself, or delete it.
 
 ### One instance at a time
 
@@ -231,13 +286,13 @@ repeat of the command doesn't record, and publish, it again. Unpublished means `
 
 Without `UseOutboxPublisher`, publishing is up to you (another process, a connector of your broker): read the records
 in `RecordedAt` and `Position` order, send them, and mark or delete them. The built-in publisher is the recommended way:
-it already orders, retries, leases and marks. `EventEncoding.Decode` reads a recorded event back into its DU, through
-the upcasters:
+it already orders, retries, leases and marks. `OutboxEvents.Decode` reads a recorded event back into its events union,
+through the upcasters, as the built-in publisher does:
 
 ```fsharp
-match EventEncoding.Decode<PersonEvents> upcasters recorded.EventType recorded.Data with
-| Ok event -> ()            // publish it
-| Error unknownEvent -> ()  // a record type PersonEvents has no case for
+match OutboxEvents.Decode upcasters recorded with
+| Ok event -> ()     // publish it: a PersonEvents case, say
+| Error error -> ()  // OutboxDecodeError.NoEventsUnion, UnknownEventsUnion or UnknownEventType; error.Reason says why
 ```
 
 ## Expiry

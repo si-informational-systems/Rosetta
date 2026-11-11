@@ -171,6 +171,18 @@ Messages are quoted as Rosetta writes them; `{…}` stands for the names in your
   cause; "RECOVERED" is logged when it publishes again. An event the broker will never take holds up the Outbox: fix
   the publisher (e.g. route it elsewhere) rather than letting it throw forever.
 
+**"The outbox {Collection} cannot decode {EventType} as {EventsUnionClrType}: {Reason} …"**
+: The event can't be read back as its events union, so it's held, with the events after it (nothing is skipped).
+  `{Reason}` says why and what fixes it:
+    - recorded before 1.38 (no `EventsUnionClrType`): let 1.37's publisher drain the Outbox before upgrading; for a
+      record still left, publish it yourself and delete it;
+    - the union doesn't resolve: this process doesn't load the events' assembly (reference the PL project), or the
+      union was renamed or moved (fix `EventsUnionClrType` in the record, or delete it);
+    - no case for the type name after the upcasters: register the [upcaster](../concepts/event-evolution.md#upcasters)
+      for the event's old name.
+
+    Publishing goes on, in order, once the record is fixed or deleted.
+
 **Nothing is published, and "… is published by another instance: this one ({Owner}) waits to take over."**
 : Another instance holds the lease. One that stopped hands it over; one that crashed holds it until it expires (30 s),
   then this one takes over.

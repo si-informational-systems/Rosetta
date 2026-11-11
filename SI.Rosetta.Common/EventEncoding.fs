@@ -65,6 +65,24 @@ module EventEncoding =
                 raise (InvalidOperationException(
                     sprintf "%s has more than one case stored under the same event type name: %s. Give their records different [<EventType>] names." t.Name names)))
 
+    let private ClrTypeNames = ConcurrentDictionary<Type, string>()
+
+    /// "Namespace.Type, Assembly": without the assembly's version, culture or public key token, so it still resolves
+    /// (Type.GetType) once the assembly's version changes
+    let private ClrTypeNameOf (t: Type) =
+        ClrTypeNames.GetOrAdd(t, fun t -> sprintf "%s, %s" t.FullName (t.Assembly.GetName().Name))
+
+    /// The events union the event is a case of, as "Namespace.Type, Assembly": the union itself, not the class .NET
+    /// gives a case with fields (ReservationEvents, not ReservationEvents+ReservationMade)
+    let EventsUnionClrTypeOf (event: IAggregateEvents) : string =
+        let case, _ = FSharpValue.GetUnionFields(event, event.GetType())
+        ClrTypeNameOf case.DeclaringType
+
+    /// The event's record type, the case's data, as "Namespace.Type, Assembly"
+    let EventClrTypeOf (event: IAggregateEvents) : string =
+        let case, _ = FSharpValue.GetUnionFields(event, event.GetType())
+        ClrTypeNameOf (GetUnionCaseType case)
+
     /// The name the event's record is stored under, and the record as JSON, with F# options in the given format
     let EncodeWith (optionFormat: OptionFormat) (event: IAggregateEvents) : string * string =
         let case, fields = FSharpValue.GetUnionFields(event, event.GetType())

@@ -22,6 +22,10 @@ type RavenDBOutboxEvent =
       AggregateId: string
       Version: int64
       Position: int
+      /// The events union, "Namespace.Type, Assembly"; null in a document from before Rosetta 1.38
+      EventsUnionClrType: string
+      /// The event's record type, "Namespace.Type, Assembly"; null in a document from before Rosetta 1.38
+      EventClrType: string
       EventType: string
       /// The event's record as JSON, exactly as KurrentDB stores it
       Data: string
@@ -55,6 +59,8 @@ type RavenDBOutbox(store: IDocumentStore, options: OutboxOptions, logger: ILogge
           AggregateId = document.AggregateId
           Version = document.Version
           Position = document.Position
+          EventsUnionClrType = document.EventsUnionClrType
+          EventClrType = document.EventClrType
           EventType = document.EventType
           Data = document.Data
           RecordedAt = DateTime.SpecifyKind(document.RecordedAt, DateTimeKind.Utc)
@@ -121,6 +127,8 @@ type RavenDBOutbox(store: IDocumentStore, options: OutboxOptions, logger: ILogge
                       AggregateId = event.AggregateId
                       Version = event.Version
                       Position = event.Position
+                      EventsUnionClrType = event.EventsUnionClrType
+                      EventClrType = event.EventClrType
                       EventType = event.EventType
                       Data = event.Data
                       RecordedAt = event.RecordedAt

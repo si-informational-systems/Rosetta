@@ -12,6 +12,7 @@ open Microsoft.Extensions.Logging.Abstractions
 open Xunit
 open SI.Rosetta.Aggregates
 open SI.Rosetta.Aggregates.HostBuilder
+open SI.Rosetta.Common
 
 /// An outbox in memory, as the relay reads it
 type MemoryOutbox() =
@@ -21,6 +22,8 @@ type MemoryOutbox() =
     member val Marked = ConcurrentQueue<Guid>()
 
     member this.Add(events: OutboxEvent seq) = lock Events (fun () -> Events.AddRange events)
+    /// Deletes the event, as an operator would one that can't be published
+    member this.Delete(id: Guid) = lock Events (fun () -> Events.RemoveAll(fun event -> event.Id = id) |> ignore)
 
     interface IOutbox with
         member this.RecordAsync(events) =
@@ -47,28 +50,34 @@ type MemoryOutbox() =
                     this.Marked.Enqueue event.Id)
             Task.CompletedTask
 
-/// Publishes into a list; fails on the events failOn names, once each
+/// Publishes into a list; fails on the events FailOnce names, once each, keeping what it was handed then too
 type CollectingPublisher() =
-    member val Published = ConcurrentQueue<OutboxEvent>()
+    member val Published = ConcurrentQueue<OutboxPublication>()
+    member val Attempted = ConcurrentQueue<OutboxPublication>()
     member val FailOnce = ConcurrentDictionary<Guid, bool>()
 
     interface IOutboxPublisher with
-        member this.PublishAsync(event, _cancellationToken) =
-            if this.FailOnce.TryRemove(event.Id) |> fst then
+        member this.PublishAsync(publication, _cancellationToken) =
+            this.Attempted.Enqueue publication
+            if this.FailOnce.TryRemove(publication.EventId) |> fst then
                 Task.FromException(InvalidOperationException "The broker is down")
             else
-                this.Published.Enqueue event
+                this.Published.Enqueue publication
                 Task.CompletedTask
 
 type OutboxRelayTests() =
     let Event (aggregateId: string) (version: int64) (position: int) (recordedAt: DateTime) : OutboxEvent =
+        let event = OrganizationEvents.Registered { Id = aggregateId; Name = sprintf "Version %d" version }
+        let eventType, data = EventEncoding.Encode event
         { Id = Guid.NewGuid()
           Aggregate = "Organization"
           AggregateId = aggregateId
           Version = version
           Position = position
-          EventType = "OrganizationRegistered"
-          Data = "{}"
+          EventsUnionClrType = EventEncoding.EventsUnionClrTypeOf event
+          EventClrType = EventEncoding.EventClrTypeOf event
+          EventType = eventType
+          Data = data
           RecordedAt = recordedAt
           TraceParent = null
           TraceState = null }
@@ -112,7 +121,7 @@ type OutboxRelayTests() =
             do! Until "the events are marked" (fun () -> outbox.Marked.Count = 3)
             do! relay.StopAsync(CancellationToken.None)
 
-            Assert.Equal<Guid list>(events |> List.map (fun event -> event.Id), publisher.Published |> Seq.map (fun event -> event.Id) |> List.ofSeq)
+            Assert.Equal<Guid list>(events |> List.map (fun event -> event.Id), publisher.Published |> Seq.map (fun publication -> publication.EventId) |> List.ofSeq)
         }
 
     [<Fact>]
@@ -131,7 +140,7 @@ type OutboxRelayTests() =
 
             // The first one marked on its own, before the retry
             Assert.Equal(first.Id, outbox.Marked |> Seq.head)
-            Assert.Equal<Guid list>([ first.Id; failing.Id; third.Id ], publisher.Published |> Seq.map (fun event -> event.Id) |> List.ofSeq)
+            Assert.Equal<Guid list>([ first.Id; failing.Id; third.Id ], publisher.Published |> Seq.map (fun publication -> publication.EventId) |> List.ofSeq)
         }
 
     [<Fact>]
@@ -210,12 +219,12 @@ type OutboxRelayTests() =
             let outbox = MemoryOutbox()
             let events = [ for version in 1L .. 10L -> Event "A" version 0 (At (float version)) ]
             outbox.Add events
-            let published = ConcurrentQueue<OutboxEvent>()
+            let published = ConcurrentQueue<OutboxPublication>()
             let slow =
                 { new IOutboxPublisher with
-                    member _.PublishAsync(event, _cancellationToken) =
+                    member _.PublishAsync(publication, _cancellationToken) =
                         task {
-                            published.Enqueue event
+                            published.Enqueue publication
                             // Another instance takes the lease after the third
                             if published.Count = 3 then outbox.LeaseHolder <- "another instance"
                             do! Task.Delay 20
@@ -228,5 +237,5 @@ type OutboxRelayTests() =
             do! relay.StopAsync(CancellationToken.None)
 
             Assert.InRange(published.Count, 3, 5)
-            Assert.Equal<Guid list>(published |> Seq.map (fun event -> event.Id) |> List.ofSeq, outbox.Marked |> List.ofSeq)
+            Assert.Equal<Guid list>(published |> Seq.map (fun publication -> publication.EventId) |> List.ofSeq, outbox.Marked |> List.ofSeq)
         }
