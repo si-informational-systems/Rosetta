@@ -138,16 +138,16 @@ module ServiceCollectionExtensions =
         AddProjectionsTo services configuration registration typeof<'EventRepository> [ typeof<'ProjectionsStore> ]
 
     /// The projections registration names, subscribed to 'EventRepository: the ones whose handlers take INoSqlStore
-    /// stored in 'DocumentStore, the ones whose handlers take ISqlStore in 'SqlStore
-    let internal AddProjectionsToBoth<'EventRepository, 'DocumentStore, 'SqlStore
+    /// stored in 'NoSqlStore, the ones whose handlers take ISqlStore in 'SqlStore
+    let internal AddProjectionsToBoth<'EventRepository, 'NoSqlStore, 'SqlStore
         when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
         and 'EventRepository :> EventRepository
-        and 'DocumentStore : not struct and 'DocumentStore : (new : unit -> 'DocumentStore)
-        and 'DocumentStore :> DocumentProjectionStore
+        and 'NoSqlStore : not struct and 'NoSqlStore : (new : unit -> 'NoSqlStore)
+        and 'NoSqlStore :> DocumentProjectionStore
         and 'SqlStore : not struct and 'SqlStore : (new : unit -> 'SqlStore)
         and 'SqlStore :> SqlProjectionStore
         > (services: IServiceCollection) (configuration: IConfiguration) (registration: ProjectionsRegistration) =
-        AddProjectionsTo services configuration registration typeof<'EventRepository> [ typeof<'DocumentStore>; typeof<'SqlStore> ]
+        AddProjectionsTo services configuration registration typeof<'EventRepository> [ typeof<'NoSqlStore>; typeof<'SqlStore> ]
 
     /// The projections in projectionsAssembly, subscribed to 'EventRepository and stored in 'ProjectionsStore
     let AddProjectionsWith<'EventRepository, 'ProjectionsStore
@@ -243,73 +243,73 @@ type ProjectionsExtensions =
         ServiceCollectionExtensions.AddProjections<'EventRepository, 'ProjectionsStore>
             services configuration (ProjectionsRegistration.Of register)
 
-    // Two stores: the projections whose handlers take INoSqlStore are stored in 'DocumentStore (RavenDB or MongoDB), the
+    // Two stores: the projections whose handlers take INoSqlStore are stored in 'NoSqlStore (RavenDB or MongoDB), the
     // ones whose handlers take ISqlStore in 'SqlStore (PostgreSQL). Each projection writes to one of them
 
     /// The projections in projectionsAssembly, in a document store and PostgreSQL
     [<Extension>]
-    static member UseProjectionsWith<'EventRepository, 'DocumentStore, 'SqlStore
+    static member UseProjectionsWith<'EventRepository, 'NoSqlStore, 'SqlStore
         when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
         and 'EventRepository :> EventRepository
-        and 'DocumentStore : not struct and 'DocumentStore : (new : unit -> 'DocumentStore)
-        and 'DocumentStore :> DocumentProjectionStore
+        and 'NoSqlStore : not struct and 'NoSqlStore : (new : unit -> 'NoSqlStore)
+        and 'NoSqlStore :> DocumentProjectionStore
         and 'SqlStore : not struct and 'SqlStore : (new : unit -> 'SqlStore)
         and 'SqlStore :> SqlProjectionStore>
         (builder: IHostApplicationBuilder, projectionsAssembly: Assembly) =
-        ServiceCollectionExtensions.AddProjectionsToBoth<'EventRepository, 'DocumentStore, 'SqlStore>
+        ServiceCollectionExtensions.AddProjectionsToBoth<'EventRepository, 'NoSqlStore, 'SqlStore>
             builder.Services builder.Configuration (ProjectionsRegistration.OfAssembly projectionsAssembly) |> ignore
         builder
 
     /// The projections register names, in a document store and PostgreSQL
     [<Extension>]
-    static member UseProjectionsWith<'EventRepository, 'DocumentStore, 'SqlStore
+    static member UseProjectionsWith<'EventRepository, 'NoSqlStore, 'SqlStore
         when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
         and 'EventRepository :> EventRepository
-        and 'DocumentStore : not struct and 'DocumentStore : (new : unit -> 'DocumentStore)
-        and 'DocumentStore :> DocumentProjectionStore
+        and 'NoSqlStore : not struct and 'NoSqlStore : (new : unit -> 'NoSqlStore)
+        and 'NoSqlStore :> DocumentProjectionStore
         and 'SqlStore : not struct and 'SqlStore : (new : unit -> 'SqlStore)
         and 'SqlStore :> SqlProjectionStore>
         (builder: IHostApplicationBuilder, register: Action<ProjectionsRegistration>) =
-        ServiceCollectionExtensions.AddProjectionsToBoth<'EventRepository, 'DocumentStore, 'SqlStore>
+        ServiceCollectionExtensions.AddProjectionsToBoth<'EventRepository, 'NoSqlStore, 'SqlStore>
             builder.Services builder.Configuration (ProjectionsRegistration.Of register) |> ignore
         builder
 
     /// The projections register names, in a document store and PostgreSQL
     [<Extension>]
-    static member UseProjectionsWith<'EventRepository, 'DocumentStore, 'SqlStore
+    static member UseProjectionsWith<'EventRepository, 'NoSqlStore, 'SqlStore
         when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
         and 'EventRepository :> EventRepository
-        and 'DocumentStore : not struct and 'DocumentStore : (new : unit -> 'DocumentStore)
-        and 'DocumentStore :> DocumentProjectionStore
+        and 'NoSqlStore : not struct and 'NoSqlStore : (new : unit -> 'NoSqlStore)
+        and 'NoSqlStore :> DocumentProjectionStore
         and 'SqlStore : not struct and 'SqlStore : (new : unit -> 'SqlStore)
         and 'SqlStore :> SqlProjectionStore>
         (hostBuilder: IHostBuilder, register: Action<ProjectionsRegistration>) =
         let registration = ProjectionsRegistration.Of register
         hostBuilder.ConfigureServices(fun ctx services ->
-            ServiceCollectionExtensions.AddProjectionsToBoth<'EventRepository, 'DocumentStore, 'SqlStore> services ctx.Configuration registration |> ignore)
+            ServiceCollectionExtensions.AddProjectionsToBoth<'EventRepository, 'NoSqlStore, 'SqlStore> services ctx.Configuration registration |> ignore)
 
     /// The projections in projectionsAssembly, in a document store and PostgreSQL
     [<Extension>]
-    static member AddProjectionsWith<'EventRepository, 'DocumentStore, 'SqlStore
+    static member AddProjectionsWith<'EventRepository, 'NoSqlStore, 'SqlStore
         when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
         and 'EventRepository :> EventRepository
-        and 'DocumentStore : not struct and 'DocumentStore : (new : unit -> 'DocumentStore)
-        and 'DocumentStore :> DocumentProjectionStore
+        and 'NoSqlStore : not struct and 'NoSqlStore : (new : unit -> 'NoSqlStore)
+        and 'NoSqlStore :> DocumentProjectionStore
         and 'SqlStore : not struct and 'SqlStore : (new : unit -> 'SqlStore)
         and 'SqlStore :> SqlProjectionStore>
         (services: IServiceCollection, configuration: IConfiguration, projectionsAssembly: Assembly) =
-        ServiceCollectionExtensions.AddProjectionsToBoth<'EventRepository, 'DocumentStore, 'SqlStore>
+        ServiceCollectionExtensions.AddProjectionsToBoth<'EventRepository, 'NoSqlStore, 'SqlStore>
             services configuration (ProjectionsRegistration.OfAssembly projectionsAssembly)
 
     /// The projections register names, in a document store and PostgreSQL
     [<Extension>]
-    static member AddProjectionsWith<'EventRepository, 'DocumentStore, 'SqlStore
+    static member AddProjectionsWith<'EventRepository, 'NoSqlStore, 'SqlStore
         when 'EventRepository : not struct and 'EventRepository : (new : unit -> 'EventRepository)
         and 'EventRepository :> EventRepository
-        and 'DocumentStore : not struct and 'DocumentStore : (new : unit -> 'DocumentStore)
-        and 'DocumentStore :> DocumentProjectionStore
+        and 'NoSqlStore : not struct and 'NoSqlStore : (new : unit -> 'NoSqlStore)
+        and 'NoSqlStore :> DocumentProjectionStore
         and 'SqlStore : not struct and 'SqlStore : (new : unit -> 'SqlStore)
         and 'SqlStore :> SqlProjectionStore>
         (services: IServiceCollection, configuration: IConfiguration, register: Action<ProjectionsRegistration>) =
-        ServiceCollectionExtensions.AddProjectionsToBoth<'EventRepository, 'DocumentStore, 'SqlStore>
+        ServiceCollectionExtensions.AddProjectionsToBoth<'EventRepository, 'NoSqlStore, 'SqlStore>
             services configuration (ProjectionsRegistration.Of register)

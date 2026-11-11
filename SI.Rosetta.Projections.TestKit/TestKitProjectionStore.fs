@@ -74,7 +74,7 @@ type TestKitProjectionStore() =
             this.Store doc
             Task.CompletedTask
 
-        member this.StoreInUnitOfWorkAsync<'T when 'T : not struct>(docs: 'T[]) =
+        member this.StoreManyAsync<'T when 'T : not struct>(docs: 'T[]) =
             for doc in docs do
                 this.Store doc
             Task.CompletedTask
@@ -92,7 +92,7 @@ type TestKitProjectionStore() =
             this.Delete<'T> id
             Task.CompletedTask
 
-        member this.DeleteInUnitOfWorkAsync<'T when 'T : not struct>(ids: obj[]) =
+        member this.DeleteManyAsync<'T when 'T : not struct>(ids: obj[]) =
             for id in ids do
                 this.Delete<'T> id
             Task.CompletedTask

@@ -96,7 +96,7 @@ type ProjectionsUnitOfWorkTests(databases: Databases) =
                     Handler (fun () ->
                         task {
                             do! store.Store.DeleteAsync<Parcel>(removed.Id)
-                            do! store.Store.StoreInUnitOfWorkAsync([| ({ Id = routeId; Recipients = [ "Ada" ] } : ParcelRoute) |])
+                            do! store.Store.StoreManyAsync([| ({ Id = routeId; Recipients = [ "Ada" ] } : ParcelRoute) |])
                         }) ])
 
             do! projection.ProjectAsync(Registered, 5UL)
@@ -213,7 +213,7 @@ type ProjectionsUnitOfWorkTests(databases: Databases) =
             let! store = this.Create storeName
             let parcel = { Id = NewId "Parcels"; Recipient = "Ada" } : Parcel
             let unloaded = { Id = NewId "Parcels"; Recipient = "Ada" } : Parcel
-            do! store.Store.StoreInUnitOfWorkAsync([| parcel; unloaded |])
+            do! store.Store.StoreManyAsync([| parcel; unloaded |])
             let! projection =
                 this.Projection(store, [
                     Handler (fun () ->

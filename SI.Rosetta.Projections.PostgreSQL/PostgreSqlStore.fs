@@ -75,7 +75,7 @@ type PostgreSqlStore(database: PostgreSqlDatabase) =
         member this.StoreAsync<'T when 'T : not struct>(row: 'T) =
             this.Write(fun () -> [ PostgreSqlTables.Upsert (this.TableOf<'T>()) (box row) ])
 
-        member this.StoreInUnitOfWorkAsync<'T when 'T : not struct>(rows: 'T[]) =
+        member this.StoreManyAsync<'T when 'T : not struct>(rows: 'T[]) =
             let table = this.TableOf<'T>()
             this.Write(fun () -> [ for row in rows -> PostgreSqlTables.Upsert table (box row) ])
 
@@ -104,7 +104,7 @@ type PostgreSqlStore(database: PostgreSqlDatabase) =
         member this.DeleteAsync<'T when 'T : not struct>(id: obj) =
             this.Write(fun () -> [ PostgreSqlTables.Delete (this.TableOf<'T>()) [| id |] ])
 
-        member this.DeleteInUnitOfWorkAsync<'T when 'T : not struct>(ids: obj[]) =
+        member this.DeleteManyAsync<'T when 'T : not struct>(ids: obj[]) =
             if ids.Length = 0 then Task.CompletedTask
             else this.Write(fun () -> [ PostgreSqlTables.Delete (this.TableOf<'T>()) ids ])
 

@@ -120,7 +120,7 @@ type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
             | null -> DefensivelyStore 0 (fun () -> MongoDbDocuments.UpsertAsync<'T>(db, null, doc, CancellationToken.None)) :> Task
             | session -> MongoDbDocuments.UpsertAsync<'T>(db, session, doc, CancellationToken.None)
 
-        member this.StoreInUnitOfWorkAsync<'T when 'T : not struct>(docs: 'T[]) =
+        member this.StoreManyAsync<'T when 'T : not struct>(docs: 'T[]) =
             this.InTransaction(fun s ct ->
                 task {
                     for doc in docs do
@@ -142,7 +142,7 @@ type MongoDbProjectionsStore(client: IMongoClient, db: IMongoDatabase) =
             | null -> DefensivelyStore 0 (fun () -> MongoDbDocuments.DeleteAsync<'T>(db, null, id.ToString(), CancellationToken.None)) :> Task
             | session -> MongoDbDocuments.DeleteAsync<'T>(db, session, id.ToString(), CancellationToken.None)
 
-        member this.DeleteInUnitOfWorkAsync<'T when 'T : not struct>(ids: obj[]) =
+        member this.DeleteManyAsync<'T when 'T : not struct>(ids: obj[]) =
             this.InTransaction(fun s ct ->
                 task {
                     let stringIds = ids |> Array.map (fun id -> id.ToString())

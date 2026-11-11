@@ -37,18 +37,18 @@ type MongoDbProjectionsStoreTests(databases: Databases) =
         member _.Dispose() = Client.Dispose()
 
     [<Fact>]
-    member this.``StoreInUnitOfWorkAsync stores every document``() =
+    member this.``StoreManyAsync stores every document``() =
         task {
             let couriers = [| { Id = NewId "Couriers"; Name = NewId "Ada" }; { Id = NewId "Couriers"; Name = NewId "Grace" } |]
 
-            do! Store.StoreInUnitOfWorkAsync(couriers)
+            do! Store.StoreManyAsync(couriers)
 
             let! stored = Store.LoadManyAsync<Courier>(couriers |> Array.map (fun courier -> box courier.Id))
             Assert.Equal<Courier>(couriers, couriers |> Array.map (fun courier -> stored.[courier.Id]))
         }
 
     [<Fact>]
-    member this.``StoreInUnitOfWorkAsync stores nothing when one write fails``() =
+    member this.``StoreManyAsync stores nothing when one write fails``() =
         task {
             let couriers = Database.GetCollection<BsonDocument>("Couriers")
             let! _ = couriers.Indexes.CreateOneAsync(CreateIndexModel<BsonDocument>(
@@ -57,7 +57,7 @@ type MongoDbProjectionsStoreTests(databases: Databases) =
             // The second one breaks the unique index on name
             let sameName = [| { Id = NewId "Couriers"; Name = name }; { Id = NewId "Couriers"; Name = name } |]
 
-            let! _ = Assert.ThrowsAnyAsync<MongoException>(fun () -> Store.StoreInUnitOfWorkAsync(sameName))
+            let! _ = Assert.ThrowsAnyAsync<MongoException>(fun () -> Store.StoreManyAsync(sameName))
 
             let! stored = couriers.CountDocumentsAsync(Builders<BsonDocument>.Filter.Eq("name", name))
             Assert.Equal(0L, stored)

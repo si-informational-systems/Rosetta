@@ -32,12 +32,12 @@ type RavenDbProjectionsStoreTests(databases: Databases) =
         }
 
     [<Fact>]
-    member this.``DeleteInUnitOfWorkAsync deletes every document``() =
+    member this.``DeleteManyAsync deletes every document``() =
         task {
             let parcels = [| NewParcel(); NewParcel() |]
-            do! Store.StoreInUnitOfWorkAsync(parcels)
+            do! Store.StoreManyAsync(parcels)
 
-            do! Store.DeleteInUnitOfWorkAsync<Parcel>(parcels |> Array.map (fun parcel -> box parcel.Id))
+            do! Store.DeleteManyAsync<Parcel>(parcels |> Array.map (fun parcel -> box parcel.Id))
 
             let! remaining = Store.LoadManyAsync<Parcel>(parcels |> Array.map (fun parcel -> box parcel.Id))
             Assert.All(remaining.Values, fun parcel -> Assert.True(isNull (box parcel)))

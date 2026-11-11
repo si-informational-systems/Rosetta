@@ -47,7 +47,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                         do! session.SaveChangesAsync().ConfigureAwait(false)
                     })
 
-        member this.StoreInUnitOfWorkAsync<'T when 'T : not struct>(docs: 'T[]) =
+        member this.StoreManyAsync<'T when 'T : not struct>(docs: 'T[]) =
             match ProjectionTransaction.Current with
             | :? RavenDbProjectionTransaction as transaction ->
                 task {
@@ -95,7 +95,7 @@ type RavenDbProjectionsStore(store: IDocumentStore) =
                         do! session.SaveChangesAsync().ConfigureAwait(false)
                     })
 
-        member this.DeleteInUnitOfWorkAsync<'T when 'T : not struct>(ids: obj[]) =
+        member this.DeleteManyAsync<'T when 'T : not struct>(ids: obj[]) =
             match ProjectionTransaction.Current with
             | :? RavenDbProjectionTransaction as transaction ->
                 task {

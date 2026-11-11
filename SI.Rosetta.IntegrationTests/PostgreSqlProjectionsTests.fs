@@ -169,7 +169,7 @@ type PostgreSqlProjectionsTests(databases: Databases) =
         task {
             let first = Stop (NewId "Parcels")
             let second = { first with Stop = 2; Note = None; SignedBy = None; Tags = [] }
-            do! Store.StoreInUnitOfWorkAsync([| first; second |])
+            do! Store.StoreManyAsync([| first; second |])
 
             do! Store.StoreAsync({ second with Fee = 3m })
             do! Store.DeleteAsync<ParcelStop>((first.ParcelId, 1))

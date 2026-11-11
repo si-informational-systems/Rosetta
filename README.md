@@ -1,51 +1,32 @@
 ﻿# 🚀 Rosetta Framework
 
-**Domain-Driven Design, Event Sourcing, and Projections for .NET & F# — with KurrentDB, RavenDB, MongoDB, and modern HostBuilder integration.**
+**Domain-Driven Design, Event Sourcing, and Projections for .NET & F# — with KurrentDB, RavenDB, MongoDB, PostgreSQL, and modern HostBuilder integration.**
 
 [![CI](https://github.com/si-informational-systems/Rosetta/actions/workflows/ci.yml/badge.svg)](https://github.com/si-informational-systems/Rosetta/actions/workflows/ci.yml)
-![.NET](https://img.shields.io/badge/.NET-10-blueviolet)
+![.NET](https://img.shields.io/badge/.NET-11-blueviolet)
 ![F#](https://img.shields.io/badge/F%23-functional-blue)
 ![Event Sourcing](https://img.shields.io/badge/Event%20Sourcing-Enabled-brightgreen)
-![RavenDB](https://img.shields.io/badge/RavenDB-Integrated-red)
-![MongoDB](https://img.shields.io/badge/MongoDB-Integrated-red)
 ![KurrentDB](https://img.shields.io/badge/KurrentDB-Integrated-orange)
+![RavenDB](https://img.shields.io/badge/RavenDB-Integrated-red)
+![MongoDB](https://img.shields.io/badge/MongoDB-Integrated-green)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Integrated-336791)
 
 ---
 
 ## ✨ Overview
 
-**Rosetta** is a powerful, opinionated framework for building robust, Event-Sourced, Domain-Driven Microservices in .NET.
+**Rosetta** is an opinionated framework for building Event-Sourced, Domain-Driven services in .NET. Commands and Events are **F# Discriminated Unions**, so the compiler checks that every one of them is handled.
 
-Leverage the power of **F# Discriminated Unions** inside Rosetta to create error-proof Domain Solutions!
-
-It provides:
-
-- 🧩 **Aggregate Roots** and **Domain Events** (DDD)
-- ⚡ **Event Sourcing** with KurrentDB
-- 🗄️ **State-based Aggregates** (no Event Sourcing) persisted in RavenDB or MongoDB — or mix both styles in one service
-- 📤 **Outbox**: the PublishedEvents of every stored Aggregate recorded in RavenDB or MongoDB, for publishing to the outside world
-- 📊 **Projections** from KurrentDB with persistence using RavenDB and MongoDB (NoSQL)
-- 📊 **Custom (Cross-Aggregate) Projection Definitions**
-- 🔁 **Event Upcasting** to keep reading events written by older versions of the domain
-- 🏗️ **Host Extensions** for seamless DI and service registration: `IHostBuilder`, `IHostApplicationBuilder` (`Host.CreateApplicationBuilder`, `WebApplication.CreateBuilder`) or a plain `IServiceCollection`
-- 🛠️ **CQRS**-friendly patterns and handler abstractions
-- 🧪 **TestKits** for BDD Testing of Aggregates, Projections and upcasters
-
----
-
-## 📦 Features
-
-- **Aggregate & Event Abstractions**: Write expressive, testable domain logic.
-- **KurrentDB Integration**: Reliable, scalable event storage with optimistic concurrency.
-- **State-based Aggregates**: Persist the AggregateState itself in RavenDB or MongoDB when Event Sourcing isn't needed.
-- **Outbox Pattern**: Integration events recorded with the state that produced them, in one transaction where the stores allow it, with an optional TTL.
-- **RavenDB/MongoDB/PostgreSQL Projections**: read models as documents in RavenDB or MongoDB, or as rows of your own PostgreSQL tables, or both in one app, through the same typed store-load-delete by key. Each event is one transaction with its checkpoint, so a retried event is projected once.
-- **Event Evolution**: Upcasters rename events and fields as they're read; an event a DU doesn't know stops a Projection with a clear error, or is skipped with `[<SkipUnknownEvents>]`.
-- **Plug-and-Play Host Extensions**: Register everything with a single line, on any .NET host builder.
-- **OpenTelemetry-ready**: Traces and metrics for commands and projections, with one trace from a request to every read model it updates.
-- **CQRS Handlers**: Command and event handler patterns out-of-the-box.
-- **Idempotency & Consistency**: Built-in support for safe, repeatable operations.
-- **Modern F# & C# Support**: Idiomatic, clean code for both languages.
+- 🧩 **Aggregates and Domain Events**: expressive, testable domain logic, with idempotency and optimistic concurrency built in.
+- ⚡ **Event Sourcing** with KurrentDB.
+- 🗄️ **State-based Aggregates** persisted in RavenDB or MongoDB when Event Sourcing isn't needed, or both styles in one service.
+- 📤 **Outbox**: the PublishedEvents of every stored Aggregate, recorded with its state (in one transaction where the stores allow it) for publishing to the outside world.
+- 📊 **Projections** from KurrentDB into documents (RavenDB, MongoDB), rows of your own **PostgreSQL** tables, or both in one app, through the same typed store-load-delete by key. Each event is one transaction with its checkpoint, so a retried event is projected once.
+- 🔀 **Custom (cross-Aggregate) Projections**, deployed to KurrentDB for you.
+- 🔁 **Event evolution**: upcasters rename events and fields as they're read; an unknown event stops a Projection with a clear error, or is skipped.
+- 🏗️ **Host extensions**: one line registers everything on `IHostBuilder`, `IHostApplicationBuilder` (`Host.CreateApplicationBuilder`, `WebApplication.CreateBuilder`) or a plain `IServiceCollection`, from F# or C#.
+- 📈 **OpenTelemetry-ready**: traces and metrics, with one trace from a request to every read model it updates.
+- 🧪 **TestKits** for BDD tests of Aggregates, Projections and upcasters, in memory.
 
 ---
 
@@ -109,7 +90,7 @@ Whether you're using Aggregates, Projections, or both - the persistence undernea
   },
   "PostgreSQL": {
     "ConnectionString": "Host=localhost;Port=5432;Database=your_db_name;Username=your_username;Password=your_password",
-    "Schema": "your_schema"
+    "Schema": "public"
   },
   "Outbox": {
     "CollectionName": "Outbox",
@@ -119,11 +100,17 @@ Whether you're using Aggregates, Projections, or both - the persistence undernea
 }
 ```
 
-`CertificatePath`/`CertificatePassword` and the MongoDB credentials are optional. Rosetta escapes the MongoDB username and password, so they may contain `@`, `:`, `/`, `?`, `#` or `%`.
+`CertificatePath`/`CertificatePassword`, the MongoDB credentials, `PostgreSQL:Schema` and the whole `Outbox` section (see [Outbox](#-outbox)) are optional.
 
-The `Outbox` section configures the [Outbox](#-outbox), which records the PublishedEvents of every stored Aggregate in RavenDB or MongoDB, for publishing to the outside world. All of its settings are optional: without `CollectionName` the events go to the `Outbox` collection, and without `EventTTLMinutes` they're kept until deleted (`10080` keeps them for a week). `ExpirationFrequencyMinutes` (RavenDB only) is how often RavenDB deletes the expired events when the Outbox turns Document Expiration on: every 36 hours (`2160`) unless set, which every RavenDB licence allows.
+#### KurrentDB
 
-For anything else MongoDB supports (TLS, `mongodb+srv://`, a replica set, several hosts), set the whole connection string instead. It replaces `Host`, `Port`, `Username`, `Password` and `AuthSource`, and when `DatabaseName` isn't set, the database comes from its path:
+Rosetta uses `KurrentDB.Client` and is tested against KurrentDB 26.2. A single KurrentDB node is free to run in production from 26.2; clusters need a license.
+
+A service has **one `KurrentDBClient`** (and one `KurrentDBProjectionManagementClient`), registered as singletons and shared by its Aggregates and every Projection subscription: a client multiplexes all of them over its gRPC connection. It's created on first use, so registering doesn't connect, and a service starts even while KurrentDB is unreachable: the calls that need it fail until it's back (subscriptions retry, see [Projections at runtime](#projections-at-runtime)). To configure the client yourself, register your own `KurrentDBClient` singleton before calling Rosetta, which keeps it.
+
+#### MongoDB
+
+Rosetta escapes the MongoDB username and password, so they may contain `@`, `:`, `/`, `?`, `#` or `%`. For anything else MongoDB supports (TLS, `mongodb+srv://`, a replica set, several hosts), set the whole connection string instead. It replaces `Host`, `Port`, `Username`, `Password` and `AuthSource`, and when `DatabaseName` isn't set, the database comes from its path:
 
 ```json
 {
@@ -135,13 +122,15 @@ For anything else MongoDB supports (TLS, `mongodb+srv://`, a replica set, severa
 
 MongoDB Projections need a **replica set**, as each event is committed in a transaction (see [Projections at runtime](#projections-at-runtime)). A single-node replica set is enough: start `mongod --replSet rs0`, run `rs.initiate()` once, and connect with `replicaSet=rs0` (or `directConnection=true`). On a standalone server the Projections don't start, and say so.
 
-Rosetta registers BSON serializers for F# types (`MongoConventions.Register()`, process-wide, so the app's own MongoDB code gets them too): **lists** as arrays, **maps** with string keys as a sub-document and with other keys as an array of `[key, value]` pairs, and **unions** as `{ "case": "Crate", "fields": [2, 3] }` (a case without fields has no `fields`). Options are written as before (`{ "value": … }` or `null`), and so are sets. Before 1.33, F# lists and maps couldn't be read back, and union cases were written without their fields (`{ "_t": "Crate" }`, or `{}` for a union whose cases have no fields): those documents are still read, with default values for the fields (and the first case for `{}`), as they were then, but what wasn't written can't be recovered.
+Rosetta registers BSON serializers for F# types (`MongoConventions.Register()`, process-wide, so the app's own MongoDB code gets them too): **lists** as arrays, **maps** with string keys as a sub-document and with other keys as an array of `[key, value]` pairs, **unions** as `{ "case": "Crate", "fields": [2, 3] }` (a case without fields has no `fields`), and options as `{ "value": … }` or `null`.
 
-PostgreSQL (Projections only) stores read models as **rows of your own tables**, which your migrations create, as you create RavenDB's indexes yourself (see [Example: PostgreSQL Projection](#-example-postgresql-projection)). `Schema` is where the tables are (`public` unless set). Rosetta keeps its own connection pool (`PostgreSqlDatabase`), apart from any `NpgsqlDataSource` the app registers, and its checkpoints in `rosetta.checkpoints`. A missing database is created when the Projections start, which needs the `CREATEDB` privilege; without it, create the database first.
+#### PostgreSQL
 
-Rosetta uses `KurrentDB.Client` and is tested against KurrentDB 26.2. A single KurrentDB node is free to run in production from 26.2; clusters need a license.
+PostgreSQL (Projections only) stores read models as **rows of your own tables**, which your migrations create, as you create RavenDB's indexes yourself (see [Example: PostgreSQL Projection](#-example-postgresql-projection)).
 
-A service has **one `KurrentDBClient`** (and one `KurrentDBProjectionManagementClient`), registered as singletons and shared by its Aggregates and every Projection subscription: a client multiplexes all of them over its gRPC connection. It's created on first use, so registering doesn't connect, and a service starts even while KurrentDB is unreachable: the calls that need it fail until it's back (subscriptions retry, see [Projections at runtime](#projections-at-runtime)). To configure the client yourself, register your own `KurrentDBClient` singleton before calling Rosetta, which keeps it.
+- `ConnectionString` is required. Rosetta keeps its own connection pool for it, apart from any `NpgsqlDataSource` the app registers.
+- `Schema` is optional: the schema of the tables that don't name theirs with `[<Table(…, Schema = …)>]`, `public` unless set. Set it when all your read model tables live in one schema of their own (`read_models`, say). Rosetta qualifies every table with its schema, so the connection string's `Search Path` doesn't change where it writes.
+- Rosetta keeps its checkpoints in its own `rosetta.checkpoints` table, which it creates, so the user needs the `CREATE` privilege on the database. A missing database is created when the Projections start, which needs `CREATEDB`; without it, create the database first.
 
 ### 3. Register Aggregates & Projections
 
@@ -215,7 +204,7 @@ services.AddProjectionsWith<KurrentDB, RavenDB>(configuration, typeof(PersonProj
 | `UseAggregatesWith<TEventSourced, TStateBased>` | a mix of both | both of the above |
 | `UseOutboxWith<TOutboxStore>` | the Aggregates' PublishedEvents are recorded in an [Outbox](#-outbox) | `RavenDB`, `MongoDB` |
 | `UseProjectionsWith<TEventRepository, TProjectionsStore>` | Projections | `KurrentDB` → `RavenDB`, `MongoDB`, `PostgreSQL` |
-| `UseProjectionsWith<TEventRepository, TDocumentStore, TSqlStore>` | Projections into documents and tables at once | `KurrentDB` → `RavenDB` or `MongoDB`, and `PostgreSQL` |
+| `UseProjectionsWith<TEventRepository, TNoSqlStore, TSqlStore>` | Projections into documents and tables at once | `KurrentDB` → `RavenDB` or `MongoDB`, and `PostgreSQL` |
 
 Each `Use…` has an `Add…` counterpart for `IServiceCollection`, and each can be used once per service collection. The stores are a closed set: only Rosetta's own `KurrentDB`, `RavenDB`, `MongoDB` and `PostgreSQL` compile as store arguments (the marker types can't be inherited). Given an assembly, Rosetta finds the Aggregate Handlers, Projections and Projection Handlers in it and registers them.
 
@@ -545,7 +534,7 @@ and PersonProjectionHandler(store: INoSqlStore) =
 - When a Handler fails, the event stops there: the `ProjectionException` holds that failure, and **nothing is written**, neither the earlier Handlers' writes nor the checkpoint. The event is handled again, by every Handler, from the read models as they were. So a read model that adds one for each event (analytics, totals) counts each event once, however often it's retried. A commit that failed may still have been written (its reply lost): before the event is handled again, the stored checkpoint is read, and an event it already includes isn't handled twice.
 - The transaction stays open while the Handlers run. Effects outside the read models (a command to an Aggregate, a message, an HTTP call) aren't in it: they run before the commit, and again when the event is retried, so they must be idempotent, and quick.
 - In RavenDB, a document loaded in the event and changed in place is saved with it too, as in any session. Storing a new object under a loaded document's Id (an F# record copied with `with`) replaces it.
-- Outside a Projection's Handlers (in an API reading the read models, say), the document stores write straight away.
+- Every store call joins the event's transaction, so a Handler just calls `StoreAsync`, `StoreManyAsync`, `DeleteAsync` or `DeleteManyAsync`. Outside a Projection's Handlers (in an API, say), the stores write straight away: each `StoreAsync` on its own, and each `StoreManyAsync`/`DeleteManyAsync` all or nothing.
 - **MongoDB needs a replica set** for the transactions (a single node is enough). On a standalone server the Projections don't start, with an error that says how to set one up.
 - **A Projection never stops the application.** When it fails (KurrentDB or the read store unavailable, a Handler that throws), it resubscribes from its last checkpoint, waiting **1, 2, 4, 8, 16 s, then 30 s** between attempts, for as long as it takes; the other Projections keep running. Only progress resets the count: a handled event, or catching up with the stream (not the subscription's confirmation).
 - After **5 failures in a row** without progress (usually the same event failing: a bug), it's **Faulted**: logged as Critical once and reported Unhealthy, and it keeps retrying every 30 s, so a fixed version picks it up. When it handles events again, it logs that it recovered.
@@ -558,8 +547,6 @@ and PersonProjectionHandler(store: INoSqlStore) =
 host.Run()
 Environment.ExitCode
 ```
-
----
 
 ### Rebuilding a projection
 
@@ -580,14 +567,20 @@ type PersonProjection() =
 
 ---
 
-## 📊 Example: PostgreSQL Projection
+## 🐘 Example: PostgreSQL Projection
 
 With PostgreSQL, a read model is a row of your table, and the Handlers store, load and delete it by key exactly as with documents: they take `ISqlStore` instead of `INoSqlStore`, and nothing else changes. So the [Test Kit](#projections) runs them in memory too. The tables are yours: your migrations create them, with their indexes, views and anything else, and the query side reads them with whatever SQL it likes. Rosetta only writes the rows.
 
+### The read models
+
 ```fsharp
+open System
+open System.ComponentModel.DataAnnotations          // [<Key>]
+open System.ComponentModel.DataAnnotations.Schema   // [<Table>], [<Column>]
+
 [<CLIMutable>]
-type Reservation = {
-    Id: string                         // the key: Id, by convention
+type Reservation = {                   // reservations
+    Id: string                         // id: the key, by convention
     HubId: string                      // hub_id
     SessionDate: DateOnly              // date
     StartsAt: DateTime                 // timestamptz, written as UTC
@@ -595,7 +588,7 @@ type Reservation = {
     PromoCode: string option           // a nullable column
     GamesPlayed: string list           // text[]
     Channel: Channel                   // an enum or a union without fields: its name, as text
-    Pricing: Pricing }                 // anything else: jsonb
+    Pricing: Pricing }                 // anything else (a record, a union with fields): jsonb
 
 [<CLIMutable; Table("area_hours")>]     // the name, when the convention doesn't fit
 type AreaHour = {
@@ -603,12 +596,38 @@ type AreaHour = {
     [<Key>] HourStart: DateTime
     ReservationId: string
     Guests: int }
+```
 
+### The tables, in your migrations
+
+```sql
+create table reservations (
+    id text primary key,
+    hub_id text not null,
+    session_date date not null,
+    starts_at timestamptz not null,
+    total numeric(12, 2) not null,
+    promo_code text,
+    games_played text[] not null,
+    channel text not null,
+    pricing jsonb not null);
+
+create table area_hours (
+    area_id text not null,
+    hour_start timestamptz not null,
+    reservation_id text not null,
+    guests int not null,
+    primary key (area_id, hour_start));
+```
+
+### The Projection
+
+```fsharp
 [<HandlesStream("$ce-Reservations")>]
 type ReservationAnalyticsProjection() =
     inherit Projection<ReservationEvents>()
     interface IAmHandledBy<ReservationAnalyticsHandler, ReservationEvents>
-    interface IProjectInto<Reservation>
+    interface IProjectInto<Reservation>       // the tables it writes: checked at startup, emptied on a rebuild
     interface IProjectInto<AreaHour>
 
 and ReservationAnalyticsHandler(store: ISqlStore) =
@@ -617,24 +636,69 @@ and ReservationAnalyticsHandler(store: ISqlStore) =
             task {
                 match event with
                 | ReservationEvents.Made e ->
-                    do! store.StoreAsync({ Id = e.Id; HubId = e.Hub.Id; … })
-                    do! store.StoreInUnitOfWorkAsync([| for hour in e.Hours -> { AreaId = e.Area.Id; HourStart = hour; ReservationId = e.Id; Guests = e.Guests } |])
-                | ReservationEvents.GuestsChanged e ->
+                    do! store.StoreAsync(
+                            { Id = e.Id; HubId = e.HubId; SessionDate = e.SessionDate; StartsAt = e.StartsAt; Total = e.Total
+                              PromoCode = e.PromoCode; GamesPlayed = e.Games; Channel = e.Channel; Pricing = e.Pricing })
+                    do! store.StoreManyAsync(
+                            [| for hour in e.Hours -> { AreaId = e.AreaId; HourStart = hour; ReservationId = e.Id; Guests = e.Guests } |])
+                | ReservationEvents.Repriced e ->
                     let! reservation = store.LoadAsync<Reservation>(e.Id)
                     if not (isNull (box reservation)) then
-                        do! store.StoreAsync({ reservation with Total = e.Pricing.Total })
-                    let! hour = store.LoadAsync<AreaHour>((e.Area.Id, e.HourStart))   // a composite key, as a tuple
-                    …
+                        do! store.StoreAsync({ reservation with Total = e.Total })
+                | ReservationEvents.Cancelled e ->
+                    do! store.DeleteAsync<Reservation>(e.Id)
+                    do! store.DeleteManyAsync<AreaHour>(
+                            [| for hour in e.Hours -> box (e.AreaId, hour) |])   // a composite key, as a tuple
             }
 ```
 
-- **Names:** a table is the snake_case plural of the type (`Reservation` → `reservations`, `AreaHour` → `area_hours`), a column the snake_case of the field (`SessionDate` → `session_date`), in the configured `Schema`. `[<Table("…", Schema = "…")>]` and `[<Column("…")>]` (from `System.ComponentModel.DataAnnotations.Schema`) name them otherwise.
-- **Keys:** `Id`, or `[<Key>]` on each part of a composite key. `LoadAsync`, `LoadManyAsync` and `DeleteAsync` take a composite key as a tuple of its parts, in order.
-- **Writes:** `StoreAsync` upserts the whole row on its key (`insert … on conflict (key) do update`). An update is load, change, store; load first, and skip it when the row is missing. Within an event, the writes go to PostgreSQL as one batch, sent before the next load and with the checkpoint, so a Handler reads back what it wrote.
-- **Checked at startup:** each `IProjectInto` table must exist, have a column for every field, and have a primary key or unique index on the key. When it doesn't, the Projection retries (your migrations may still be running) and reports what's missing, until it does.
-- **One store per Projection.** To write documents too, register both stores: `UseProjectionsWith<KurrentDB, RavenDB, PostgreSQL>(…)`, the document store first. A Projection whose Handlers take `INoSqlStore` writes to RavenDB or MongoDB, one whose Handlers take `ISqlStore` to PostgreSQL, each in its own store's transactions and with its checkpoint there. One whose Handlers take both fails at startup: a transaction can't span two databases, so split it in two.
+Register it with `PostgreSQL` as the store, or next to a document store:
 
-When to use which: documents for views read whole, the way a screen shows them; tables for facts you'll aggregate and join later with SQL, in queries nobody has written yet.
+```fsharp
+open SI.Rosetta.Projections.HostBuilder
+
+builder.UseProjectionsWith<KurrentDB, PostgreSQL>(typeof<ReservationAnalyticsProjection>.Assembly) |> ignore
+// or documents and tables in one app: RavenDB or MongoDB first, then PostgreSQL
+builder.UseProjectionsWith<KurrentDB, RavenDB, PostgreSQL>(typeof<ReservationAnalyticsProjection>.Assembly) |> ignore
+```
+
+```csharp
+using Stores = SI.Rosetta.Projections.HostBuilder;
+
+builder.UseProjectionsWith<Stores.KurrentDB, Stores.RavenDB, Stores.PostgreSQL>(typeof(ReservationAnalyticsProjection).Assembly);
+```
+
+### How the rows are mapped
+
+| Field type | Column | |
+|---|---|---|
+| `string`, `int16`, `int`, `int64`, `single`, `double`, `decimal`, `bool`, `Guid`, `byte[]` | `text`, `smallint`, `int`, `bigint`, `real`, `double precision`, `numeric`, `boolean`, `uuid`, `bytea` | as Npgsql maps them |
+| `DateTime`, `DateTimeOffset` | `timestamptz` | written as UTC (a `DateTime` of unspecified kind is taken as UTC) |
+| `DateOnly`, `TimeOnly`, `TimeSpan` | `date`, `time`, `interval` | |
+| an enum, a union whose cases have no fields | `text` | the name of the value or case |
+| an array or F# list of the types above | an array (`text[]`, `int[]`…) | |
+| `'T option` | the column of `'T`, nullable | `None` is `NULL` |
+| anything else: records, unions with fields, maps | `jsonb` | as Rosetta writes events (System.Text.Json) |
+
+- **Names:** a table is the snake_case plural of the type (`Reservation` → `reservations`, `AreaHour` → `area_hours`), a column the snake_case of the field (`SessionDate` → `session_date`), in the configured `Schema`. `[<Table("…", Schema = "…")>]` and `[<Column("…")>]` name them otherwise.
+- **Keys:** `Id`, or `[<Key>]` on each part of a composite key. `LoadAsync`, `LoadManyAsync`, `DeleteAsync` and `DeleteManyAsync` take a composite key as a tuple of its parts, in order.
+- **Read models** are F# records, or classes with a parameterless constructor and settable properties.
+- **Writes:** `StoreAsync` upserts the whole row on its key (`insert … on conflict (key) do update`). An update is load, change, store; `LoadAsync` returns `null` for a missing row, so check it. Within an event, the writes go to PostgreSQL as one batch, sent before the next load and with the checkpoint, so a Handler reads back what it wrote.
+- **Checked at startup:** each `IProjectInto` table must exist, have a column for every field, and have a primary key or unique index on exactly the key columns. When it doesn't, the Projection retries (your migrations may still be running) and reports what's missing, until it does. Column types aren't checked: a mismatch fails on the first write or read.
+- **One store per Projection.** With both stores registered, a Projection whose Handlers take `INoSqlStore` writes to RavenDB or MongoDB, one whose Handlers take `ISqlStore` to PostgreSQL, each in its own store's transactions and with its checkpoint there. One whose Handlers take both fails at startup: a transaction can't span two databases, so split it in two.
+- **Rebuilds** [truncate](#rebuilding-a-projection) every `IProjectInto` table of the Projection, in one statement.
+
+### Guidelines for PostgreSQL read models
+
+- **Documents or tables?** Documents for views read whole, the way a screen shows them; tables for facts you'll aggregate, filter and join with SQL, in queries nobody has written yet (analytics, reports, exports).
+- **The migrations own the schema.** Create and change the tables in the app's migrations, deployed before the Projections that need them. When a read model gains a field, add its column in a migration, and bump the Projection's [`ProjectionVersion`](#rebuilding-a-projection) when the existing rows need the new value.
+- **Match the table to the record.** Make a column `not null` unless its field is an `option`; use `timestamptz` for `DateTime` and `DateTimeOffset`, `numeric` for `decimal`, `jsonb` for nested records. A column the record doesn't have is never written, so give it a default or let it be null.
+- **Key on what the events carry.** A Handler finds a row again by its key, so the key must come from the events: the Aggregate's `Id`, or a composite key (`area_id`, `hour_start`) for one row per thing per period.
+- **Only the Projection writes its tables.** Read them from anywhere (views, reports, the API), but don't write them elsewhere, and don't let other tables reference them with foreign keys: a rebuild truncates them. Foreign keys between the tables of one Projection are fine, as they're truncated together.
+- **Index for your queries.** Rosetta only needs the key; add the indexes your queries need in the same migrations.
+- **Counters count once.** An analytics row that adds one per event (load, add one, store) is safe: the event's writes and its checkpoint commit together, and a retried event starts from the rows as they were.
+- **Size Rosetta's pool.** Each event holds a connection from Rosetta's own pool while its Handlers run, so `Maximum Pool Size` in the connection string (100 by default) must cover the Projections running at once, besides the app's own pool.
+- **Test the Handlers in memory, the mapping once.** The [Projections Test Kit](#projections) runs `ISqlStore` Handlers without a database. Add one integration test that applies your migrations to a real PostgreSQL and starts the Projections, so the startup check validates every table.
 
 ---
 
@@ -879,7 +943,9 @@ type PersonProjectionTests() =
         }
 ```
 
-Override `ConfigureServices` to register additional dependencies - or the other Handlers of a Projection with several `IAmHandledBy<…>`. The Test Kit's in-memory store commits each event as the real stores do, and delivers the Given events one at a time, in order.
+- Override `ConfigureServices` to register additional dependencies, or the other Handlers of a Projection with several `IAmHandledBy<…>`.
+- The Test Kit's in-memory store is both `INoSqlStore` and `ISqlStore`, so [PostgreSQL](#-example-postgresql-projection) Handlers are tested the same way, without a database.
+- It commits each event as the real stores do, and delivers the Given events one at a time, in order.
 
 ### Upcasters
 
@@ -915,11 +981,9 @@ type PersonUpcastingTests() =
 
 ---
 
-## 📝 Note:
+## 🔌 Extending Rosetta
 
- - While **Rosetta** is opinionated in its choice of technologies, it is built to be easily extensible.
- - You can integrate any Event Sourcing Store and SQL/NoSQL database implementation with minimal effort, adapting the framework to your unique requirements and infrastructure.
- - Any additional implementations are very welcome and would contribute to the Framework's out-of-the-box usability!
+Rosetta is opinionated in its choice of technologies, but every store sits behind a small interface, so another event store or database can be plugged in. Implementations are welcome as contributions.
 
 ```fsharp
 //Implementing the db for Aggregates (either to save the entire AggregateState all at once or to save the produced Events for Event Sourcing purposes)
@@ -959,11 +1023,11 @@ type ICheckpointStore =
 
 type IProjectionsStore =   // INoSqlStore and ISqlStore are both this
     abstract member StoreAsync<'T when 'T : not struct> : doc: 'T -> Task
-    abstract member StoreInUnitOfWorkAsync<'T when 'T : not struct> : docs: 'T[] -> Task
+    abstract member StoreManyAsync<'T when 'T : not struct> : docs: 'T[] -> Task
     abstract member LoadAsync<'T when 'T : not struct> : id: obj -> Task<'T>
     abstract member LoadManyAsync<'T when 'T : not struct> : ids: obj[] -> Task<Dictionary<obj, 'T>>
     abstract member DeleteAsync<'T when 'T : not struct>: id: obj -> Task
-    abstract member DeleteInUnitOfWorkAsync<'T when 'T : not struct>: ids: obj[] -> Task
+    abstract member DeleteManyAsync<'T when 'T : not struct>: ids: obj[] -> Task
 ```
 
 ---
@@ -1026,23 +1090,34 @@ The page's tables list the RavenDB documents (database `TEST.ROSETTA`), which yo
 
 ---
 
-## 🏆 Why Rosetta?
+## 🧭 Guidelines
 
-- **DDD-first**: Designed for rich, expressive Domain Models.
-- **Event Sourcing**: Every state change is an Event, not just a row update.
-- **Projections**: Build fast, query-optimized Read Models.
-- **Extensible**: Add your own Aggregates, (Custom) Projections, and Stores.
-- **Modern .NET**: Async/await, DI, HostBuilder, and more.
+**Domain**
 
----
+- Keep the **business rules in the Aggregate** (`Execute` and its domain methods). Aggregate Handlers only route commands to create or update, and controllers or consumers only build commands.
+- **Commands are imperative, events past tense**, in the domain's language: `RegisterPerson` → `PersonRegistered`. Every DU case wraps exactly one record.
+- **Make commands idempotent**: compare the command with the state, and apply nothing when it's a repeat. With the [Outbox](#-outbox), publish the events in the idempotent branch too.
+- **Name business errors** with `DomainException.Named(name, message)`, so callers and `ThenError` can tell them apart.
+- **Give Event-Sourced Aggregates category ids** (`People-1`), so `$ce-People` feeds their Projections.
 
-## 🛡️ Best Practices
+**Events**
 
-- Use **CQRS**: Separate command and query responsibilities.
-- Keep **Domain logic** in Aggregates, not Handlers or Controllers.
-- Register all services via HostBuilder extensions.
-- Write minimal-code **Unit Tests** for Aggregates and Projections using **Aggregate Test Kit** and **Projections Test Kit**, and for upcasters using **Upcasting Test Kit**.
-- When an event changes shape, **upcast** the stored events instead of rewriting them, and deploy the services that read new events (Projections) before the ones that write them (Aggregates).
+- Give every event record an **`[<EventType>]`** with its current name from the start, so it can be renamed later.
+- **Never rewrite stored events.** Add fields freely; for anything else, [upcast](#upcasters) them as they're read.
+- **Deploy readers before writers**: the services that read a new event (Projections) before the ones that write it (Aggregates). Otherwise a Projection stops on an event it doesn't know, unless it's marked `[<SkipUnknownEvents>]`.
+
+**Projections**
+
+- **One Projection per purpose**, declaring every read model it writes with `IProjectInto<…>`. A read model has one owner.
+- **Bump `[<ProjectionVersion>]`** whenever its Handlers change what they write, and the read models are rebuilt from the stream.
+- **Handlers only write read models.** Load before updating, and handle a missing read model. Any other effect (a command, a message, an HTTP call) runs again when the event is retried, so make it idempotent and quick.
+- Choose [documents or tables](#guidelines-for-postgresql-read-models) per read model: documents for screens, PostgreSQL tables for SQL analytics and reports.
+- **Watch them**: add the `rosetta-projections` [health check](#projections-at-runtime), or alert on the `rosetta.projections.unhealthy` gauge. A Faulted Projection keeps the application running.
+
+**Testing**
+
+- Test every Aggregate with the **Aggregates Test Kit**, every Projection with the **Projections Test Kit** (PostgreSQL ones included), and every upcaster with the **Upcasting Test Kit**. All of them run in memory.
+- Leave the databases to a few integration tests: a PostgreSQL schema against its read models, a MongoDB replica set, a Custom Projection in KurrentDB.
 
 ---
 
