@@ -422,14 +422,14 @@ The Outbox records the **PublishedEvents** of every Aggregate that's stored, and
 Host.CreateDefaultBuilder(args)
 |> fun builder -> UseAggregatesWith<KurrentDB, RavenDB> builder typeof<PersonAggregateHandler>.Assembly
 |> fun builder -> UseOutboxWith<RavenDB> builder
-|> fun builder -> UseOutboxPublisher<RabbitMqPublisher> builder   // optional: see Publishing the events
+|> fun builder -> UseOutboxPublisher<YourEventPublisher> builder   // optional, your own IOutboxPublisher: see Publishing the events
 |> fun builder -> builder.Build().Run()
 ```
 
 ```csharp
 builder.UseAggregatesWith<Stores.KurrentDB, Stores.RavenDB>(typeof(PersonAggregateHandler).Assembly);
 builder.UseOutboxWith<Stores.RavenDB>();
-builder.UseOutboxPublisher<RabbitMqPublisher>();   // optional: see Publishing the events
+builder.UseOutboxPublisher<YourEventPublisher>();   // optional, your own IOutboxPublisher: see Publishing the events
 ```
 
 The Outbox store is `RavenDB`, `MongoDB` or `PostgreSQL`, configured by its section as in [Configure Infrastructure](#2-configure-infrastructure). The Outbox's own settings come from the optional `Outbox` section:
@@ -528,7 +528,7 @@ Rosetta decodes each event through the registered upcasters, so your app keeps n
 A typed bus routing per union (Rebus, MassTransit) sends `Event`; routing per event or mapping to a contract, `EventRecord`; forwarding bytes (raw RabbitMQ, Kafka), `EventJson` typed by `EventTypeName`:
 
 ```fsharp
-type RabbitMqPublisher(channel: IChannel) =
+type YourEventPublisher(channel: IChannel) =
     interface IOutboxPublisher with
         member this.PublishAsync(publication, cancellationToken) =
             // send publication.EventJson as publication.EventTypeName, with publication.EventId as the message id,

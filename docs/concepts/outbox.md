@@ -14,7 +14,7 @@ outside world (a message broker, other services) without losing any. Register it
     Host.CreateDefaultBuilder(args)
     |> fun builder -> UseAggregatesWith<KurrentDB, RavenDB> builder typeof<PersonAggregateHandler>.Assembly
     |> fun builder -> UseOutboxWith<RavenDB> builder
-    |> fun builder -> UseOutboxPublisher<RabbitMqPublisher> builder   // optional: see Publishing the events
+    |> fun builder -> UseOutboxPublisher<YourEventPublisher> builder   // optional, your own IOutboxPublisher: see Publishing the events
     |> fun builder -> builder.Build().Run()
     ```
 
@@ -23,7 +23,7 @@ outside world (a message broker, other services) without losing any. Register it
     ```csharp
     builder.UseAggregatesWith<Stores.KurrentDB, Stores.RavenDB>(typeof(PersonAggregateHandler).Assembly);
     builder.UseOutboxWith<Stores.RavenDB>();
-    builder.UseOutboxPublisher<RabbitMqPublisher>();   // optional: see Publishing the events
+    builder.UseOutboxPublisher<YourEventPublisher>();   // optional, your own IOutboxPublisher: see Publishing the events
     ```
 
 The Outbox store is `RavenDB`, `MongoDB` or `PostgreSQL`, configured by its section (see [Configuration](../reference/configuration.md)).
@@ -180,7 +180,7 @@ Which one to send depends on the broker:
 === "F#"
 
     ```fsharp
-    type RabbitMqPublisher(channel: IChannel) =
+    type YourEventPublisher(channel: IChannel) =
         interface IOutboxPublisher with
             member this.PublishAsync(publication, cancellationToken) =
                 // send publication.EventJson as publication.EventTypeName, with publication.EventId as the message id,
@@ -190,16 +190,16 @@ Which one to send depends on the broker:
 
     ```fsharp
     builder.UseOutboxWith<RavenDB>() |> ignore
-    builder.UseOutboxPublisher<RabbitMqPublisher>() |> ignore
-    // or, on IHostBuilder: UseOutboxPublisher<RabbitMqPublisher> builder; on IServiceCollection: AddOutboxPublisher<RabbitMqPublisher> services
+    builder.UseOutboxPublisher<YourEventPublisher>() |> ignore
+    // or, on IHostBuilder: UseOutboxPublisher<YourEventPublisher> builder; on IServiceCollection: AddOutboxPublisher<YourEventPublisher> services
     ```
 
 === "C#"
 
     ```csharp
     builder.UseOutboxWith<Stores.RavenDB>();
-    builder.UseOutboxPublisher<RabbitMqPublisher>();
-    // or services.AddOutboxPublisher<RabbitMqPublisher>();
+    builder.UseOutboxPublisher<YourEventPublisher>();
+    // or services.AddOutboxPublisher<YourEventPublisher>();
     ```
 
 A whole RabbitMQ publisher, and one on Rebus, are in [Recipes](../guides/recipes.md#publish-the-outbox).
