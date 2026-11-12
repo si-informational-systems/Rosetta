@@ -6,9 +6,17 @@ open System.Diagnostics
 open System.Runtime.ExceptionServices
 open System.Threading
 open System.Threading.Tasks
+open Microsoft.FSharp.Reflection
 open SI.Rosetta.Common
 
 type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
+    // The record type each case of the events DU wraps, by tag: given to each event's transaction
+    static let RecordTypes =
+        lazy (
+            let tagOf = FSharpValue.PreComputeUnionTagReader(typeof<'TEvent>)
+            let records = FSharpType.GetUnionCases(typeof<'TEvent>) |> Array.map GetUnionCaseType
+            fun (ev: 'TEvent) -> records.[tagOf (box ev)])
+
     // A commit that failed may still have been written (the reply was lost): the event's next attempt checks first
     let mutable CommitUncertain = false
 
@@ -63,7 +71,7 @@ type Projection<'TEvent when 'TEvent :> IAggregateEvents>() =
 
     member private this.HandleInTransaction (ev: 'TEvent) (c: uint64) (checkpoint: Checkpoint) =
         task {
-            let! transaction = this.UnitOfWork.BeginAsync(this.ProjectionType).ConfigureAwait(false)
+            let! transaction = this.UnitOfWork.BeginAsync(this.ProjectionType, RecordTypes.Value ev).ConfigureAwait(false)
             let mutable failure: exn = null
             try
                 do! ProjectionTransaction.Within(transaction, fun () -> this.RunHandlers ev c).ConfigureAwait(false)

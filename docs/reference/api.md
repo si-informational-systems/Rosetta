@@ -282,7 +282,7 @@ type IProjectionHandler<'TEvents when 'TEvents :> IAggregateEvents> =
 | `[<RebuildWithoutClearing>]` | — | a rebuild empties nothing (Handlers overwrite whole documents/rows) |
 | `[<SkipUnknownEvents>]` | — | log and skip events the DU lacks |
 | `[<DisabledProjection>]` | — | don't run it |
-| `[<ClusterWideTransaction>]` | — | RavenDB only: each event in a cluster-wide session; MongoDB and PostgreSQL refuse it at startup |
+| `[<ClusterWideTransaction(events…)>]` | event record types (none = every event) | RavenDB only: each event (or each of the named ones) in a cluster-wide session; a type that isn't one of its events' records fails registration; MongoDB and PostgreSQL refuse it at startup |
 | `[<CustomProjectionStream(name)>]` | `cp-…` stream | on an `ICustomProjectionEvents` DU |
 
 ### Stores
@@ -317,7 +317,7 @@ type ProjectionException(message, innerException) =   // a Handler failed; inner
 
 For custom stores and tests: `Checkpoint` (`Id`, `Value` one-based, `Version`), `ICheckpointStore`,
 `IProjectionTransaction` (`CommitAsync checkpoint`, dispose = rollback), `IProjectionsUnitOfWork` (`PrepareAsync`
-with the Projection type and its read models, `BeginAsync` with the Projection type, `ClearAsync`), `IRecognizeConflicts` (`IsConflict: exn -> bool`: implemented by a unit of work whose
+with the Projection type and its read models, `BeginAsync` with the Projection type and the event's record type, `ClearAsync`), `IRecognizeConflicts` (`IsConflict: exn -> bool`: implemented by a unit of work whose
 store has conflicts of its own, retried like a `ConcurrencyException`; Rosetta's MongoDB, PostgreSQL and RavenDB units
 of work do), `ProjectionTransaction.Current` (the event's transaction, an `AsyncLocal`),
 `Projection.ConflictRetries` (set from DI by `ProjectionsFactory`), `Projection.ProjectionType` (given to `BeginAsync`),

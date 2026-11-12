@@ -97,6 +97,9 @@ module ServiceCollectionExtensions =
         ProjectionReadModels.CheckOneProjectionEach registration.ProjectionTypes
         // Each one that can be rebuilt has its read models to empty first
         ProjectionReadModels.CheckRebuildable registration.ProjectionTypes
+        // Each [<ClusterWideTransaction>] names only its projection's events
+        for projectionType in registration.ProjectionTypes do
+            ClusterWideTransaction.Check(projectionType, ProjectionTypes.EventsTypeOf projectionType)
 
         services.AddTransient<IProjectionsFactory, ProjectionsFactory>() |> ignore
         services.AddTransient<IProjectionHandlerFactory, ProjectionHandlerFactory>() |> ignore

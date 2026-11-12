@@ -25,7 +25,7 @@ type ProjectionUnitOfWorkTests() =
         { new IProjectionsUnitOfWork with
             member _.PrepareAsync(_, _) = Task.CompletedTask
             member _.ClearAsync(_) = Task.CompletedTask
-            member _.BeginAsync(_) =
+            member _.BeginAsync(_, _) =
                 let commit changes (checkpoint: Checkpoint) =
                     match FailNextCommit.Value with
                     | Some false ->
@@ -224,7 +224,7 @@ type ProjectionVersionTests() =
             .AddSingleton<IProjectionsUnitOfWork>(
                 { new IProjectionsUnitOfWork with
                     member _.PrepareAsync(_, _) = Task.CompletedTask
-                    member _.BeginAsync(projectionType) = (store :> IProjectionsUnitOfWork).BeginAsync(projectionType)
+                    member _.BeginAsync(projectionType, eventType) = (store :> IProjectionsUnitOfWork).BeginAsync(projectionType, eventType)
                     member _.ClearAsync(readModels) =
                         Cleared.AddRange(readModels |> Array.map (fun readModel -> readModel.Name))
                         Task.CompletedTask })
@@ -318,7 +318,7 @@ type ReplacedStreamTests() =
             .AddSingleton<IProjectionsUnitOfWork>(
                 { new IProjectionsUnitOfWork with
                     member _.PrepareAsync(_, _) = Task.CompletedTask
-                    member _.BeginAsync(projectionType) = (store :> IProjectionsUnitOfWork).BeginAsync(projectionType)
+                    member _.BeginAsync(projectionType, eventType) = (store :> IProjectionsUnitOfWork).BeginAsync(projectionType, eventType)
                     member _.ClearAsync(readModels) =
                         Cleared.AddRange(readModels |> Array.map (fun readModel -> readModel.Name))
                         Task.CompletedTask })

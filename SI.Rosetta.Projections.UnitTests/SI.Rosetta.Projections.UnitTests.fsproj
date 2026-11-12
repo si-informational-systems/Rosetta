@@ -25,6 +25,7 @@
     <Compile Include="HostingTests.fs" />
     <Compile Include="ProjectionFailureTests.fs" />
     <Compile Include="ProjectionsRegistrationTests.fs" />
+    <Compile Include="ClusterWideTransactionTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

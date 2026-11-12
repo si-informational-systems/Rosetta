@@ -100,7 +100,7 @@ type IProjectionTransaction =
 
 type IProjectionsUnitOfWork =
     abstract PrepareAsync: projectionType: Type * readModels: Type[] -> Task   // once per Projection at startup, with its IProjectInto types
-    abstract BeginAsync: projectionType: Type -> Task<IProjectionTransaction>  // its attributes may pick the kind ([<ClusterWideTransaction>])
+    abstract BeginAsync: projectionType: Type * eventType: Type -> Task<IProjectionTransaction>  // its attributes may pick the kind for the event's record type ([<ClusterWideTransaction>])
     abstract ClearAsync: readModels: Type[] -> Task             // a rebuilt Projection's read models
 
 // ...and, when the store has conflicts of its own (a write conflict, a deadlock), IRecognizeConflicts on the same

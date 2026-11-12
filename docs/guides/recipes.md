@@ -279,8 +279,9 @@ document both write:
 ## Release a lock with the read model (RavenDB)
 
 When the write side holds a compare-exchange lock until the read model shows the result (a reservation's hub-hour
-keys), release it in the event's own transaction: mark the Projection `[<ClusterWideTransaction>]` and delete the
-value through `RavenDbProjectionTransaction.Current`. The document, the release and the checkpoint commit together; a
+keys), release it in the event's own transaction: mark the Projection `[<ClusterWideTransaction>]` (naming the events
+that release a lock, so the others stay in normal sessions) and delete the value through
+`RavenDbProjectionTransaction.Current`. The document, the release and the checkpoint commit together; a
 key another writer changed meanwhile fails the commit, and the event is handled again on the new value. See
 [Cluster-wide transactions](../concepts/projections.md#cluster-wide-transactions-ravendb).
 

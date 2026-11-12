@@ -58,7 +58,7 @@ Other attributes on the Projection type:
 | `[<RebuildWithoutClearing>]` | A [rebuild](#rebuilding-a-projection) empties nothing: every Handler overwrites whole documents or rows. Lets a Projection that can be rebuilt declare no `IProjectInto`. |
 | `[<SkipUnknownEvents>]` | An event its DU has no case for is logged and skipped instead of stopping the Projection. See [Event evolution](event-evolution.md#unknown-events). |
 | `[<DisabledProjection>]` | The Projection doesn't run, even when registered by name. |
-| `[<ClusterWideTransaction>]` | RavenDB only: each event's transaction is [cluster-wide](#cluster-wide-transactions-ravendb), so its Handlers can change compare-exchange values with its documents and checkpoint. |
+| `[<ClusterWideTransaction>]` | RavenDB only: each event's transaction is [cluster-wide](#cluster-wide-transactions-ravendb), so its Handlers can change compare-exchange values with its documents and checkpoint. With event record types (`ClusterWideTransaction(typeof<ReservationMade>)`), only those events' transactions are. |
 
 The **Projection's name** is its type name without "Projection" (`PersonProjection` → `Person`). It names the
 checkpoint (`Checkpoints-Person`), the logs, the traces, the metrics and the health check data.
@@ -155,6 +155,21 @@ match RavenDbProjectionTransaction.Current with
 | None -> ()   // not on RavenDB (the TestKit)
 ```
 
+**Only some events.** Name their record types, and only those events' transactions are cluster-wide; the others are
+handled in a normal session, which is cheaper (no consensus round per event). Without arguments, every event's is.
+
+```fsharp
+[<HandlesStream(StreamNames.ReservationStream);
+  ClusterWideTransaction(typeof<ReservationMade>, typeof<ReservationNumberOfGuestsChanged>, typeof<ReservationDeviceReplaced>)>]
+type ReservationProjection() = ...
+```
+
+A type that isn't the record of one of the Projection's events fails registration (`InvalidOperationException`; a
+Projection created without registration is Stopped). Both kinds can write the same documents in turn: a normal write
+keeps the document's atomic guard, and the next cluster-wide transaction loads the document before writing it, so it
+passes. `RavenDbProjectionTransaction.Current` is the event's session in either kind; change compare-exchange values
+only in the events you named.
+
 - **A value changed in between** (another writer changed a compare-exchange value or a document since the session read
   it) fails the commit with RavenDB's `ClusterTransactionConcurrencyException`: the event is
   [handled again at once](#conflicts-are-retried-at-once) on what's there now. For keys many writers share, register a
@@ -169,7 +184,7 @@ match RavenDbProjectionTransaction.Current with
 - A [rebuild](#rebuilding-a-projection) deletes the read models by query, which leaves their guards behind; the replay
   loads before it writes, so writing the same Ids again passes them.
 - `RavenDbProjectionTransaction.Current` is the event's session in any RavenDB Projection, cluster-wide or not.
-- MongoDB and PostgreSQL refuse the attribute when the Projection starts (`InvalidOperationException`: it's Stopped).
+- MongoDB and PostgreSQL refuse the attribute, with or without events, when the Projection starts (`InvalidOperationException`: it's Stopped).
   The TestKit runs such a Projection in memory, where `Current` is `None`.
 
 ### Checkpoints

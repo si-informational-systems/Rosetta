@@ -37,6 +37,22 @@ type ReplayedParcelV2Projection() =
     inherit Projection<ParcelEvents>()
     interface IProjectInto<ClaimedParcel>
 
+/// Only a Parcel's registration is cluster-wide: its readdressing is handled in a normal session
+[<ClusterWideTransaction(typeof<ParcelRegistered>); DisabledProjection; HandlesStream(ParcelStreams.Parcels)>]
+type RegistrationClusterWideParcelProjection() =
+    inherit Projection<ParcelEvents>()
+
+/// The same, rebuilt by a version bump
+[<ClusterWideTransaction(typeof<ParcelRegistered>); DisabledProjection; HandlesStream(ParcelStreams.Parcels); ProjectionVersion(1)>]
+type ReplayedRegistrationV1Projection() =
+    inherit Projection<ParcelEvents>()
+    interface IProjectInto<ClaimedParcel>
+
+[<ClusterWideTransaction(typeof<ParcelRegistered>); DisabledProjection; HandlesStream(ParcelStreams.Parcels); ProjectionVersion(2)>]
+type ReplayedRegistrationV2Projection() =
+    inherit Projection<ParcelEvents>()
+    interface IProjectInto<ClaimedParcel>
+
 /// [<ClusterWideTransaction>] against RavenDB: an event's documents, the compare-exchange values its handlers change
 /// through the event's session, and its checkpoint are one cluster-wide transaction
 type RavenDbClusterWideTests(databases: Databases) =
@@ -73,6 +89,14 @@ type RavenDbClusterWideTests(databases: Databases) =
                 let! parcel = Documents.LoadAsync<ClaimedParcel>(e.Id)
                 do! Documents.StoreAsync({ parcel with Recipient = e.Recipient; Events = parcel.Events + 1 })
         }
+
+    /// Records whether each event's transaction is cluster-wide
+    let RecordKind (kinds: List<bool>) =
+        Handler (fun _ ->
+            match ProjectionTransaction.Current with
+            | :? RavenDbProjectionTransaction as transaction -> kinds.Add transaction.ClusterWide
+            | _ -> failwith "no RavenDB transaction"
+            Task.CompletedTask)
 
     let PutClaim (key: string) =
         task {
@@ -276,6 +300,50 @@ type RavenDbClusterWideTests(databases: Databases) =
                 Assert.Equal({ Id = id; Recipient = "Grace"; Events = 2 }, replayed.[id])
             Assert.Equal(uint64 events.Length, checkpoint.Value)
             Assert.Equal(2, checkpoint.Version)
+        }
+
+    [<Fact>]
+    member this.``Only the events the attribute names are cluster-wide, and both kinds write the same document in turn``() =
+        task {
+            let parcelId = NewId "ClaimedParcels"
+            let kinds = List<bool>()
+            let! projection =
+                this.Projection(typeof<RegistrationClusterWideParcelProjection>, [ Handler ProjectParcel; RecordKind kinds ])
+
+            do! projection.ProjectAsync(Registered parcelId, 1UL)
+            do! projection.ProjectAsync(Readdressed parcelId, 2UL)
+            // Over the document a normal session wrote last
+            do! projection.ProjectAsync(Registered parcelId, 3UL)
+            do! projection.ProjectAsync(Readdressed parcelId, 4UL)
+
+            let! parcel = Documents.LoadAsync<ClaimedParcel>(parcelId)
+            let! checkpoint = Checkpoints.ReadAsync(projection.Checkpoint.Id)
+            Assert.Equal<bool>([ true; false; true; false ], kinds)
+            Assert.Equal({ Id = parcelId; Recipient = "Grace"; Events = 2 }, parcel)
+            Assert.Equal(4UL, checkpoint.Value)
+        }
+
+    [<Fact>]
+    member this.``A rebuild of a projection with some cluster-wide events replays over the guards its clear left``() =
+        task {
+            let parcelIds = [ NewId "ClaimedParcels"; NewId "ClaimedParcels" ]
+            let events = [ for id in parcelIds do yield Registered id; yield Readdressed id ]
+            let name = NewId "ReplayedRegistration"
+            let! v1 = this.Projection(typeof<ReplayedRegistrationV1Projection>, [ Handler ProjectParcel ], name)
+            do! Factory.RebuildIfVersioned(typeof<ReplayedRegistrationV1Projection>, v1)
+            for ev, checkpoint in List.zip events [ 1UL .. uint64 events.Length ] do
+                do! v1.ProjectAsync(ev, checkpoint)
+
+            let! v2 = this.Projection(typeof<ReplayedRegistrationV2Projection>, [ Handler ProjectParcel ], name)
+            do! Factory.RebuildIfVersioned(typeof<ReplayedRegistrationV2Projection>, v2)
+            let! cleared = Documents.LoadManyAsync<ClaimedParcel>(parcelIds |> List.map box |> Array.ofList)
+            Assert.All(cleared.Values, fun parcel -> Assert.True(isNull (box parcel)))
+            for ev, checkpoint in List.zip events [ 1UL .. uint64 events.Length ] do
+                do! v2.ProjectAsync(ev, checkpoint)
+
+            let! replayed = Documents.LoadManyAsync<ClaimedParcel>(parcelIds |> List.map box |> Array.ofList)
+            for id in parcelIds do
+                Assert.Equal({ Id = id; Recipient = "Grace"; Events = 2 }, replayed.[id])
         }
 
     [<Fact>]

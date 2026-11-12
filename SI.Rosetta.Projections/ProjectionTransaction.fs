@@ -26,8 +26,9 @@ type IProjectionsUnitOfWork =
     /// doesn't have ([<ClusterWideTransaction>] outside RavenDB)
     abstract member PrepareAsync: projectionType: Type * readModels: Type[] -> Task
     /// Begins an event's transaction for the projection type, whose attributes may choose its kind
-    /// ([<ClusterWideTransaction>]); null for a projection created without one
-    abstract member BeginAsync: projectionType: Type -> Task<IProjectionTransaction>
+    /// ([<ClusterWideTransaction>], for every event or the ones it names), null for a projection created without one,
+    /// and the event's record type (the type its DU case wraps)
+    abstract member BeginAsync: projectionType: Type * eventType: Type -> Task<IProjectionTransaction>
     /// Empties the read models' tables (PostgreSQL) or collections (RavenDB, MongoDB), for a projection that's rebuilt
     abstract member ClearAsync: readModels: Type[] -> Task
 

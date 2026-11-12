@@ -169,7 +169,7 @@ type RavenDbProjectionTransaction(session: IAsyncDocumentSession, clusterWide: b
             session.Dispose()
             ValueTask.CompletedTask
 
-/// One RavenDB session per event, cluster-wide for a projection with [<ClusterWideTransaction>]
+/// One RavenDB session per event, cluster-wide for a projection with [<ClusterWideTransaction>] (for the events it names, if any)
 type RavenDbProjectionsUnitOfWork(store: IDocumentStore) =
     /// A document saved on a change vector that another write changed meanwhile, or (cluster-wide) a document or a
     /// compare-exchange value changed since the session read it: a ClusterTransactionConcurrencyException is one too
@@ -179,8 +179,8 @@ type RavenDbProjectionsUnitOfWork(store: IDocumentStore) =
     interface IProjectionsUnitOfWork with
         member this.PrepareAsync(_projectionType, _readModels) = Task.CompletedTask
 
-        member this.BeginAsync(projectionType) =
-            let clusterWide = ClusterWideTransaction.IsOn projectionType
+        member this.BeginAsync(projectionType, eventType) =
+            let clusterWide = ClusterWideTransaction.IsOn(projectionType, eventType)
             let session =
                 if clusterWide then store.OpenAsyncSession(SessionOptions(TransactionMode = TransactionMode.ClusterWide))
                 else store.OpenAsyncSession()

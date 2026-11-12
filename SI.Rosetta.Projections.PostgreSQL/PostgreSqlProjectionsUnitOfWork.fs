@@ -108,7 +108,7 @@ type PostgreSqlProjectionsUnitOfWork(database: PostgreSqlDatabase) =
                         do! PostgreSqlProjectionsUnitOfWork.CheckAsync(connection, PostgreSqlTables.Of database.Schema readModel)
             } :> Task
 
-        member this.BeginAsync(_projectionType) =
+        member this.BeginAsync(_projectionType, _eventType) =
             task {
                 let! connection = database.DataSource.OpenConnectionAsync().ConfigureAwait(false)
                 try

@@ -164,6 +164,8 @@ type ProjectionsFactory(provider: IServiceProvider) =
             this.SetNameAndStreamName projectionType projection
             projection.SkipUnknownEvents <- this.SkipsUnknownEvents projectionType
             projection.ProjectionType <- projectionType
+            // Names only its own events' records, if any
+            ClusterWideTransaction.Check(projectionType, typeof<'TEvent>)
             // The store its handlers write to: its transactions and its checkpoints
             let kind = ProjectionStoreKinds.Of projectionType
             projection.CheckpointStore <- this.OfStore<ICheckpointStore> kind

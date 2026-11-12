@@ -104,7 +104,7 @@ type TestKitProjectionStore() =
         // Any projection, [<ClusterWideTransaction>] too: the TestKit runs its handlers in memory
         member this.PrepareAsync(_projectionType, _readModels) = Task.CompletedTask
 
-        member this.BeginAsync(_projectionType) =
+        member this.BeginAsync(_projectionType, _eventType) =
             // The checkpoint isn't kept: the TestKit replays its Given events from the start
             Task.FromResult(new TestKitProjectionTransaction(fun changes _ -> ApplyChanges changes) :> IProjectionTransaction)
 

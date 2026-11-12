@@ -31,7 +31,7 @@ type ConflictRetryTests() =
         { new IProjectionsUnitOfWork with
             member _.PrepareAsync(_, _) = Task.CompletedTask
             member _.ClearAsync(_) = Task.CompletedTask
-            member _.BeginAsync(_) =
+            member _.BeginAsync(_, _) =
                 let commit changes (checkpoint: Checkpoint) =
                     if FailingCommits > 0 then
                         FailingCommits <- FailingCommits - 1

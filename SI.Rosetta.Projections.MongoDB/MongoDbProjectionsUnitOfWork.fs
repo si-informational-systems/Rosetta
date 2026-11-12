@@ -69,7 +69,7 @@ type MongoDbProjectionsUnitOfWork(client: IMongoClient, db: IMongoDatabase) =
                     Prepared <- true
             } :> Task
 
-        member this.BeginAsync(_projectionType) =
+        member this.BeginAsync(_projectionType, _eventType) =
             task {
                 let! session = client.StartSessionAsync().ConfigureAwait(false)
                 session.StartTransaction(TransactionOptions(writeConcern = WriteConcern.WMajority))
